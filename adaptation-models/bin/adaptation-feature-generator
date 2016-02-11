@@ -1,0 +1,307 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../data/src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Category::UrlData;
+
+use Algorithm::Diff qw(
+        LCS LCS_length LCSidx
+        diff sdiff compact_diff
+        traverse_sequences traverse_balanced );
+use JSON;
+
+my $script_marker = "[adaptation-feature-generator]";
+sub _log {
+    my $message = shift;
+    print STDERR "$message\n";
+}
+
+sub _generate_sequence {
+    my $string = shift;
+    # TODO : what if we want to use a segmentation that is conditioned on the associated object ?
+    my @sequence = map { lc( $_ ) } split /(?:\s|\p{Punct})+/ , $string;
+    return \@sequence;
+}
+
+sub _token_surface {
+    my $elements = shift;
+    return join( " " , @{ $elements } );
+}
+
+sub _support {
+
+    my $object_self = shift;
+    my $object_counterpart = shift;
+    my $token = shift; 
+
+    my $token_surface = ref( $token ) ? _token_surface( $token ) : $token;
+    my $object_self_supported = defined( $token_surface ) ? $object_self->supports( $token_surface ) : 1;
+    my $object_counterpart_supported = defined( $token_surface ) ? $object_counterpart->supports( $token_surface ) : 1;
+
+    return ( $object_self_supported , $object_counterpart_supported );
+
+}
+
+my $epsilon = '<epsilon>';
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/ , $line;
+
+    my $url_from = shift @fields;
+    my $url_to   = shift @fields;
+    my $overlap  = shift @fields;
+
+    # TODO : should the summaries be read from STDIN ?
+    my $url_from_summary = shift @fields;
+    my $url_to_summary = shift @fields;
+
+    my $url_from_summary_sequence = _generate_sequence( $url_from_summary );
+    my $url_to_summary_sequence   = _generate_sequence( $url_to_summary   );
+
+    # 1 - load data for both URLs
+    # Note : we assume the URLs have been normalized/verificed (is normalization even required in this case ?)
+    my $url_from_object = Category::UrlData->load_url_data( $url_from );
+    my $url_to_object   = Category::UrlData->load_url_data( $url_to   );
+
+    if ( ! $url_from_object || ! $url_to_object ) {
+	_log( "Unable to load URL data for ($url_from) or ($url_to) ..." );
+	next;
+    }
+    
+    _log( "Processing ($url_from) / ($url_to) ..." );
+
+    # 2 - generate alignment (diff) between summaries
+    my $summary_diff = diff( $url_from_summary_sequence , $url_to_summary_sequence );
+
+    # 3 - process aligned pairs
+    foreach my $alignment_entry (@{ $summary_diff }) {
+
+	# split alignment entry into +/- hunks
+	my @minus;
+	my @plus;
+	map {
+	    my $type = $_->[ 0 ];
+	    my $position = $_->[ 1 ];
+	    my $token = $_->[ 2 ];
+	    if ( $type eq '-' ) { push @minus , $token; }
+	    elsif ( $type eq '+' ) { push @plus , $token }
+	    else { die "Unknown diff type ..."; }
+	} @{ $alignment_entry };
+
+	# determine type of alignment
+	my $n_minus = scalar( @minus );
+	my $n_plus = scalar( @plus );
+	my $is_deletion = ( $n_minus > 0 ) && ( $n_plus == 0 );
+	my $is_insertion = ( $n_minus == 0 ) && ( $n_plus > 0 );
+	my $is_replacement = ( ! $is_deletion ) && ( ! $is_insertion );
+
+	my $alignment_from = $n_minus ? \@minus : undef;
+	my $alignment_to   = $n_plus  ? \@plus  : undef;
+
+	my $alignment_from_surface = defined( $alignment_from ) ? _token_surface( $alignment_from ) : $epsilon;
+	my $alignment_to_surface   = defined( $alignment_to )   ? _token_surface( $alignment_to   ) : $epsilon;
+
+	# Note : we only consider target objects where the ground truth replacement can be extracted via tokenization (should not be a limiting factor with proper segmentation code)
+	if ( ! $url_to_object->supports( $alignment_to_surface , tokenized_only => 1 ) ) {
+	    next;
+	}
+
+	# determine support for from element
+	my ( $alignment_from_self_supported , $alignment_from_counterpart_supported ) = _support( $url_from_object , $url_to_object , $alignment_from );
+
+	# determine support for to element
+	my ( $alignment_to_self_supported , $alignment_to_counterpart_supported ) = _support( $url_to_object , $url_from_object , $alignment_to );
+
+	# TODO : should we have a special treatment for deletions ?
+	# Note : this is a strict definition of extractive adaptation => in certain cases there might still be some level of support for the a term in the counterpart object
+	my $is_extractive_adaptation = ( $alignment_from_self_supported && ! $alignment_from_counterpart_supported && $alignment_to_self_supported && ! $alignment_to_counterpart_supported );
+	my $adaptation_type = $is_extractive_adaptation ? 'extractive' : 'abstractive';
+
+	_log( "found instance of $adaptation_type adaptation : ($url_from) $alignment_from_surface => ($url_to) $alignment_to_surface" );
+
+	if ( ! $is_extractive_adaptation ) {
+	    # Note : for now we only process extractive pairs
+	    next;
+	}
+
+	# token-level feature generation
+	# CURRENT : is logistic regression affected by class imbalance ?
+	my $candidates = $url_to_object->tokens;
+	if ( ! defined( $candidates->{ $alignment_to_surface } ) ) {
+	    print STDERR ">> unable to obtain extractive alignment: $url_from / $alignment_from_surface / $url_to / $alignment_to_surface\n";
+	    next;
+	}
+	foreach my $candidate (keys( %{ $candidates } )) {
+	
+	    my %features;
+
+	    # 0 - if ground truth
+	    _add_feature( \%features , 'ground-truth' , ( $candidate eq $alignment_to_surface ) ? 1 : 0 );
+
+	    # 0 - features of the replacement candidate
+	    my $alignment_to_features   = _generate_features( $url_to_object , $alignment_to_surface );
+	    _add_features( \%features , $alignment_to_features );
+
+	    # 1 - pairwise combination of individual token features
+	    my $alignment_from_features = _generate_features( $url_from_object , $alignment_from_surface );
+	    my $joint_features    = _joint_features( 'from' , $url_from_object , $alignment_from_features , 'to' , $url_to_object , $alignment_to_features );
+	    _add_features( \%features , $joint_features );
+
+	    # 2 - pairwise features
+	    my $alignment_to_from_features = _generate_pairwise_features( $url_from_object , $alignment_from_surface , $url_to_object , $alignment_to_surface );
+	    _add_features( \%features , $alignment_to_from_features );
+
+	    # output
+	    _output_features( $url_from_object , $alignment_from_surface , $url_to_object , $candidate , \%features );
+	    
+	}
+
+    }
+
+}
+
+sub _add_feature {
+
+    my $features = shift;
+    my $key = shift;
+    my $value = shift;
+
+    $features->{ $key } = $value;
+
+    return $features;
+
+}
+
+sub _add_features {
+
+    my $hash_output = shift;
+    my $hash_input  = shift;
+
+    # TODO : add code to check for potential key conflicts
+    map { $hash_output->{ $_ } = $hash_input->{ $_ }; } grep { $hash_input->{ $_ } } keys( %{ $hash_input } );
+							      
+    return $hash_output;
+
+}
+
+sub _output_features {
+
+    my $url_from_object = shift;
+    my $alignment_from  = shift;
+    my $url_to_object   = shift;
+    my $candidate       = shift;
+    my $features        = shift;
+
+    print join( "\t" , $url_from_object->url , $alignment_from , $url_to_object->url , $candidate , encode_json( $features ) ) . "\n";
+
+}
+
+sub _generate_pairwise_features {
+
+    my $url_from_object = shift;
+    my $alignment_from_surface = shift;
+    my $url_to_object = shift;
+    my $alignment_to_surface = shift;
+
+    my %pairwise_features;
+
+    # 1 - pos relationship => only check for equality/compatibility
+    my $alignment_from_pos = $this->identify_pos( 
+    my $pos_compatibility = $this->pos_compatible( $alignment_from_pos , $alignment_to_pos );
+
+    # 2 - word2vec distance between from and to tokens
+    my $word2vec_distance = 
+
+    return \%pairwise_features;
+
+}
+
+sub _generate_features {
+
+    my $object = shift;
+    my $token  = shift;
+
+    my %features;
+    
+    my @modalities = values %{ $object->modalities };
+    my $n_modalities = scalar( @modalities );
+
+    # token features
+    # TODO : 1 feature for each POS
+    # TODO : add length-specific number features - or diff maybe ?
+    $features{ 'is_number' } = ( $token =~ m/^\d+$/ ) ? 1 : 0;
+
+    # modality features
+    my $modality_count = 0;
+    foreach my $modality (@modalities) {
+
+	# 0 - has modality
+	$features{ join( '::' , 'has_modality' , $modality->id ) } = 1;
+
+	# 1 - appears in modality
+	my $feature_appears_in_modality = $modality->supports( $token );
+	my $modality_count += $feature_appears_in_modality;
+	$features{ join( '::' , 'appears_in_modality' , $modality->id ) } = $feature_appears_in_modality;
+
+    }
+
+    # object features
+    $features{ 'modality_ratio' } = $n_modalities ? ( $modality_count / $n_modalities ) : 0;
+
+    # corpus features
+    # TODO : token prior
+    #$features{ 'co
+
+    # URL modality - specific features
+    # TODO : appears in host
+    # TODO : appears in tld ...
+    # TODO : appears in path
+    # TODO : appears in path + depth
+    
+    return \%features;
+
+}
+
+sub _joint_features {
+
+    my $from_marker = shift;
+    my $url_from_object          = shift;
+    my $alignment_from_features  = shift;
+    my $to_marker = shift;
+    my $url_to_object            = shift;
+    my $alignment_to_features    = shift;
+
+    my %joint_features;
+
+    my @alignment_from_features_keys = keys( %{ $alignment_from_features } );
+    my @alignment_to_features_keys   = keys( %{ $alignment_to_features   } );
+    
+    foreach my $alignment_from_feature_key (@alignment_from_features_keys) {
+	
+	my $alignment_from_feature_value = $alignment_from_features->{ $alignment_from_feature_key };
+	
+	foreach my $alignment_to_feature_key (@alignment_to_features_keys) {
+	    
+	    my $alignment_to_feature_value = $alignment_to_features->{ $alignment_to_feature_key };
+
+	    my $joint_feature_key = join( '=>' , "$from_marker:$alignment_from_feature_key" , "$to_marker:$alignment_to_feature_key" );
+	    $joint_features{ $joint_feature_key } = $alignment_from_feature_value * $alignment_to_feature_value;
+
+	}
+
+    }
+
+    return \%joint_features;
+
+}
+
+1;
