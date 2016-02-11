@@ -1,0 +1,16 @@
+if [ $# != 1 ]; then
+	echo "usage: $0 <input_file>";
+	exit 1;
+fi
+
+INPUT_FILE=$1
+
+LINE_COUNT=`wc -l $INPUT_FILE | awk '{print $1}'`
+
+RANDOM_LINE_NUMBER=`perl -e 'print int(rand($ARGV[0]))||1' $LINE_COUNT`
+
+#echo "selecting line: $RANDOM_LINE_NUMBER"
+
+sed -n -e "$RANDOM_LINE_NUMBER p" < $INPUT_FILE
+ 
+

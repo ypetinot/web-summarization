@@ -1,0 +1,71 @@
+#!/usr/bin/env perl
+
+# Collects specific nodes from existing gist graphs so they can be used as a basic for the training & evaluation of extractor functions
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+our $SPECIFIC_NODE_MINIMUM_COUNT = 5;
+
+use Category::Data;
+use Category::Folds;
+use GistGraph;
+
+binmode(STDIN,':utf8');
+binmode(STDOUT,':utf8');
+
+sub usage() {
+    return "Usage: $0 <raw-category-data> <model-directory>";
+}
+
+if ( scalar(@ARGV) != 2 ) {
+    die usage();
+}
+
+# read in all chunks
+my $category_data_path = $ARGV[0];
+my $model_directory_path = $ARGV[1];
+
+if ( ! -f $category_data_path ) {
+    die "Category data file does not exist: $category_data_path";
+}
+
+if ( ! -d $model_directory_path ) {
+    die "Model directory does not exist: $model_directory_path";
+} 
+
+# load category data
+my $category_data = new Category::Data( $category_data_path );
+if ( ! $category_data ) {
+    die "Unable to load category data ...";
+}
+
+# select the fold to use (by default the complete data will be used)
+#my $folds = new Category::Folds( category_data => $category_data , mode => 'leave-n-out' , n => 0 );
+#my $category_data_fold = $folds->get_fold( 0 );
+
+# load gist graph
+my $gist_graph = GistGraph->restore( $model_directory_path , $category_data );
+
+# collect specific nodes
+my $specific_nodes = $gist_graph->get_target_specific_nodes();
+
+# we only want specific nodes that appear at least N times (N=2 for now)
+my @selected_specific_nodes;
+foreach my $specific_node (@{ $specific_nodes }) {
+    if ( $specific_node->count() >= $SPECIFIC_NODE_MINIMUM_COUNT ) {
+	push @selected_specific_nodes, $specific_node;
+    }
+}
+
+# output gist-graph / node information so we can run experiments independently from the gist graph framework
+foreach my $specific_node (@selected_specific_nodes) {
+    print join("\t", $category_data_path, $model_directory_path, $specific_node->freeze()) . "\n";
+}
+
+1;

@@ -1,0 +1,63 @@
+=pod
+sub _lp_solve_shortest_path {
+
+    my $graph = shift;
+    my $from = shift;
+    my $to = shift;
+
+    my %edge2id;
+    my %id2edge;
+    my $n = 0;
+
+    # 1 - generate lp problem
+    my @minimization_components;
+    my @constraints;
+    foreach my $edge ($graph->edges()) {
+
+	my ($edge_from,$edge_to) = @{ $edge };
+	my $opposite_edge = ($edge_to,$edge_from);
+	my $opposite_edge_key = _edge_key( $opposite_edge );
+
+	my $edge_weight = $graph->get_edge_weight( $edge );
+	my $edge_key = _edge_key( $edge );
+
+	for my $entry ( [$edge,$edge_key] , [$opposite_edge,$opposite_edge_key] ) {
+
+	    my $edge = $entry->[ 0 ];
+	    my $edge_key = $entry->[ 1 ];
+
+	    if ( ! defined( $edge2id{ $key } ) ) {
+		my $id = $n++;
+		$edge2id{ $key } = $id;
+		$id2edge{ $id } = $edge;
+	    }
+
+	}
+	
+	my $edge_id = $edge2id{ $edge_key };
+
+	push @minimization_components, "$edge_weight * $edge_key";
+	push @constraints, "$edge_id >= 0";
+
+    }
+    
+    foreach my $node ($graph->nodes()) {
+
+	my @incoming_edges = $graph->incoming_edges();
+	my @outgoing_edges = $graph->outgoing_edges();
+
+	
+
+    }
+
+    print LP_PROBLEM "min: " . join(" + ", @minimization_components) . "\n";
+    
+    # Constraints
+    foreach my $constraint (@constraints) {
+	print LP_PROBLEM "$constraint\n";
+    }
+
+    # 2 - solve lp problem
+
+}
+=cut

@@ -1,0 +1,60 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FileHandle;
+use JSON;
+
+while( <STDIN> ) {
+
+    chomp;
+    my @fields = split /\t/ , $_;
+
+    my $model_file = shift @fields;
+    my $output_arff_file = shift @fields;
+    my $features_json = shift @fields;
+
+    my $features = decode_json( $features_json );
+
+    my $template_arff_file = $model_file;
+    $template_arff_file =~ s/\.model$/.training.arff/;
+    
+    open OUTPUT_ARFF, ">$output_arff_file" or die "Unable to open output ARFF file ($output_arff_file): $!";
+    my $template_arff_fh = FileHandle->new;
+    $template_arff_fh->open( $template_arff_file ) or die "Unable to open template ARFF file ($template_arff_file): $!";
+    
+    my %feature2index;
+    while ( <$template_arff_fh> ) {
+	
+	chomp;
+	my $line = $_;
+
+	if ( $line =~ m/^\@ATTRIBUTE (.+) (.+) \% ==\> (\d+)$/ ) {
+	    my $feature_id = $1;
+	    my $feature_type = $2;
+	    my $feature_index = $3;
+	    $feature2index{ $feature_id } = $feature_index;
+	}
+	
+	print OUTPUT_ARFF "$line\n";
+	
+	if ( $line =~ m/^\@DATA/ ) {
+	    last;
+	}
+
+    }
+
+    # TODO : can this optimized ? (grep is currently somewhat wasteful)
+    print OUTPUT_ARFF "{" . join( "," , map { $_->[ 1 ] . " " . $features->{ $_->[ 0 ] } }
+				  sort { $a->[ 1 ] <=> $b->[ 1 ] }
+				  grep { defined( $_->[ 1 ] ) }
+				  map { [ $_ , $feature2index{ $_ } ] }
+				  keys( %{ $features } ) , $feature2index{ 'class' } . ' ?' ) . "}\n";
+
+    $template_arff_fh->close;
+    close OUTPUT_ARFF;
+
+}
+
+1;

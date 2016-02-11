@@ -1,0 +1,97 @@
+# Makefile defining the phrase-based gisting model
+# Operates at the category level
+
+SUMMARIZER=graph-summarizer-2
+
+BINDIR := $(dir $(lastword $(MAKEFILE_LIST)))
+BINDIR_DIST := $(BINDIR)/../../../bin/
+BINDIR_3 := $(BINDIR)/../../graph-summarizer-3/bin/
+
+include $(BINDIR_DIST)/makefile.category
+include $(BINDIR_DIST)/makefile.features
+include $(BINDIR)/../../phrase-summarizer/bin/makefile.phrase.preprocessing
+
+$(info $(LINE_HEADING) $(SUMMARIZER))
+
+ifndef FOLD_ID
+$(error $(LINE_HEADING) No fold id provided, cannot proceed ...)
+else
+$(info $(LINE_HEADING) Fold id: $(FOLD_ID))
+endif
+
+MODEL_DIRECTORY := $(CATEGORY).models/$(SUMMARIZER)/$(FOLD_ID)/
+
+MODEL_GRAPH_RAW := $(MODEL_DIRECTORY)/graph.raw/
+MODEL_GRAPH_FEATURES := $(MODEL_DIRECTORY)/graph.features/
+MODEL_GRAPH_SLOT_FEATURES := $(MODEL_DIRECTORY)/slots.features/
+MODEL_GRAPH_TEST := $(MODEL_GRAPH_RAW)/test/
+MODEL_GRAPH_TRAINED := $(MODEL_DIRECTORY)/graph.trained/
+MODEL_TEST_OUTPUT := $(MODEL_DIRECTORY)/test.out
+
+CATEGORY_BASE := ${CURDIR}/${CATEGORY}
+CATEGORY_SUMMARIES_CHUNKED_ABSTRACTED:=$(MODEL_GRAPH_RAW)/summary.chunked.abstracted
+
+FEATURES:=content.rendered.ngrams.1/binary/decode_json/count_filter::2 content.rendered.ngrams.2/binary/decode_json/count_filter::2 content.rendered.ngrams.3/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.1/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.2/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.3/binary/decode_json/count_filter::2 anchortext.basic.ngrams.1/binary/decode_json/count_filter::2 anchortext.basic.ngrams.2/binary/decode_json/count_filter::2 anchortext.basic.ngrams.3/binary/decode_json/count_filter::2 title.ngrams.1/binary/decode_json/count_filter::2 title.ngrams.2/binary/decode_json/count_filter::2 title.ngrams.3/binary/decode_json/count_filter::2 url.words.ngrams.1/binary/decode_json/count_filter::2 url.words.ngrams.2/binary/decode_json/count_filter::2 url.words.ngrams.3/binary/decode_json/count_filter::2
+
+CORPUS_STATISTICS:=TBD
+
+#.PRECIOUS:
+
+graph2-train: graph2-topology graph2-learn
+	@echo
+	@echo "$(LINE_HEADING) Done training model ! $@"
+
+graph2-topology: $(MODEL_GRAPH_RAW)
+	@echo
+	@echo "$(LINE_HEADING) Done generating topology ! $@"
+
+graph2-features: $(MODEL_GRAPH_FEATURES) $(MODEL_GRAPH_SLOT_FEATURES)
+	@echo
+	@echo "$(LINE_HEADING) Done generating features ! $@"
+
+graph2-learn: $(MODEL_GRAPH_TRAINED)
+	@echo
+	@echo "$(LINE_HEADING) Done learning model !"
+
+$(MODEL_GRAPH_RAW): $(CATEGORY).summary.chunked.refined
+	@echo "$(LINE_HEADING) Generating $@ ..."
+	mkdir -p $@
+	perl $(BINDIR)/generate-raw-graph --fold-id=${FOLD_ID} --output-dir=$@ --reference-selection-mode=relevance --reference-cluster-limit=20 $(CATEGORY)
+	@echo "$(LINE_HEADING) Done generating $@ !"
+
+$(MODEL_GRAPH_FEATURES): $(MODEL_GRAPH_RAW) $(FEATURES_PREREQUISITES) $(FEATURES_PREREQUISITES_MAPPING)
+	@echo "$(LINE_HEADING) Generating $@ ..."
+	mkdir -p $@
+	cat -n $(FEATURES_PREREQUISITES_MAPPING) | sed 's/^\s\+//' | awk -F"\t" '{ print $$2 "\t" $$1 "\t" $$3 }' > $@/features.definition
+	$(BINDIR_DIST)/join-multiple $(FEATURES_PREREQUISITES) | $(BINDIR)/merge-features $@/features.definition > $@/features
+	@echo "$(LINE_HEADING) Done generating $@ !"
+
+# TODO: better dependencies for initial fillers identification ?
+$(MODEL_GRAPH_SLOT_FEATURES): $(FEATURES_PREREQUISITES) $(FEATURES_PREREQUISITES_MAPPING)
+	@echo "$(LINE_HEADING) Generating $@ !"
+	mkdir -p $@
+#	cat ${CURDIR}/*.ngrams.2.mapping | awk -F"\t" '{ print $$2 }' | sort -u | iconv -c -f utf8 -t utf8 | $(BINDIR)/select-slot-fillers > $@/$(CATEGORY).fillers.selection
+#	cat $@/$(CATEGORY).fillers.selection | perl $(BINDIR)/generate-slot-features ${CATEGORY_BASE} content.rendered anchortext.basic anchortext.sentence title url.words > $@/$(CATEGORY).fillers.features
+	perl $(BINDIR_3)/generate-slot-features ${CATEGORY_BASE} ${CORPUS_STATISTICS} content.rendered anchortext.basic anchortext.sentence title url.words > $@/$(CATEGORY).fillers.features
+	@echo "$(LINE_HEADING) Done generating $@ !"
+
+$(MODEL_GRAPH_TRAINED): $(MODEL_GRAPH_RAW) $(MODEL_GRAPH_FEATURES) $(MODEL_GRAPH_SLOT_FEATURES)
+	@echo "$(LINE_HEADING) Generating $@ !"
+	mkdir -p $@
+	perl $(BINDIR)/learn-graph --input-dir=$(MODEL_GRAPH_RAW) --output-dir=$@ --object-dir=$(MODEL_GRAPH_FEATURES) --iterations=10 --slot-features=$(MODEL_GRAPH_SLOT_FEATURES)/$(CATEGORY).fillers.features
+	@echo "$(LINE_HEADING) Done generating $@ !"
+
+graph2-test: $(MODEL_GRAPH_TRAINED)
+	@echo "$(LINE_HEADING) Generating $@ !"
+	perl $(BINDIR)/generate-gist --model-dir=$(MODEL_GRAPH_TRAINED) --object-dir=$(MODEL_GRAPH_FEATURES) --slot-features=$(MODEL_GRAPH_SLOT_FEATURES)/$(CATEGORY).fillers.features $(CATEGORY) $(MODEL_GRAPH_TEST)/* > $(MODEL_TEST_OUTPUT)
+	@echo "$(LINE_HEADING) Done testing model !"
+
+# TODO: move this up ?
+%.gz: %
+	gzip -f $<
+
+# TODO: probably need to remove more things ?
+graph2-clean:
+	rm -rf ${MODEL_DIRECTORY}
+	rm -rf *~
+	rm -rf *.temp

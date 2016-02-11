@@ -1,0 +1,28 @@
+#!/usr/bin/env perl
+
+# if a number of line is specified and is non-zero, output this number of lines
+# otherwise just output everything read from STDIN
+
+use Getopt::Long;
+use Pod::Usage;
+
+my $help = 0;
+my $debug = 0;
+my $lines = 0;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, 'lines|n=s' => \$lines,
+           'debug|d' => \$debug) or pod2usage(2);
+
+my $count = 0;
+while(<STDIN>) {
+
+	if ( $lines && $count++ > $lines ) {
+	   last;
+	}     
+
+	print $_;
+
+}
+
+1;

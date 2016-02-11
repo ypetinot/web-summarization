@@ -1,0 +1,9 @@
+#!/bin/bash
+
+TARGET=$1
+
+cat - | while read LINE; do
+
+    curl 'http://southpaw.cs.columbia.edu:8080/solr/odp-index/update/json?commit=true' --data-binary \@<( echo "[${LINE}]" ) -H 'Content-type:application/json'
+
+done;

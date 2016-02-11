@@ -1,0 +1,60 @@
+#!/usr/bin/env perl
+
+# simply returns dmoz description for the target url
+
+use Getopt::Long;
+use Pod::Usage;
+use URI;
+use URI::URL;
+use File::Path;
+use File::Temp qw/tempfile/;
+use XML::TreePP;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+my $max_sentences = 1;
+my $max_words = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'mode=s' => \$mode, 'debug|d' => \$debug, 'sentences|s=s' => \$max_sentences,
+           'words|w=s' => \$max_words) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0) if $man;
+pod2usage(-exitstatus => 0) if ( $#ARGV != 0 );
+
+if ( $debug ) {
+    print STDERR "debug mode on\n";
+}
+
+my $APPLICATION_NAME = $0;
+my $context_file = $ARGV[0];
+
+# parse context file
+my $tpp = XML::TreePP->new();
+my $tree = $tpp->parsefile($context_file);
+if ( !defined($tree) || !defined($tree->{Context}) ) {
+    # need proper error reporting
+}
+elsif ( !defined($tree->{Context}->{'-target'}) ) {
+    # should be just a warning since target isn't technically needed
+}
+my $target_url = $tree->{Context}->{'-target'};
+
+my $status = "SUCCESS";
+my $dmoz_summary = $tree->{Context}->{DmozContext}->{description};
+
+# output
+my $tree = { summary => { '-summarizer-id' => 'dmoz-summarizer',
+			  '-target' => $target_url,
+			  '-context' => $context_file
+			  }
+	 };
+$tree->{summary}->{status} = $status;
+if ( $dmoz_summary ) {
+    $tree->{summary}->{value}  = $dmoz_summary;
+}
+print $tpp->write($tree);
+
+1;

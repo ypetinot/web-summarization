@@ -1,0 +1,17 @@
+#!/bin/bash -x
+
+# Collect all available features for URLs in the target category
+
+BINDIR=`dirname $0`
+
+CATEGORY_BASE=$1
+CATEGORY_DIR=`dirname ${CATEGORY_BASE}`;
+CATEGORY_ID=`basename ${CATEGORY_BASE}`;
+
+# TODO: read list of feature types from configuration file
+#FEATURES=anchortext.sentence.ngrams.1 anchortext.sentence.ngrams.2 content.rendered.ngrams.1 content.rendered.ngrams.2 title.ngrams.1
+
+###make --no-print-directory --silent -f ${BINDIR}/makefile.graph3 -C ${CATEGORY_DIR} CATEGORY=${CATEGORY_ID} FOLD_ID=0 graph3-reference-training 
+
+paste -d"\t" ${CATEGORY_BASE} <( cat ${CATEGORY_BASE}.summary | awk -F"\t" '{ print $2 }' ) <( make --no-print-directory --silent -f ${BINDIR}/makefile.graph3 -C ${CATEGORY_DIR} CATEGORY=${CATEGORY_ID} FOLD_ID=0 graph3-reference-training | awk -F"\t" '{ print $2 }' )
+

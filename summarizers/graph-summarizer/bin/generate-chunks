@@ -1,0 +1,26 @@
+#!/bin/bash -x
+
+INPUT_FILE=$1;
+OUTPUT_FILE=$2;
+if [[ -z "${INPUT_FILE}" ]]; then
+    echo "Usage: $0 <summary-chunk-file> [<output-file>]"
+    exit;
+fi
+
+BINDIR=`dirname $0`;
+
+# list NPs
+function _np_listing {
+    cat - | ${BINDIR}/list-chunks
+}
+
+# output
+function _output {
+    if [[ -z "${OUTPUT_FILE}" ]]; then
+	cat -
+    else
+	cat - > ${OUTPUT_FILE}
+    fi
+}
+
+cat ${INPUT_FILE} | _np_listing | _output

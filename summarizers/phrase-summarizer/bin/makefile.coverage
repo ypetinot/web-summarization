@@ -1,0 +1,14 @@
+BINDIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include $(BINDIR)/makefile.phrase.common
+
+coverage-analysis: $(CATEGORY).coverage
+
+coverage-clean:
+	rm -rf *~
+	rm -f $(CATEGORY).coverage*
+
+$(CATEGORY).coverage: $(CATEGORY).data.base $(CATEGORY).content.phrases $(CATEGORY).summary $(CATEGORY).summary.phrases $(CATEGORY).anchortext.sentence $(CATEGORY).anchortext.basic
+	@echo "Generating coverage data for $(CATEGORY) ..."
+	$(BINDIR_PHRASE)/urls-coverage $(CATEGORY) > $@.temp
+	mv $@.temp $@
+#| $(BINDIR_PHRASE)/average-coverage

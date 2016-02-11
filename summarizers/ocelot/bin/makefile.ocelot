@@ -1,0 +1,79 @@
+OCELOT_MAKEFILE_DIR:=$(realpath $(dir $(lastword $(MAKEFILE_LIST))))
+
+include $(OCELOT_MAKEFILE_DIR)/../../../bin/makefile.common
+include $(BINDIR_DIST)/makefile.fold
+include $(BINDIR_DATA)/makefile.data
+
+OCELOT_BINDIR:=$(OCELOT_MAKEFILE_DIR)
+OCELOT_ROOTDIR:=$(realpath $(OCELOT_BINDIR)/../)
+OCELOT_BUILDDIR:=$(abspath $(OCELOT_ROOTDIR)/build/)
+
+OCELOT_FILTERED_INPUT:=$(OCELOT_BUILDDIR)/dmoz.ocelot.filtered
+OCELOT_SOURCE_VOCABULARY:=$(OCELOT_BUILDDIR)/dmoz.ocelot.source.vocabulary
+OCELOT_OUTPUT_VOCABULARY:=$(OCELOT_BUILDDIR)/dmoz.ocelot.output.vocabulary
+
+OCELOT_SOURCE_MAPPED:=$(OCELOT_BUILDDIR)/dmoz.ocelot.source.mapped
+OCELOT_OUTPUT_MAPPED:=$(OCELOT_BUILDDIR)/dmoz.ocelot.output.mapped
+
+GIZA_SENTENCE_TRUNCATION_LENGTH=500
+OCELOT_GIZA_SNT:=$(OCELOT_BUILDDIR)/dmoz.ocelot.giza.snt
+OCELOT_TRANSLATION_MODEL:=$(OCELOT_BUILDDIR)/dic
+OCELOT_TRANSLATION_MODEL_OUT:=$(OCELOT_BUILDDIR)/giza.out
+OCELOT_TRANSLATION_MODEL_ERR:=$(OCELOT_BUILDDIR)/giza.err
+
+SOURCE_VOCABULARY_SIZE:=65535
+TARGET_VOCABULARY_SIZE:=65535
+
+SOURCE_VOCABULARY_THRESHOLD:=2
+TARGET_VOCABULARY_THRESHOLD:=2
+
+SOURCE_VOCABULARY_STOPWORDS_REMOVAL:=0
+TARGET_VOCABULARY_STOPWORDS_REMOVAL:=100
+
+# TODO : how can we avoid this indirection ? without it the call to the language model generation overides the default target
+default: train-ocelot
+
+# TODO : combine both calls into a single call (if possible)
+# TODO : treat order as just another parameter ?
+SOURCE_LANGUAGE_MODEL=$(call dmoz_language_model,summary,3,-no-sos+++-no-eos)
+
+# TODO : dependencies need some fixing apparently, too much getting re-made
+train-ocelot: $(OCELOT_TRANSLATION_MODEL) $(SOURCE_LANGUAGE_MODEL)
+
+$(OCELOT_BUILDDIR):
+	mkdir -p $@
+
+# filter dmoz data according to OCELOT rules
+#| ${BINDIR}/conditional-head --lines=$NUMBER_OF_DOCUMENTS > ${TARGET_DIRECTORY}/dmoz.ocelot.filtered
+$(OCELOT_FILTERED_INPUT): $(OCELOT_BUILDDIR)
+	# apply filtering rules
+	@cat $(CATEGORY_LIST) | $(BINDIR_DIST)/dmoz-category-fold --train $(FOLD_ID) --fields="url summary content.rendered" | $(OCELOT_BINDIR)/ocelot-filter > $@.temp 2> /dev/null
+	mv $@.temp $@
+
+# generate vocabulary for both the source and output languages
+# we limit each vocabulary list at the top 65535 + 1 (OOV symbol) symbols 
+
+$(OCELOT_OUTPUT_VOCABULARY): $(OCELOT_FILTERED_INPUT)
+	cat $< | awk -F"\t" '{ print $$3 }' | $(BINDIR_DIST)/dmoz-select-vocabulary --size=$(TARGET_VOCABULARY_SIZE) --count-threshold=$(TARGET_VOCABULARY_THRESHOLD) --stopwords-removal=$(TARGET_VOCABULARY_STOPWORDS_REMOVAL) > $@.temp
+	mv $@.temp $@
+
+$(OCELOT_SOURCE_VOCABULARY): $(OCELOT_FILTERED_INPUT)
+	cat $< | awk -F"\t" '{ print $$2 }' | $(BINDIR_DIST)/dmoz-select-vocabulary --size=$(SOURCE_VOCABULARY_SIZE) --count-threshold=$(SOURCE_VOCABULARY_THRESHOLD) --stopwords-removal=$(SOURCE_VOCABULARY_STOPWORDS_REMOVAL) > $@.temp
+	mv $@.temp $@
+
+$(OCELOT_OUTPUT_MAPPED): $(OCELOT_FILTERED_INPUT) $(OCELOT_OUTPUT_VOCABULARY)
+	cat $(OCELOT_FILTERED_INPUT) | awk -F"\t" '{ print $$3 }' | $(BINDIR_DIST)/dmoz-map-vocabulary --vocabulary=$(OCELOT_OUTPUT_VOCABULARY) > $@.temp
+	mv $@.temp $@
+
+$(OCELOT_SOURCE_MAPPED): $(OCELOT_FILTERED_INPUT) $(OCELOT_SOURCE_VOCABULARY)
+	cat $(OCELOT_FILTERED_INPUT) | awk -F"\t" '{ print $$2 }' | $(BINDIR_DIST)/dmoz-map-vocabulary --vocabulary=$(OCELOT_SOURCE_VOCABULARY) > $@.temp
+	mv $@.temp $@
+
+# map source/output content to giza++ representation
+$(OCELOT_GIZA_SNT): $(OCELOT_SOURCE_MAPPED) $(OCELOT_SOURCE_VOCABULARY) $(OCELOT_OUTPUT_MAPPED) $(OCELOT_OUTPUT_VOCABULARY)
+	$(OCELOT_BINDIR)/ocelot-vocabulary $(OCELOT_BUILDDIR) $(OCELOT_SOURCE_MAPPED) $(OCELOT_SOURCE_VOCABULARY) $(OCELOT_OUTPUT_MAPPED) $(OCELOT_OUTPUT_VOCABULARY) > $@.temp
+	mv $@.temp $@
+
+# run giza training
+$(OCELOT_TRANSLATION_MODEL): $(OCELOT_SOURCE_VOCABULARY) $(OCELOT_OUTPUT_VOCABULARY) $(OCELOT_GIZA_SNT)
+	$(BINDIR_THIRD_PARTY)/GIZA++ -ml $(GIZA_SENTENCE_TRUNCATION_LENGTH) -s $(OCELOT_SOURCE_VOCABULARY) -t $(OCELOT_OUTPUT_VOCABULARY) -c $(OCELOT_GIZA_SNT) -o $@ -hmmiterations -1 -model1iterations 6 -model2iterations 0 -model3iterations 0 -model4iterations 0 -model5iterations 0 -model6iterations 0 > $(OCELOT_TRANSLATION_MODEL_OUT) 2> $(OCELOT_TRANSLATION_MODEL_ERR)

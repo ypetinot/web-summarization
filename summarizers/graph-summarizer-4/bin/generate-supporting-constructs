@@ -1,0 +1,37 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+REPOSITORY_BASE=$1
+FOLD_ID=$2
+ENTRY_BASE=$3
+
+BINDIR_DIST=${BINDIR}/../../../bin/
+source ${BINDIR_DIST}/parallel-job-resources
+
+if [[ -z "${REPOSITORY_BASE}" || -z "${FOLD_ID}" || -z "${ENTRY_BASE}" ]]; then
+    echo "Usage: $0 <repository-base> <fold-id> <entry-base>";
+    exit 1;
+fi
+
+# Only temporary
+ENTRY_BASE_DIRECTORY=`dirname ${ENTRY_BASE}`
+
+# create directory to store reference data
+REFERENCE_ROOT_DIRECTORY=${ENTRY_BASE}.references
+mkdir -p ${REFERENCE_ROOT_DIRECTORY}
+
+REFERENCES_INITIAL=${REFERENCE_ROOT_DIRECTORY}/initial
+
+# Collect the test entries for the target category and the specified fold
+###${BINDIR}/collect-test-entries --fold-id=${FOLD_ID} ${CATEGORY_BASE_DIRECTORY}/${CATEGORY_BASE_NAME} 2>/dev/null | ${BINDIR}/retrieve-references ${CATEGORY_BASE_DIRECTORY}/${CATEGORY_BASE_NAME} ${FOLD_ID} 2>/dev/null
+
+# 1 - list references (initial)
+cat ${ENTRY_BASE} | awk -F"\t" '{ print $1 }' | ${BINDIR}/retrieve-references $( cat ${ENTRY_BASE_DIRECTORY}/category ) ${FOLD_ID} 1 2>/dev/null > ${REFERENCES_INITIAL}
+
+### # 2 - make sure all reference data is ready (level 2)
+### # TODO: how can we make sure we don't run into any kind of race condition if two process attempt to remake the data at the same time ? --> server ?
+### cat ${REFERENCES_INITIAL} | awk -F"\t" '{ print $2 }' | sort -u | xargs -i{} $(BINDIR_DATA)/run-data-generation-category ${REPOSITORY_BASE}/{} 2
+
+# Note: this is mostly replicated from experiment-run-summarizer-job
+# TODO: how can we combine the two / limit replication
+cat ${ENTRY_BASE} | ${BINDIR}/run-summarizer --fold-id=${FOLD_ID} --preparation ${ENTRY_BASE}

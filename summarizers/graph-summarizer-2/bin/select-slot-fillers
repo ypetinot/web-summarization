@@ -1,0 +1,52 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Data;
+use Web::Summarizer::Graph2::SlotAnalyzer;
+
+binmode(STDIN,':utf8');
+binmode(STDOUT,':utf8');
+
+# Load category data (no folds)
+# ?
+
+my %filler2seen;
+
+# Process each entry independently
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $string = $_;
+    my $filler_candidates = Web::Summarizer::Graph2::SlotAnalyzer::analyze( $string );
+
+    foreach my $filler_candidate (@{ $filler_candidates }) {
+
+	my $filler_surface = join(" ", @{ $filler_candidate->[ 0 ] });
+	my $filler_surface_normalized = lc( $filler_surface );
+	my $filler_type = $filler_candidate->[ 1 ];
+
+	if ( $filler_type eq $Web::Summarizer::Graph2::Definitions::POS_VERB || $filler_type eq $Web::Summarizer::Graph2::Definitions::POS_OTHER ) {
+	    next;
+	}
+
+	if ( defined( $filler2seen{ $filler_surface_normalized } ) ) {
+	    next;
+	}
+	$filler2seen{ $filler_surface_normalized } = 1;
+
+	print join("\t", $filler_surface, $filler_type) . "\n";
+
+    }
+
+}
+
+1;

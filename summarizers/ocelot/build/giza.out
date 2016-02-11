@@ -1,0 +1,219 @@
+Parameter 'ml' changed from '101' to '500'
+Parameter 's' changed from '' to '/proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dmoz.ocelot.source.vocabulary'
+Parameter 't' changed from '' to '/proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dmoz.ocelot.output.vocabulary'
+Parameter 'c' changed from '' to '/proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dmoz.ocelot.giza.snt'
+Parameter 'o' changed from '2014-04-25.160312.ypetinot' to '/proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dic'
+Parameter 'hmmiterations' changed from '5' to '-1'
+Parameter 'model1iterations' changed from '5' to '6'
+Parameter 'model3iterations' changed from '5' to '0'
+Parameter 'model4iterations' changed from '5' to '0'
+general parameters:
+-------------------
+ml = 500  (maximum sentence length)
+
+No. of iterations:
+-------------------
+hmmiterations = -1  (mh)
+model1iterations = 6  (number of iterations for Model 1)
+model2iterations = 0  (number of iterations for Model 2)
+model3iterations = 0  (number of iterations for Model 3)
+model4iterations = 0  (number of iterations for Model 4)
+model5iterations = 0  (number of iterations for Model 5)
+model6iterations = 0  (number of iterations for Model 6)
+
+parameter for various heuristics in GIZA++ for efficient training:
+------------------------------------------------------------------
+countincreasecutoff = 1e-06  (Counts increment cutoff threshold)
+countincreasecutoffal = 1e-05  (Counts increment cutoff threshold for alignments in training of fertility models)
+mincountincrease = 1e-07  (minimal count increase)
+peggedcutoff = 0.03  (relative cutoff probability for alignment-centers in pegging)
+probcutoff = 1e-07  (Probability cutoff threshold for lexicon probabilities)
+probsmooth = 1e-07  (probability smoothing (floor) value )
+
+parameters for describing the type and amount of output:
+-----------------------------------------------------------
+compactalignmentformat = 0  (0: detailled alignment format, 1: compact alignment format )
+hmmdumpfrequency = 0  (dump frequency of HMM)
+l = 2014-04-25.160312.ypetinot.log  (log file name)
+log = 0  (0: no logfile; 1: logfile)
+model1dumpfrequency = 0  (dump frequency of Model 1)
+model2dumpfrequency = 0  (dump frequency of Model 2)
+model345dumpfrequency = 0  (dump frequency of Model 3/4/5)
+nbestalignments = 0  (for printing the n best alignments)
+nodumps = 0  (1: do not write any files)
+o = /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dic  (output file prefix)
+onlyaldumps = 0  (1: do not write any files)
+outputpath =   (output path)
+transferdumpfrequency = 0  (output: dump of transfer from Model 2 to 3)
+verbose = 0  (0: not verbose; 1: verbose)
+verbosesentence = -10  (number of sentence for which a lot of information should be printed (negative: no output))
+
+parameters describing input files:
+----------------------------------
+c = /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dmoz.ocelot.giza.snt  (training corpus file name)
+d =   (dictionary file name)
+s = /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dmoz.ocelot.source.vocabulary  (source vocabulary file name)
+t = /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dmoz.ocelot.output.vocabulary  (target vocabulary file name)
+tc =   (test corpus file name)
+
+smoothing parameters:
+---------------------
+emalsmooth = 0.2  (f-b-trn: smoothing factor for HMM alignment model (can be ignored by -emSmoothHMM))
+model23smoothfactor = 0  (smoothing parameter for IBM-2/3 (interpolation with constant))
+model4smoothfactor = 0.2  (smooting parameter for alignment probabilities in Model 4)
+model5smoothfactor = 0.1  (smooting parameter for distortion probabilities in Model 5 (linear interpolation with constant))
+nsmooth = 64  (smoothing for fertility parameters (good value: 64): weight for wordlength-dependent fertility parameters)
+nsmoothgeneral = 0  (smoothing for fertility parameters (default: 0): weight for word-independent fertility parameters)
+
+parameters modifying the models:
+--------------------------------
+compactadtable = 1  (1: only 3-dimensional alignment table for IBM-2 and IBM-3)
+deficientdistortionforemptyword = 0  (0: IBM-3/IBM-4 as described in (Brown et al. 1993); 1: distortion model of empty word is deficient; 2: distoriton model of empty word is deficient (differently); setting this parameter also helps to avoid that during IBM-3 and IBM-4 training too many words are aligned with the empty word)
+depm4 = 76  (d_{=1}: &1:l, &2:m, &4:F, &8:E, d_{>1}&16:l, &32:m, &64:F, &128:E)
+depm5 = 68  (d_{=1}: &1:l, &2:m, &4:F, &8:E, d_{>1}&16:l, &32:m, &64:F, &128:E)
+emalignmentdependencies = 2  (lextrain: dependencies in the HMM alignment model.  &1: sentence length; &2: previous class; &4: previous position;  &8: French position; &16: French class)
+emprobforempty = 0.4  (f-b-trn: probability for empty word)
+
+parameters modifying the EM-algorithm:
+--------------------------------------
+m5p0 = -1  (fixed value for parameter p_0 in IBM-5 (if negative then it is determined in training))
+manlexfactor1 = 0  ()
+manlexfactor2 = 0  ()
+manlexmaxmultiplicity = 20  ()
+maxfertility = 10  (maximal fertility for fertility models)
+p0 = -1  (fixed value for parameter p_0 in IBM-3/4 (if negative then it is determined in training))
+pegging = 0  (0: no pegging; 1: do pegging)
+
+general parameters:
+-------------------
+ml = 500  (maximum sentence length)
+
+No. of iterations:
+-------------------
+hmmiterations = -1  (mh)
+model1iterations = 6  (number of iterations for Model 1)
+model2iterations = 0  (number of iterations for Model 2)
+model3iterations = 0  (number of iterations for Model 3)
+model4iterations = 0  (number of iterations for Model 4)
+model5iterations = 0  (number of iterations for Model 5)
+model6iterations = 0  (number of iterations for Model 6)
+
+parameter for various heuristics in GIZA++ for efficient training:
+------------------------------------------------------------------
+countincreasecutoff = 1e-06  (Counts increment cutoff threshold)
+countincreasecutoffal = 1e-05  (Counts increment cutoff threshold for alignments in training of fertility models)
+mincountincrease = 1e-07  (minimal count increase)
+peggedcutoff = 0.03  (relative cutoff probability for alignment-centers in pegging)
+probcutoff = 1e-07  (Probability cutoff threshold for lexicon probabilities)
+probsmooth = 1e-07  (probability smoothing (floor) value )
+
+parameters for describing the type and amount of output:
+-----------------------------------------------------------
+compactalignmentformat = 0  (0: detailled alignment format, 1: compact alignment format )
+hmmdumpfrequency = 0  (dump frequency of HMM)
+l = 2014-04-25.160312.ypetinot.log  (log file name)
+log = 0  (0: no logfile; 1: logfile)
+model1dumpfrequency = 0  (dump frequency of Model 1)
+model2dumpfrequency = 0  (dump frequency of Model 2)
+model345dumpfrequency = 0  (dump frequency of Model 3/4/5)
+nbestalignments = 0  (for printing the n best alignments)
+nodumps = 0  (1: do not write any files)
+o = /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dic  (output file prefix)
+onlyaldumps = 0  (1: do not write any files)
+outputpath =   (output path)
+transferdumpfrequency = 0  (output: dump of transfer from Model 2 to 3)
+verbose = 0  (0: not verbose; 1: verbose)
+verbosesentence = -10  (number of sentence for which a lot of information should be printed (negative: no output))
+
+parameters describing input files:
+----------------------------------
+c = /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dmoz.ocelot.giza.snt  (training corpus file name)
+d =   (dictionary file name)
+s = /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dmoz.ocelot.source.vocabulary  (source vocabulary file name)
+t = /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dmoz.ocelot.output.vocabulary  (target vocabulary file name)
+tc =   (test corpus file name)
+
+smoothing parameters:
+---------------------
+emalsmooth = 0.2  (f-b-trn: smoothing factor for HMM alignment model (can be ignored by -emSmoothHMM))
+model23smoothfactor = 0  (smoothing parameter for IBM-2/3 (interpolation with constant))
+model4smoothfactor = 0.2  (smooting parameter for alignment probabilities in Model 4)
+model5smoothfactor = 0.1  (smooting parameter for distortion probabilities in Model 5 (linear interpolation with constant))
+nsmooth = 64  (smoothing for fertility parameters (good value: 64): weight for wordlength-dependent fertility parameters)
+nsmoothgeneral = 0  (smoothing for fertility parameters (default: 0): weight for word-independent fertility parameters)
+
+parameters modifying the models:
+--------------------------------
+compactadtable = 1  (1: only 3-dimensional alignment table for IBM-2 and IBM-3)
+deficientdistortionforemptyword = 0  (0: IBM-3/IBM-4 as described in (Brown et al. 1993); 1: distortion model of empty word is deficient; 2: distoriton model of empty word is deficient (differently); setting this parameter also helps to avoid that during IBM-3 and IBM-4 training too many words are aligned with the empty word)
+depm4 = 76  (d_{=1}: &1:l, &2:m, &4:F, &8:E, d_{>1}&16:l, &32:m, &64:F, &128:E)
+depm5 = 68  (d_{=1}: &1:l, &2:m, &4:F, &8:E, d_{>1}&16:l, &32:m, &64:F, &128:E)
+emalignmentdependencies = 2  (lextrain: dependencies in the HMM alignment model.  &1: sentence length; &2: previous class; &4: previous position;  &8: French position; &16: French class)
+emprobforempty = 0.4  (f-b-trn: probability for empty word)
+
+parameters modifying the EM-algorithm:
+--------------------------------------
+m5p0 = -1  (fixed value for parameter p_0 in IBM-5 (if negative then it is determined in training))
+manlexfactor1 = 0  ()
+manlexfactor2 = 0  ()
+manlexmaxmultiplicity = 20  ()
+maxfertility = 10  (maximal fertility for fertility models)
+p0 = -1  (fixed value for parameter p_0 in IBM-3/4 (if negative then it is determined in training))
+pegging = 0  (0: no pegging; 1: do pegging)
+
+reading vocabulary files 
+Source vocabulary list has 6533 unique tokens 
+Target vocabulary list has 65438 unique tokens 
+Calculating vocabulary frequencies from corpus /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dmoz.ocelot.giza.snt
+Reading more sentence pairs into memory ... 
+Corpus fits in memory, corpus has: 6078 sentence pairs.
+ Train total # sentence pairs (weighted): 6078
+Size of source portion of the training corpus: 103961 tokens
+Size of the target portion of the training corpus: 215502 tokens 
+In source portion of the training corpus, only 2524 unique tokens appeared
+In target portion of the training corpus, only 10359 unique tokens appeared
+lambda for PP calculation in IBM-1,IBM-2,HMM:= 215502/(110039-6078)== 2.07291
+==========================================================
+Model1 Training Started at: Fri Apr 25 16:03:16 2014
+
+-----------
+Model1: Iteration 1
+Model1: (1) TRAIN CROSS-ENTROPY 16.3507 PERPLEXITY 83571.4
+Model1: (1) VITERBI TRAIN CROSS-ENTROPY inf PERPLEXITY inf
+Model 1 Iteration: 1 took: 1 seconds
+-----------
+Model1: Iteration 2
+Model1: (2) TRAIN CROSS-ENTROPY 6.69519 PERPLEXITY 103.623
+Model1: (2) VITERBI TRAIN CROSS-ENTROPY inf PERPLEXITY inf
+Model 1 Iteration: 2 took: 0 seconds
+-----------
+Model1: Iteration 3
+Model1: (3) TRAIN CROSS-ENTROPY 6.27552 PERPLEXITY 77.4675
+Model1: (3) VITERBI TRAIN CROSS-ENTROPY inf PERPLEXITY inf
+Model 1 Iteration: 3 took: 1 seconds
+-----------
+Model1: Iteration 4
+Model1: (4) TRAIN CROSS-ENTROPY 6.11163 PERPLEXITY 69.1485
+Model1: (4) VITERBI TRAIN CROSS-ENTROPY inf PERPLEXITY inf
+Model 1 Iteration: 4 took: 1 seconds
+-----------
+Model1: Iteration 5
+Model1: (5) TRAIN CROSS-ENTROPY 6.03502 PERPLEXITY 65.5726
+Model1: (5) VITERBI TRAIN CROSS-ENTROPY inf PERPLEXITY inf
+Model 1 Iteration: 5 took: 0 seconds
+-----------
+Model1: Iteration 6
+Model1: (6) TRAIN CROSS-ENTROPY 5.99357 PERPLEXITY 63.7154
+Model1: (6) VITERBI TRAIN CROSS-ENTROPY inf PERPLEXITY inf
+Model 1 Iteration: 6 took: 1 seconds
+Entire Model1 Training took: 4 seconds
+Writing PERPLEXITY report to: /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dic.perp
+Writing source vocabulary list to : /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dic.trn.src.vcb
+Writing source vocabulary list to : /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dic.trn.trg.vcb
+Writing source vocabulary list to : /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dic.tst.src.vcb
+Writing source vocabulary list to : /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/summarizers/ocelot/build/dic.tst.trg.vcb
+
+Entire Training took: 10 seconds
+Program Finished at: Fri Apr 25 16:03:22 2014
+
+==========================================================

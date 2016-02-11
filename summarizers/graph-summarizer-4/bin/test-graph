@@ -1,0 +1,22 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+foreach my $testing_entry (@{ $testing_entries }) {
+
+    my $target_url_content = $target_entry->get_field( 'content.phrases' );
+    my $target_url_content_paths = _extract_paths( $target_url_content );
+
+    # Plug target content into gist graph
+    print STDERR ">> generating gist graph for $target_url ...\n";
+
+    # 1 - modify graph to introduce paths from target URL data
+    # 4 - populate graph with target content paths
+    foreach my $target_url_content_path (@{ $target_url_content_paths }) {
+	_insert_path( $gist_graph , $target_url , $target_url_content_path );
+    } 
+
+}
+
+1;

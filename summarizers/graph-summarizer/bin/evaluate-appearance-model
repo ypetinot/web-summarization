@@ -1,0 +1,100 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use GistModel;
+
+use JSON;
+
+sub usage() {
+    return "Usage: $0 <data-root> <model-root> <run-data>";
+}
+
+if ( scalar(@ARGV) != 5 ) {
+    die usage();
+}
+
+my $category_base    = $ARGV[0];
+my $data_root        = $ARGV[1];
+my $system_id        = $ARGV[2];
+my $run_data         = $ARGV[3];
+my $model_root       = $ARGV[4];
+
+# load fold
+my $category_data_fold = Category::Fold->restore( $category_base , $data_root );
+
+# load gist graph
+my $gist_graph = GistGraph->restore( $category_data_fold , $model_root );
+
+# load model in order to revert chunk to node mapping
+my $gist_model = new GistModel( gist_graph => $gist_graph , raw_data => $category_data_fold , model_root => $model_root );
+
+# load evaluation data
+my %test_summaries;
+my %test_instances;
+my $_test_instances = $gist_model->raw_data()->get_test_url_data();
+foreach my $test_instance (@{ $_test_instances }) {
+    my $test_instance_data = $test_instance->get_data();
+    $test_summaries{ $test_instance->{ 'url' } } = $gist_model->raw_data()->category_data()->summaries()->[ $test_instance->{ 'index' } ];
+    $test_instances{ $test_instance->{ 'url' } } = $test_instance->prepare_data( $gist_model->raw_data()->chunks() );
+}
+
+# process run data
+open RUN_DATA, $run_data or die "Unable to open run data file ($run_data): $!";
+while ( <RUN_DATA> ) {
+
+    chomp;
+
+    # parse run data
+    my @run_data_fields = split /\t/, $_;
+    my $url = shift @run_data_fields;
+    my $generated_gist = shift @run_data_fields;
+    my $system_id = shift @run_data_fields;
+    my $appearance_model_id = shift @run_data_fields;
+    my $serialized_gist_data = shift @run_data_fields;
+    my $serialized_model_state = shift @run_data_fields;
+
+    # load model state in order to get appearance data for individual nodes
+    my $model_state = decode_json( $serialized_model_state );
+    my $nodes_status = $model_state->{'appearance-model-state'}->{'nodes-status'};
+
+    my $test_summary = $test_summaries{ $url };
+
+    # evaluate reference appearance model
+    if ( ! $gist_model->set_appearance_model( 'GistGraph::AppearanceModel::Perfect' , {} ) ) {
+	die "Unable to set Perfect appearance model ...\n";
+    }
+
+    # apply (Perfect) appearance model
+    my $gist = $gist_model->apply( $test_instances{ $url } );
+
+    # compute actual PR stats
+    foreach my $node ( values( %{ $gist_model->gist_graph()->nodes() } ) ) {
+
+	my $node_id = $node->id();
+	my $node_count = $node->count();
+	my $node_status = $nodes_status->{ $node_id };
+	my $node_genericity = $node->genericity();
+	my $node_label = $node->has_label( $GistGraph::FLAG_GENERIC ) ? $GistGraph::FLAG_GENERIC : ( $node->has_label( $GistGraph::FLAG_SPECIFIC ) ? $GistGraph::FLAG_SPECIFIC : "" );
+
+	# Ground-truth
+	my $appears_in_summary = $gist_model->np_appearance_model()->get_probability( $node_id );
+
+	# Was the original chunk known ?
+	my $from_known_chunk = $gist_model->np_appearance_model()->is_known( $node_id );
+	$nodes_status ||= $nodes_status->{ $from_known_chunk } || 0;
+
+	print join("\t", $model_root, $url, $appearance_model_id, $node_id, $node_count, $node_genericity, $node_label, $from_known_chunk, $appears_in_summary, $node_status) . "\n";
+
+    }
+    
+}
+close RUN_DATA;
+
+1;

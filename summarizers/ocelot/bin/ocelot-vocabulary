@@ -1,0 +1,99 @@
+#!/usr/bin/env perl
+
+# prepares data according to Giza++ data format
+
+use strict;
+use warnings;
+
+binmode(STDIN, ":encoding(utf8)");
+binmode(STDOUT, ":utf8");
+
+use FindBin;
+use lib "$FindBin::Bin/../../../src/perl/";
+use lib "$FindBin::Bin/../../../third-party/local/lib/";
+
+use List::MoreUtils qw/pairwise/;
+
+use Vocabulary;
+
+# set autoflush
+$| = 1;
+
+# This script handles the training of the OCELOT summarization model
+# Given an input file containing the (DMOZ) training data (2-column tab-separated file), outputs 3 files: source vocabulary file, output vocabulary file, and translation table.
+
+if ( scalar(@ARGV) != 5 ) {
+   die "Usage: $0 <output_dir> <source_mapped_data> <source_vocabulary> <output_mapped_data> <output_vocabulary>";
+}
+
+my $output_dir = $ARGV[0];
+my $source_mapped_data_file = $ARGV[1];
+my $source_vocabulary_file = $ARGV[2];
+my $output_mapped_data_file = $ARGV[3];
+my $output_vocabulary_file = $ARGV[4];
+
+# load source vocabulary
+my $source_vocabulary = Vocabulary->load($source_vocabulary_file);
+
+# load output vocabulary
+my $output_vocabulary = Vocabulary->load($output_vocabulary_file);
+
+# files that will be produced by this script
+my $source_vocabulary_file_out = join("/", $output_dir, "ocelot.vocabulary.source.vcb");
+my $output_vocabulary_file_out = join("/", $output_dir, "ocelot.vocabulary.output.vcb");
+
+# open mapped data files
+open SOURCE_MAPPED_DATA, $source_mapped_data_file or die "Unable to open data file $source_mapped_data_file: $!";
+open OUTPUT_MAPPED_DATA, $output_mapped_data_file or die "Unable to open data file $output_mapped_data_file: $!";
+
+while ( defined(my $line_source = <SOURCE_MAPPED_DATA>) && defined(my $line_output = <OUTPUT_MAPPED_DATA>) ) {
+    
+    chomp $line_source;
+    chomp $line_output;
+
+    print "1\n";
+    print "$line_source\n";
+    print "$line_output\n";
+
+}
+
+# close mapped data files
+close OUTPUT_MAPPED_DATA;
+close SOURCE_MAPPED_DATA;
+
+my $line_count = 0;
+
+# produce source vocabulary
+#print "writing out source vocabulary ...\n";
+#produce_vocabulary_file($source_vocabulary, $source_vocabulary_file_out);
+
+# produce output vocabulary
+#print "writing out output vocabulary ...\n";
+#produce_vocabulary_file($output_vocabulary, $output_vocabulary_file_out);
+
+sub produce_vocabulary_file {
+
+    my $vocabulary = shift;
+    my $occurrences = shift;
+    my $target_vocabulary_size = shift;
+    my $vocabulary_file_out = shift;
+
+    # select target vocabulary
+    my @sorted_vocabulary = sort { $occurrences->{$b} <=> $occurrences->{$a} } keys(%{$occurrences});
+
+    # write out source vocabulary
+    open VOCABULARY, ">:utf8", $vocabulary_file_out or die "[$0] Unable to create vocabulary file: $!";
+    for ( my $i = 1; $i <= scalar(@sorted_vocabulary); $i++ ) {
+	my $current_word_id = $sorted_vocabulary[$i -1];
+	my $word = $vocabulary->get_word( $current_word_id );
+	my $n_occurrences = $occurrences->{$current_word_id};
+	if ( ! $n_occurrences ) {
+	    die "Unknown source token: $word";
+	}
+	print VOCABULARY join(" ", $i, $word, $n_occurrences) . "\n";
+    }
+    close VOCABULARY;
+
+}
+
+1;

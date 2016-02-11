@@ -1,0 +1,686 @@
+	{
+	"filippova-basic": {
+		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					  "enable_precomputed_slots": 1,
+		    						  "filter_length": 8,
+								  "edge_model": "WordGraph::EdgeModel::FilippovaBasicModel"
+								 }
+		}
+    	},
+	"filippova-basic-ranking-target-similarity": {
+		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			"enable_precomputed_slots": 1,
+		    	"filter_length": 8,
+			"edge_model": "WordGraph::EdgeModel::FilippovaBasicModel"
+			}
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity"
+    	},
+	"filippova-basic-ranking-target-similarity-no-filtering-1": {
+		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+	  		 "enable_precomputed_slots": 1,
+		    	 "no_filtering": 1,
+			 "reference_construction_limit": 1,
+			 "edge_model": "WordGraph::EdgeModel::FilippovaBasicModel"
+			}
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity"
+    	},
+	"filippova-basic-ranking-target-similarity-no-filtering-2": {
+		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					   "enable_precomputed_slots": 1,
+			   					   "no_filtering": 1,
+			 					   "reference_construction_limit": 2,
+								   "edge_model": "WordGraph::EdgeModel::FilippovaBasicModel"
+			 }
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity"
+    	},
+	"filippova-basic-no-min-length": {
+		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					   "enable_precomputed_slots": 1,
+								   "filter_length": 0,
+								   "edge_model": "WordGraph::EdgeModel::FilippovaBasicModel"
+								   }
+		}
+    	},
+	"filippova-basic-no-filtering": {
+		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					   "enable_precomputed_slots": 1,
+								   "no_filtering": 1,
+								   "edge_model": "WordGraph::EdgeModel::FilippovaBasicModel"
+								   }
+		},
+    	},
+	"filippova-improved": {
+    		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					   "enable_precomputed_slots": 1,
+								   "filter_length": 8,
+								   "edge_model": "WordGraph::EdgeModel::FilippovaImprovedModel"
+								   }
+		}
+    	},
+	"filippova-improved-ranking-target-similarity-no-filtering-1": {
+    		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					   "enable_precomputed_slots": 1,
+								   "no_filtering": 1,
+								   "reference_construction_limit": 1,
+								   "edge_model": "WordGraph::EdgeModel::FilippovaImprovedModel"
+								   }
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity"
+    	},
+	"filippova-improved-ranking-target-similarity-no-filtering-2": {
+    		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					   "enable_precomputed_slots": 1,
+								   "no_filtering": 1,
+								   "reference_construction_limit": 2,
+								   "edge_model": "WordGraph::EdgeModel::FilippovaImprovedModel"
+								   }
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity"
+    	},
+	"filippova-improved-no-min-length": {
+    		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					   "enable_precomputed_slots": 1,
+								   "filter_length": 0,
+								   "edge_model": "WordGraph::EdgeModel::FilippovaImprovedModel"
+								   }
+		}
+    	},
+	"filippova-improved-no-filtering": {
+    		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					   "enable_precomputed_slots": 1,
+								   "no_filtering": 1,
+								   "edge_model": "WordGraph::EdgeModel::FilippovaImprovedModel"
+								   }
+		}
+    	},
+	"wg-baseline-retrieval": {
+		"roles": { "WordGraph::Decoder::ExactDecoder": {
+			   				       "reference_construction_limit": 1,
+							       "edge_model": "WordGraph::EdgeModel::LinearModel"
+							       }
+		},
+		"reference_collector_class": "WordGraph::ReferenceCollector::SignatureIndexCollector",
+		"reference_collector_params": {
+			"index_query_field": "content_rendered"
+		},
+		"reference_selecter": "WordGraph::ReferenceSelecter"
+	},
+	# Note : should always be the best current ranking configuration => 06/01 => CombinedRelevance + content index
+	"graph4-baseline-ranking": {
+		"roles": { "WordGraph::Decoder::ExactDecoder": {
+			   				       "reference_construction_limit": 1,
+							       "edge_model": "WordGraph::EdgeModel::LinearModel"
+							       }
+		},
+# CURRENT
+		"reference_collector_class": "WordGraph::ReferenceCollector::SignatureIndexCollector",
+####		"reference_collector_class": "WordGraph::ReferenceCollector::CategorySignatureIndexCollector",
+		"reference_collector_params": {
+# NEXT : add proper anchortext support
+# TODO : use consistent field names ?
+#			"index_query_field": "content_rendered"
+			"index_query_field": "description"
+		},
+#		"reference_ranker_class": "WordGraph::ReferenceRanker::ReferenceTargetJointProbability",
+		"reference_ranker_class": "WordGraph::ReferenceRanker::CombinedRelevance",
+		"reference_ranker_params": {
+					   	"component_rankers_configuration": [
+											[ "WordGraph::ReferenceRanker::ReferenceTargetJointProbability" , { "similarity_field" : "content"      } ],
+											[ "WordGraph::ReferenceRanker::ReferenceTargetJointProbability" , { "similarity_field" : "title"        } ],
+											[ "WordGraph::ReferenceRanker::ReferenceTargetJointProbability" , { "similarity_field" : "url"          } ],
+											[ "WordGraph::ReferenceRanker::ReferenceTargetJointProbability" , { "similarity_field" : "anchortext"   } ],
+									      	]
+					   }
+	},
+	"graph4-adaptation-extractive": {
+		"base": "graph4-baseline-ranking",
+# CURRENT
+		"target_adapter_class": "TargetAdapter::LocalMapping::SimpleTargetAdapter",
+###		"target_adapter_class": "TargetAdapter::LocalMapping::TrainedTargetAdapter",
+		"target_adapter_params": {
+					 "model_base": "/proj/fluke/users/ypetinot/ocelot/svn-research/trunk/services/lm-service/appearance-model/",
+					 "probability_threshold_appearance": 0.5,
+					 "do_compression": 1,
+					 "do_slot_optimization": 1,
+					 "output_learning_data": 1,
+					 "decoding_mode": "hungarian"
+		},
+#		"target_adapter_post_compression": 1
+	},
+	"graph4-adaptation-extractive-trained": {
+		"base": "graph4-baseline-ranking",
+		"target_adapter_class": "TargetAdapter::LocalMapping::TrainedTargetAdapter",
+		"target_adapter_params": {
+					 "model_base": "/proj/fluke/users/ypetinot/ocelot/svn-research/trunk/services/lm-service/appearance-model/",
+					 "probability_threshold_appearance": 0.5,
+					 "do_compression": 1,
+					 "do_slot_optimization": 1,
+					 "output_learning_data": 1,
+					 "decoding_mode": "hungarian"
+		},
+	},
+	"graph4-adaptation-extractive-viterbi": {
+		"base": "graph4-adaptation-extractive",
+		"target_adapter_params": {
+					 "decoding_mode": "viterbi"
+		}
+	},
+	"graph4-adaptation-extractive-hungarian": {
+		"base": "graph4-adaptation-extractive",
+		"target_adapter_params": {
+					 "decoding_mode": "hungarian"
+		}
+	},
+	"graph4-adaptation-extractive-hungarian-known-category": {
+		"base": "graph4-adaptation-extractive-hungarian",
+		"reference_collector_class": "WordGraph::ReferenceCollector::CategoryOracleCollector",
+		"reference_ranker_params": {
+					   "max_count": 20
+		}
+	},
+	"graph4-adaptation-extractive-hungarian-reranked": {
+		"base": "graph4-adaptation-extractive-hungarian",
+		"target_adapter_post_ranking": 1
+	},
+	"graph4-adaptation-extractive-hungarian-reranked-oracle": {
+		"base": "graph4-adaptation-extractive-hungarian-reranked",
+		"target_adapter_post_ranking_oracle": "WordGraph::ReferenceRanker::SymmetricTargetSimilarity"
+	},
+	"graph4-adaptation-abstractive-reranked": {
+		"base": "graph4-adaptation-abstractive",
+		"target_adapter_post_ranking": 1
+	},
+	"graph4-adaptation-abstractive-category-oracle-reranked": {
+		"base": "graph4-adaptation-abstractive",
+		"reference_collector_class": "WordGraph::ReferenceCollector::CategoryOracleCollector",
+		"reference_ranker_params": {
+					   "max_count": 20
+		},
+		"target_adapter_post_ranking": 1
+	},
+	"graph4-adaptation-extractive-retrieval-oracle": {
+		"base": "graph4-adaptation-extractive",
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SymmetricTargetSimilarity",
+		"reference_ranker_params": {
+					   "similarity_field": "summary",
+					   "use_lcs_similarity": 1
+		}
+	},
+	"graph4-adaptation-extractive-retrieval-oracle-trained": {
+		"base": "graph4-adaptation-extractive-trained",
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SymmetricTargetSimilarity",
+		"reference_ranker_params": {
+					   "similarity_field": "summary",
+					   "use_lcs_similarity": 1
+		}
+	},
+	"graph4-adaptation-extractive-category-oracle": {
+		"base": "graph4-adaptation-extractive-retrieval-oracle",
+		"reference_collector_class": "WordGraph::ReferenceCollector::CategoryOracleCollector",
+		"reference_ranker_params": {
+					   "max_count": 20
+		}
+	},
+	"graph4-adaptation-extractive-category-oracle-trained": {
+		"base": "graph4-adaptation-extractive-retrieval-oracle-trained",
+		"reference_collector_class": "WordGraph::ReferenceCollector::CategoryOracleCollector",
+		"reference_ranker_params": {
+					   "max_count": 20
+		}
+	},
+	"graph4-adaptation-extractive-category-oracle-reranked": {
+		"base": "graph4-adaptation-extractive-category-oracle",
+		"target_adapter_post_ranking_oracle": "WordGraph::ReferenceRanker::SymmetricTargetSimilarity",
+		"target_adapter_post_ranking": 1
+	},
+	"graph4-baseline-ranking-combined": {
+		"base" : "graph4-baseline-ranking",
+		"reference_ranker_class": "WordGraph::ReferenceRanker::CombinedRelevance",
+		"reference_ranker_params": {
+						# TODO : add per-ranker weight
+					   	"component_rankers_configuration": [
+										[ "WordGraph::ReferenceRanker::SymmetricTargetSimilarity" , { "similarity_field" : "content"      } ],
+										[ "WordGraph::ReferenceRanker::SymmetricTargetSimilarity" , { "similarity_field" : "title"        } ],
+										[ "WordGraph::ReferenceRanker::SymmetricTargetSimilarity" , { "similarity_field" : "url"          } ],
+										[ "WordGraph::ReferenceRanker::SymmetricTargetSimilarity" , { "similarity_field" : "anchortext"   } ],
+									      ]
+					   }
+	},
+	"graph4-joint-ranking-combined": {
+		"base" : "graph4-baseline-ranking",
+		"reference_ranker_class": "WordGraph::ReferenceRanker::CombinedRelevance",
+		"reference_ranker_params": {
+						# TODO : add per-ranker weight
+					   	"component_rankers_configuration": [
+										[ "WordGraph::ReferenceRanker::ReferenceTargetJointProbability" , { "similarity_field" : "content"      } ],
+										[ "WordGraph::ReferenceRanker::ReferenceTargetJointProbability" , { "similarity_field" : "title"        } ],
+										[ "WordGraph::ReferenceRanker::ReferenceTargetJointProbability" , { "similarity_field" : "url"          } ],
+										[ "WordGraph::ReferenceRanker::ReferenceTargetJointProbability" , { "similarity_field" : "anchortext"   } ],
+									      ]
+					   }
+	},
+# TODO : turn ranker component into a role so that the corresponding parameter ranges can be configured specifically
+	"title-ranking": {
+		"roles": { "WordGraph::Decoder::ExactDecoder": {
+			   				       "reference_construction_limit": 1,
+							       "edge_model": "WordGraph::EdgeModel::LinearModel"
+							       }
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity",
+		"reference_selecter": "WordGraph::ReferenceSelecter",
+		"reference_ranker_params": {
+					   "similarity_field": "title"
+		}
+	},
+	"graph4": {
+		"base": "graph4-baseline-ranking",
+		"roles": { 
+			 "WordGraph::Decoder::ExactDecoder": {
+#			 					  "beam_size": 10,
+#								  "use_early_update": 0,
+#								  "use_shortest_path": 1,
+								  "reference_construction_limit": 2,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel",
+								  "word_graph_transformations": []
+			}
+		},
+		"reference_collector_class": "WordGraph::ReferenceCollector::SignatureIndexCollector",
+		"reference_collector_params": {
+			"index_query_field": "description"
+		},
+    	 	"learner_class": "Learner::StructuredPerceptronLearner",
+		"learner_params": {
+			"iterations": 10,
+			"averaged": 1
+		},
+	},
+	"graph4-edge-rtm": {
+		"roles": { 
+			 "WordGraph::Decoder::ExactDecoder": {
+#			 					  "beam_size": 10,
+#								  "use_early_update": 0,
+#								  "use_shortest_path": 1,
+								  "reference_construction_limit": 5,
+								  "edge_model": "WordGraph::EdgeModel::ReferenceTargetModel"
+#								  "edge_model": "WordGraph::EdgeModel::LinearModel"
+			}
+		},
+    	 	"learner_class": "Learner::StructuredPerceptronLearner",
+		"learner_params": {
+			"iterations": 10,
+			"averaged": 1
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SummaryRelevance"
+	},
+# TODO : does not use learning currently, maybe there is value in using the learning model instead ?
+	"graph4-overgenerate-rtm": {
+		"roles": { 
+			 "WordGraph::Decoder::ReferenceRerankingDecoder": {
+								  "reference_construction_limit": 5,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel"
+			}
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::ReferenceTargetJointProbability"
+	},
+	"graph4-adapted-overgenerate-rtm": {
+		"roles": { 
+			 "WordGraph::Decoder::ReferenceRerankingDecoder": {
+								  "reference_construction_limit": 5,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel"
+			}
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::ReferenceTargetJointProbability",
+		"target_adapter_class": "TargetAdapter::LocalMapping::ConfusionNetworkTargetAdapter",
+		"target_adapter_params": {
+						"target_aligner_class": "TargetAligner::RankingTargetAligner",
+					 	"target_aligner_params": {}
+					 }
+	},
+	"graph4-content": {
+		"roles": { 
+			 "WordGraph::Decoder::ReferenceRerankingDecoder": {
+								  "reference_construction_limit": 5,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel"
+								  },
+			 "Web::Extractor::ContentSentencesExtractor": { "min_length" : "5" }
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::ReferenceTargetJointProbability"
+	},
+	"graph4-context": {
+		"roles": { 
+			 "WordGraph::Decoder::ReferenceRerankingDecoder": {
+								  "reference_construction_limit": 5,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel"
+								  },
+			 "Web::Extractor::ContextSentencesExtractor": { "min_length" : "5" }
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::ReferenceTargetJointProbability"
+	},
+	"graph4-meta": {
+		"roles": { 
+			 "WordGraph::Decoder::ReferenceRerankingDecoder": {
+								  "reference_construction_limit": 5,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel"
+								  },
+			 "Web::Extractor::MetaSentencesExtractor": {
+			 					   "min_length" : "5",
+								   "source" : "reference"
+								   }
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::ReferenceTargetJointProbability"
+	},
+	"graph4-adaptation-simple-ranking": {
+		"roles": { 
+			 "WordGraph::Decoder::ExactDecoder": {
+								  "reference_construction_limit": 1,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel",
+								  "word_graph_transformations": []
+			}
+		},
+		"reference_collector_class": "WordGraph::ReferenceCollector::SignatureIndexCollector",
+		"reference_collector_params": {
+			"index_query_field": "description"
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity",
+		"target_adapter_class": "TargetAdapter::LocalMapping::SimpleTargetAdapter",
+		"target_adapter_params": {
+						"target_aligner_class": "TargetAligner::RankingTargetAligner",
+					 	"target_aligner_params": {}
+					 }
+	},
+	"graph4-dev": {
+
+		"roles": { 
+			 "WordGraph::Decoder::ExactDecoder": {
+#			 					  "beam_size": 10,
+#								  "use_early_update": 0,
+#								  "use_shortest_path": 1,
+								  "reference_construction_limit": 1,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel",
+								  "word_graph_transformations": []
+			}
+		},
+
+		"reference_collector_class": "WordGraph::ReferenceCollector::SignatureIndexCollector",
+		"reference_collector_params": {
+# NEXT : add proper anchortext support
+# TOOD : use consistent field names ?
+			"index_query_field": "content_rendered"
+		},
+
+# TODO : genericity / tree score (?) ranking
+# TODO : ReferenceTargetJointProbability seems to produce a reversed ranking ?
+###		"reference_ranker_class": "WordGraph::ReferenceRanker::ReferenceTargetJointProbability",
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity",
+		"reference_ranker_params": {
+					   "similarity_field": "content"
+		},
+
+##		"target_adapter_class": "TargetAdapter::LocalMapping::GlobalScoreTargetAdapter", => not realistic, unless we use an efficient search algorithm
+		"target_adapter_class": "TargetAdapter::LocalMapping::SimpleTargetAdapter",
+#		"target_adapter_class": "TargetAdapter::LocalMapping::ConfusionNetworkTargetAdapter",
+#		"target_adapter_class": "TargetAdapter::TreeTargetAdapter",
+###		"target_adapter_class": "TargetAdapter::IlpTargetAdapter",
+###		"target_adapter_class": "TargetAdapter::MetropolisHastingsTargetAdapter",
+
+		"target_adapter_params": {
+					 "alignment_source": "title",
+#					 "target_aligner_class": "TargetAligner::RankingTargetAligner",
+##					 "target_aligner_class": "TargetAligner::HungarianTargetAligner",
+					 "model_base": "/proj/nlp/users/ypetinot/models/extractive-2015-05-09",
+					 "target_aligner_params": {}
+		},
+	},
+	"graph4-adaptation-tree-extractive": {
+		"roles": { 
+			 "WordGraph::Decoder::ExactDecoder": {
+#			 					  "beam_size": 10,
+#								  "use_early_update": 0,
+#								  "use_shortest_path": 1,
+								  "reference_construction_limit": 1,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel",
+								  "word_graph_transformations": []
+			}
+		},
+		"reference_collector_class": "WordGraph::ReferenceCollector::SignatureIndexCollector",
+		"reference_collector_params": {
+			"index_query_field": "content_rendered"
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity",
+		"target_adapter_class": "TargetAdapter::TreeTargetAdapter",
+		"target_adapter_params": {
+					 "alignment_source": "title",
+					 "target_aligner_class": "TargetAligner::HungarianTargetAligner",
+					 "target_aligner_params": {}
+		},
+	},
+	"graph4-adaptation-wordembedding": {
+		"roles": { 
+			 "WordGraph::Decoder::ExactDecoder": {
+								  "reference_construction_limit": 1,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel",
+								  "word_graph_transformations": []
+			}
+		},
+		"reference_collector_class": "WordGraph::ReferenceCollector::SignatureIndexCollector",
+		"reference_collector_params": {
+			#"index_query_field": "content_rendered"
+			"index_query_field": "description"
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::FieldBasedSupportRanker",
+		"target_adapter_class": "TargetAdapter::LocalMapping::SimpleTargetAdapter",
+		"target_adapter_params": {
+					 "alignment_source": "title",
+					 "target_aligner_class": "TargetAligner::WordEmbeddingTargetAligner",
+					 "target_aligner_params": {}
+		},
+	},
+	"graph4-adaptation-hungarian-simple": {
+		"roles": { 
+			 "WordGraph::Decoder::ExactDecoder": {
+								  "reference_construction_limit": 1,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel",
+								  "word_graph_transformations": []
+			}
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity",
+		"target_adapter_class": "TargetAdapter::LocalMapping::SimpleTargetAdapter",
+		"target_adapter_params": {
+					 "alignment_source": "title",
+					 "target_aligner_class": "TargetAligner::HungarianTargetAligner",
+					 "target_aligner_params": {}
+		},
+	},
+	"graph4-adaptation-hungarian": {
+		"roles": { 
+			 "WordGraph::Decoder::ExactDecoder": {
+								  "reference_construction_limit": 1,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel",
+								  "word_graph_transformations": []
+			}
+		},
+		"reference_collector_class": "WordGraph::ReferenceCollector::SignatureIndexCollector",
+		"reference_collector_params": {
+			"index_query_field": "description"
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::TargetSimilarity",
+		"target_adapter_class": "TargetAdapter::LocalMapping::SimpleTargetAdapter",
+		"target_adapter_params": {
+						"target_aligner_class": "TargetAligner::HungarianTargetAligner",
+					 	"target_aligner_params": {}
+					 }
+	},
+# TODO : new configuratio
+	"graph4-nearest-neighbors-fusion": {
+		"base": "graph4-adaptation-extractive",
+		"roles": {
+			 "WordGraph::Decoder::ExactDecoder": {
+								  "reference_construction_limit": 4,
+								  "edge_model": "WordGraph::EdgeModel::LinearModel",
+								  "word_graph_transformations": []
+			}
+		},
+		"target_adapter_params": {
+					 "decoding_mode": "hungarian"
+		},
+		"with_summary_fusion": 1
+	},
+	"graph4-path-cost-normalized": {
+		"decoder_class": "WordGraph::Decoder::FilippovaDecoder",
+		"decoder_params": {
+			"enable_precomputed_slots": 1,
+			"no_filtering": 1,
+			"reference_construction_limit": 2,
+			"edge_model": "WordGraph::EdgeModel::PathModel"
+		},
+		"learner_params": {
+			"assignment_mode": "min"
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SummaryRelevance"
+	},
+	"graph4-energy": {
+		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					   "enable_precomputed_slots": 1,
+								   "no_filtering": 1,
+								   "reference_construction_limit": 2,
+								   "edge_model": "WordGraph::EdgeModel::PathModel"
+								   }
+		},
+		"learner_params": {
+			"assignment_mode": "min"
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::ReferenceTargetJointProbability"
+	},
+	"graph4-energy-no-learning": {
+		"roles": { "WordGraph::Decoder::BeamSearchDecoder" : {
+			   					   "beam_size": 10,
+								   "use_early_update": 0,
+								   "use_shortest_path": 1,
+								   "reference_construction_limit": 2,
+								   "edge_model": "WordGraph::EdgeModel::PathModel"
+								   }
+		},
+		"learner_params": {
+			"assignment_mode": "min"
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::ReferenceTargetJointProbability"
+	},
+	"graph4-exact": {
+		"decoder_class": "WordGraph::Decoder::ExactDecoder",
+		"decoder_params": {
+			"reference_construction_limit": 2
+		},
+    	 	"learner_class": "Learner::StructuredPerceptronLearner",
+		"learner_params": {
+			"averaged": 1,
+			"iterations": 10
+		},
+    		"edge_cost_class": "WordGraph::EdgeCost::LinearCost",
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SummaryRelevance"
+	},
+	"graph4-optimal": {
+	        "graph_constructor": "WordGraph::GraphConstructor::OptimalGraphConstructor",
+		"decoder_class": "WordGraph::Decoder::BeamSearchDecoder",
+		"decoder_params": {
+			"beam_size": 10,
+			"use_early_update": 0,
+			"use_shortest_path": 1,
+			"reference_construction_limit": 2
+		},
+    	 	"learner_class": "Learner::StructuredPerceptronLearner",
+		"learner_params": {
+			"averaged": 1,
+			"iterations": 10
+		},
+    		"edge_cost_class": "WordGraph::EdgeCost::LinearCost",
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SummaryRelevance"
+	},
+	"graph4-oracle": {
+		"roles": { "WordGraph::Decoder::OracleDecoder": {
+			 "k": 50,
+			 "ngram_order_max": 3,
+			 "reference_construction_limit": 10
+			}
+		},
+    		"edge_cost_class": "WordGraph::EdgeCost::LinearCost",
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SummaryRelevance"
+	},
+	"graph4-simulated-annealing": {
+		"decoder_class": "WordGraph::Decoder::SimulatedAnnealingDecoder",
+		"decoder_params": {
+			"reference_construction_limit": 10
+		},
+    	 	"learner_class": "WordGraph::Learner",
+		"learner_params": {
+			"iterations": 100
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SummaryRelevance"
+	},
+	"graph4-filippova-conditioned": {
+		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			 "enable_precomputed_slots": 1,
+			 "no_filtering": 1,
+			 "reference_construction_limit": 2,
+			 "edge_model": "WordGraph::EdgeModel::FilippovaConditionedModel"
+			}
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SummaryRelevance"
+	},
+	"wg-baseline-ranking-max": {
+		"roles": { "WordGraph::Decoder::ExactDecoder": {
+			   				       "reference_construction_limit": 1,
+							       "edge_model": "WordGraph::EdgeModel::LinearModel"
+							       }
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SymmetricTargetSimilarity",
+		"reference_selecter": "WordGraph::ReferenceSelecter",
+		"reference_ranker_params": {
+					   "similarity_field": "summary",
+					   "reversed": 0,
+					   "use_lcs_similarity": 1
+		},
+		"reference_collector_params": {
+			"index_query_field": "description"
+		}
+	},
+	"wg-baseline-ranking-min": {
+		"roles": { "WordGraph::Decoder::ExactDecoder": {
+			   				       "reference_construction_limit": 1,
+							       "edge_model": "WordGraph::EdgeModel::LinearModel"
+							       }
+		},
+		"reference_ranker_class": "WordGraph::ReferenceRanker::SymmetricTargetSimilarity",
+		"reference_selecter": "WordGraph::ReferenceSelecter",
+		"reference_ranker_params": {
+					   "similarity_field": "summary",
+					   "reversed": 1,
+					   "use_lcs_similarity": 1
+		},
+		"reference_collector_params": {
+			"index_query_field": "content_rendered"
+		}
+	},
+# TODO => cannot use "base" and "roles" together if a decoder role is provided
+	"graph4-adaptation-filippova-basic": {
+#		"base": "graph4-adaptation-extractive",
+#		"base": "graph4-baseline-ranking",
+		"target_adapter_class": "TargetAdapter::LocalMapping::SimpleTargetAdapter",
+		"target_adapter_params": {
+					 "model_base": "/proj/fluke/users/ypetinot/ocelot/svn-research/trunk/services/lm-service/appearance-model/",
+					 "probability_threshold_appearance": 0.5,
+					 "do_compression": 1,
+					 "do_slot_optimization": 1,
+					 "output_learning_data": 1,
+					 "decoding_mode": "hungarian"
+		},
+		"roles": { "WordGraph::Decoder::FilippovaDecoder": {
+			   					  "enable_precomputed_slots": 1,
+		    						  "filter_length": 8,
+								  "edge_model": "WordGraph::EdgeModel::FilippovaBasicModel"
+								 }
+		}
+    	}
+}

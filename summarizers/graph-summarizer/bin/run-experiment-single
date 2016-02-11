@@ -1,0 +1,28 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+function get_fold_data {
+
+	 FOLD_PATH=$1;
+	 #FOLD_DATA=`echo ${FOLD_PATH} | sed 's/.models/\t/'`;
+	 FOLD_DATA=${FOLD_PATH}
+	 echo "${FOLD_DATA}"
+
+}
+
+cat - | while read CATEGORY_BASE CATEGORY_FOLD; do
+
+    # train
+    ${BINDIR}/generate-graph-model ${CATEGORY_BASE}.opt.graph.summary.chunks ${CATEGORY_FOLD}/summary.chunks.training ${CATEGORY_FOLD}/content.training ${CATEGORY_FOLD}/model/
+#2>/dev/null
+
+    # evaluate
+    EVALUATION_RESULT=`${BINDIR}/evaluate-graph-model ${CATEGORY_FOLD}/summary.testing ${CATEGORY_FOLD}/summary.chunks.testing ${CATEGORY_FOLD}/content.testing ${CATEGORY_FOLD}/model/ 2>/dev/null`
+
+    # output result
+    FOLD_DATA=`get_fold_data ${CATEGORY_FOLD}`;
+    echo "${FOLD_DATA}\t${EVALUATION_RESULT}";
+
+done;
+

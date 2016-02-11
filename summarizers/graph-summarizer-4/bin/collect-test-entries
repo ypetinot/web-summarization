@@ -1,0 +1,57 @@
+#!/usr/bin/env perl
+
+# split fold data for a given category
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Folds;
+
+use Digest::MD5 qw/md5_hex/;
+use File::Path qw/make_path/;
+use Getopt::Long;
+use List::MoreUtils qw/uniq/;
+use Pod::Usage;
+
+my $DEBUG = 0;
+
+my $fold_id = undef;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions(
+    'fold-id=s' => \$fold_id, 'help|?' => \$help, man => \$man, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if ( ! defined( $fold_id ) );
+pod2usage(-exitstatus => 0) if ( $#ARGV < 0 );
+
+# category base
+my $category_base = shift @ARGV;
+
+if ( ! -f $category_base ) {
+    die "Category base does not exist: $category_base";
+}
+
+# 1 - load fold
+my $fold = Category::Folds->new( 'category_data_base' => $category_base )->load()->get_fold( $fold_id );
+
+# 2 - get test data
+my $testing_entries = $fold->test_data();
+
+foreach my $testing_entry (@{ $testing_entries }) {
+
+    my $target_url = $testing_entry->url();
+    print join("\t", $target_url) . "\n";
+
+}
+
+1;

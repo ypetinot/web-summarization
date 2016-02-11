@@ -1,0 +1,116 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Getopt::Long;
+use Pod::Usage;
+
+my $target_range = undef;
+my $object_override = undef;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('target-range=i' => \$target_range, 'object=s' => \$object_override, 'help|?' => \$help, man => \$man, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+
+my %averaged;
+my $count = 0;
+
+my $previous_object = undef;
+my $current_object = undef;
+
+my @header_fields;
+
+$| = 1;
+
+my $category_range = undef;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+
+    my @fields = split /\t/, $line;
+
+    if ( ! defined( $category_range ) ) {
+	
+	my $i = 0;
+	while ( $fields[ $i ] !~ m/summary\./ && $i < scalar(@fields) ) {
+	    $i++;
+	}
+	$category_range = $i;
+
+    }
+
+    my @fields_range = splice @fields, 0, $category_range;
+    my $object = join("::",splice @fields_range, 0, ( $target_range || $category_range ));
+    if ( defined( $object_override ) ) {
+	$object = $object_override;
+	# print STDERR ">> Overriding object: $object\n";
+    }
+
+    $previous_object = $current_object;
+    $current_object = $object;
+
+    _do_output( $current_object , $previous_object );
+
+    foreach my $field (@fields) {
+	
+	my @subfields = split /:/, $field;
+	if ( scalar(@subfields) != 2 ) {
+	    next;
+	}
+	$averaged{ $subfields[ 0 ] } += $subfields[ 1 ];
+
+    }
+
+    $count++;
+
+}
+
+_do_output( $current_object , $previous_object , 1 );
+
+sub _do_output {
+
+    my $object = shift;
+    my $pobject = shift;
+    my $force = shift || 0;
+
+    if (
+	( defined( $object ) && defined( $pobject ) && ( $object ne $pobject ) ) ||
+	$force
+	) {
+
+	if ( $count ) {
+
+	    if ( ! scalar( @header_fields) ) {
+		@header_fields = sort { $a cmp $b } keys( %averaged );
+		print join("\t", 'object', @header_fields) . "\n";
+	    }
+
+	    map { $averaged{ $_ } /= $count; } keys( %averaged );
+	    print join("\t", $object, map { $averaged{ $_ }; } @header_fields ) . "\n";
+	    
+	}
+
+	print STDERR "New object: $object\n";
+
+	%averaged = ();
+	$count = 0;
+
+    }
+
+}
+
+1;

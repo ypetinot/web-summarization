@@ -1,0 +1,150 @@
+# Instantiate common manager
+my $graph_controller = new Web::Summarizer::Graph2( graph => $graph );
+
+# Observations is the URL and its associated content ? --> mapped to features ? what features ? factor nodes "appearance" costs with co-occurrence costs
+# edge_features = [ w_i appears in source , w_j appears in source , w_i is slot , w_i has candidate fillers (in title) , ... ] --> use appearance prior as bias + joint appearance prior as bias ?
+
+# 0 - read-in features definition
+# features such that affect edge weights only 
+# Features describe the input object and are specifically attached to the graph edges
+# Total number of features : N * E
+my ( $edge_features , $edge_features_definition ) = _load_features( $input_dir );
+my ( $object_features , $object_features_definition ) = _load_features( $object_dir );
+
+# x is a combination of edge-specific features and object-level features
+my %x;
+foreach my $url (keys(%{ $edge_features })) {
+
+    # Make sure there we have a matching object entry for each edge entry
+    if ( ! defined( $object_features->{ $url } ) ) {
+	die "Edge/Object features entries mismatch for URL $url ...";
+    }
+
+    $x{ $url } = { $Web::Summarizer::Graph2::Definitions::FEATURES_KEY_EDGE => $edge_features->{ $url } ,
+		   $Web::Summarizer::Graph2::Definitions::FEATURES_KEY_OBJECT => $object_features->{ $url } };
+
+}
+
+# 1 - read-in training samples
+# x --> raw/featurized data for target URL
+# y --> path in gist graph
+open TRAINING_DATA, $training_data_file or die "Unable to open training data file ($training_data_file) : $!";
+my %y;
+{
+    map {
+	chomp;
+	my @tokens = split /\t/, $_;
+	my $url = shift @tokens;
+	$y{ $url } = \@tokens;
+    } <TRAINING_DATA>;
+}
+close TRAINING_DATA;
+
+if ( ! scalar(keys(%x)) ) {
+    die "Invalid training data provided ...";
+}
+elsif ( scalar(keys(%x)) != scalar(keys(%y)) ) {
+    die "Invalid training data provided - sample paths do not match sample features ...";
+}
+
+# Load slot features
+my %fillers;
+if ( defined( $slot_features_file ) ) {
+    
+    open SLOT_FEATURES_FILE, $slot_features_file or die "Unable to open slot features file ($slot_features_file): $!";
+    while ( <SLOT_FEATURES_FILE> ) {
+	
+	chomp;
+	my @fields = split /\t/, $_;
+
+	if ( scalar(@fields) != 2 ) {
+	    next;
+	}
+
+	my $url = shift @fields;
+	my $fillers_json = shift @fields;
+
+	$fillers{ $url } = decode_json( $fillers_json );
+
+    }
+    close SLOT_FEATURES_FILE;
+
+}
+
+# 0 - compute reference features
+my %features_reference;
+my %graphs;
+my %y_activated;
+foreach my $url (keys(%x)) {
+
+    # Instantiate gist-graph for this instance
+    print STDERR "Specializing gist graph for $url --> ";
+    $graphs{ $url } = $graph_controller->specialize( $url , $x{ $url } , $fillers{ $url } );
+    print STDERR "[specialized] --> ";
+
+    # At this point the slot nodes should have been replaced with their actual - virtual - slot filler
+    # We get the activated path
+    $y_activated{ $url } = $graphs{ $url }->activate_path( $y{ $url } );
+
+    # Compute reference features for this instance
+    $features_reference{ $url } = $graphs{ $url }->_compute_path_features( $y_activated{ $url } , $params );
+    print STDERR "[done]\n";
+
+}
+
+sub _load_features {
+
+    my $input_dir = shift;
+
+    my $features_file = join("/", $input_dir, "features");
+    my $features_definitions_file = join("/", $input_dir, "features.definition");
+    my $features_types_file = join("/", $input_dir, "features.types");
+
+    open FEATURES, $features_file or die "Unable to open features file ($features_file) : $!";
+    my %x;
+    {
+	map {
+	    chomp;
+	    my @tokens = split /\t/, $_;
+	    my $url = shift @tokens;
+	    my $entry = decode_json( shift @tokens );
+	    $x{ $url } = $entry;
+	} <FEATURES>;
+    }
+    close FEATURES;
+
+    open FEATURES_DEFINITION, $features_definitions_file or die "Unable to open features definition file ($features_definitions_file) : $!";
+    my %feature_key_2_index;
+    my %feature_index_2_key;
+    while ( <FEATURES_DEFINITION> ) {
+	
+	chomp;
+	
+	my @fields = split /\t/, $_;
+	my $feature_key = shift @fields;
+	my $feature_index = shift @fields;
+
+	$feature_key_2_index{ $feature_key } = $feature_index;
+	$feature_index_2_key{ $feature_index } = $feature_key;
+	
+    }
+    close FEATURES_DEFINITION;
+    my @features_definition = keys( %feature_index_2_key );
+
+    my @features_types;
+    if ( -f $features_types_file ) {
+
+	open FEATURES_TYPES, $features_types_file or die "Unable to open training feature types file ($features_types_file): $!";
+	while ( <FEATURES_TYPES> ) {
+	    
+	    chomp;
+	    push @features_types, $_;
+	    
+	}
+	close FEATURES_TYPES;
+
+    }
+
+    return ( \%x , \@features_definition );
+
+}

@@ -1,0 +1,71 @@
+#!/usr/bin/env perl
+
+# Given a stream of (input object) features, produce queries towards the retrieval of reference objects
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, man => \$man, 'debug|d' => \$debug ) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+binmode(STDIN,':utf8');
+
+while( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+    my $features = shift @fields;
+
+    # 2 - retrieve reference objects
+    my $query = _generate_query( $features );
+
+    # 3 - output
+    print join("\t", $url, $query) . "\n";
+
+}
+
+# Generate query given a URL features
+sub _generate_query {
+
+    my $features_json = shift;
+
+    my $features = decode_json( $features_json );
+
+    # 1 - generate query
+    # TODO: this piece of code should be shared w/ the indexing process ... actually the same goes for the feature collection portion !
+    my $query = 'q=';
+    # content.rendered-ngram-1-29e917c735d3ad6a3e6c7af6b4baad91+content.rendered-ngram-1-d2f4c6b9a2a57586cfe886cb2e6d1cb0
+    my @elements;
+    foreach my $feature (keys( %{ $features } )) {
+	
+	my $feature_count = $features->{ $feature };
+	for ( my $i=0; $i<$feature_count; $i++ ) {
+	    push @elements, $feature;
+	}
+
+    }
+    $query .= join("+", @elements);
+    $query .= '&df=features&fl=url,category,description&rows=50&wt=json';
+
+    return $query;
+
+}
+
+1;

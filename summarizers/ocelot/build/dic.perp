@@ -1,0 +1,7 @@
+#trnsz	tstsz	iter	model	trn-pp		test-pp		trn-vit-pp		tst-vit-pp
+6078	0	0	Model1	83571.4		N/A		inf		N/A
+6078	0	1	Model1	103.623		N/A		inf		N/A
+6078	0	2	Model1	77.4675		N/A		inf		N/A
+6078	0	3	Model1	69.1485		N/A		inf		N/A
+6078	0	4	Model1	65.5726		N/A		inf		N/A
+6078	0	5	Model1	63.7154		N/A		inf		N/A

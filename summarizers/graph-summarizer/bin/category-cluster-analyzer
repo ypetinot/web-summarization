@@ -1,0 +1,219 @@
+#!/usr/bin/env perl
+
+# Perform hiearchical clustering within individual categories and analyze the resulting cluster set
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Data;
+use Clusterer::Hierarchical;
+use Algorithm::Diff qw(
+        LCS LCS_length LCSidx
+        diff sdiff compact_diff
+        traverse_sequences traverse_balanced );
+use Statistics::Descriptive;
+use Text::Trim;
+
+if ( scalar(@ARGV) <= 0 ) {
+    die "Usage: $0 <repository-base>";
+}
+
+my $repository_base = $ARGV[0];
+
+local $| = 1;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $category_base = $_;
+
+    my $category = join("/", $repository_base, $category_base);
+    my $category_strings = _load_category_gist_strings( $category );
+
+    _intra_category_statistics( $category_base , $category_strings ); 
+    
+}
+
+# support functions
+
+# compute intra-category statistics
+sub _intra_category_statistics {
+
+    my $category_base = shift;
+    my $category_strings = shift;
+
+    my $n_category_strings = scalar( @{ $category_strings } );
+
+    my %category_statistics;
+
+    # hierarchical clustering
+    foreach my $mode ('single-link' , 'average-link' , 'all-links') {
+	
+	# If we had a common linear template then very likely, average-link/all-links clustering would yield large clusters
+	# Large single link clusters could indicate that there is shared information, but not in the form of a single - largely - shared pattern
+	# my $clusterer = new Clusterer::Hierarchical( mode => $mode , similarity_threshold_min => 0.3 , similarity_measure => \&_compute_similarity );
+	my $clusterer = new Clusterer::Hierarchical( mode => $mode , similarity_threshold_min => 0 , similarity_measure => \&_compute_cosine_similarity );
+	my ( $clusters , $clusters_stats ) = $clusterer->cluster( $category_strings );
+
+	# post-process clusters stats
+	my %clustered_thresholds;
+	foreach my $stats_entry (@{ $clusters_stats }) {
+
+	    my ( $cluster_count , $similarity_threshold ) = @{ $stats_entry };
+
+	    if ( ! defined($clustered_thresholds{$cluster_count}) ) {
+		$clustered_thresholds{$cluster_count} = 0;
+	    }
+		
+	    if ( $similarity_threshold > $clustered_thresholds{$cluster_count} ) {
+		$clustered_thresholds{$cluster_count} = $similarity_threshold;
+	    }
+
+	}
+
+	# output similarity threshold for various clustered configurations
+	for (my $i = 1; $i <= 10; $i++) {
+	    print join("\t", $category_base, "CLUSTERED_THRESHOLD", $i, $mode, $clustered_thresholds{$i} || 0) . "\n";
+	}
+	
+    }
+
+}
+
+# load gist strings for a given category
+sub _load_category_gist_strings {
+
+    my $category_base = shift;
+
+    # load category data
+    my $category_graph = Category::Data->load_from_base( $category_base );
+
+    # get gist strings
+    # TODO: full string clustering
+    my $summaries = $category_graph->filtered_summaries( sub {
+	return ( $_->is_np() );
+							 }
+	);
+    my @np_strings = map { my @summary = @{$_}; join( " " , map { $_->get_surface_string(); } @summary) } @$summaries;
+
+    return \@np_strings;
+
+}
+
+# compute similarity between two strings
+sub _compute_similarity {
+
+    my $string1 = shift;
+    my $string2 = shift;
+
+    my %all_terms;
+    my %_terms1;
+    my %_terms2;
+    
+    my @terms1 = split /\s+/, $string1;
+    my @terms2 = split /\s+/, $string2;
+
+    map { $_terms1{$_}++; $all_terms{$_}++; } @terms1;
+    map { $_terms2{$_}++; $all_terms{$_}++; } @terms2;
+
+    my $overlap_count = 0;
+    foreach my $term (@terms1) {
+	if ( defined($_terms2{$term}) ) {
+	    $overlap_count++;
+	}
+    }
+
+    my $score = 0;
+    if ( scalar(keys(%all_terms)) ) {
+	$score = $overlap_count / scalar(keys(%all_terms));
+    }
+
+    return $score;
+
+}
+
+# compute cosine similarity between two strings
+sub _compute_cosine_similarity {
+
+    my $string1 = shift;
+    my $string2 = shift;
+
+    my $normalized_string1 = _normalize_string($string1);
+    my $normalized_string2 = _normalize_string($string2);
+
+    my @tokens1 = split /\s+/, $normalized_string1;
+    my @tokens2 = split /\s+/, $normalized_string2;
+
+    my %tokens1_counts;
+    map { $tokens1_counts{$_}++; } @tokens1;
+
+    my %tokens2_counts;
+    map { $tokens2_counts{$_}++; } @tokens2;
+
+    my %all_tokens;
+    map { $all_tokens{$_} += $tokens1_counts{$_}; } keys(%tokens1_counts);
+    map { $all_tokens{$_} += $tokens2_counts{$_}; } keys(%tokens2_counts);
+
+    my $similarity = 0;
+
+    if ( scalar(keys(%tokens1_counts)) && scalar(keys(%tokens2_counts)) ) {
+
+	my $dot_product = 0;
+	map { $dot_product += ($tokens1_counts{$_} || 0) * ($tokens2_counts{$_} || 0); } keys(%all_tokens); 
+
+	my $norm1 = 0;
+	map { $norm1 += ( $tokens1_counts{$_} || 0 ) ** 2; } keys(%all_tokens);
+
+	my $norm2 = 0;
+	map { $norm2 += ( $tokens2_counts{$_} || 0 ) ** 2; } keys(%all_tokens);
+
+	my $norm = sqrt( $norm1 * $norm2 );
+
+	$similarity = $dot_product / $norm;
+
+    }
+
+    return $similarity;
+
+}
+
+# (specific) string normalization
+# TODO: more normalization needed ?
+sub _normalize_string {
+
+    my $string = shift;
+    
+    my $normalized_string = lc($string);
+    $normalized_string = trim($normalized_string);
+    $normalized_string =~ s/[[:punct:]]+/ /sg;
+
+    return $normalized_string;
+
+}
+
+# compute length of LCS between two strings
+sub _compute_lcs_length {
+
+    my $string1 = shift;
+    my $string2 = shift;
+
+    my %all_terms;
+    my %_terms1;
+    my %_terms2;
+    
+    my @terms1 = split /\s+/, $string1;
+    my @terms2 = split /\s+/, $string2;
+
+    my $score = LCS_length( \@terms1 , \@terms2 ); 
+
+    return $score;
+
+}
+
+1;

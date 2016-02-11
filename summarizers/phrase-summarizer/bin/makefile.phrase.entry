@@ -1,0 +1,34 @@
+# Makefile defining a phrase-based and entry-based gisting model
+# Generates model for individual entries
+
+location = $(word $(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST))
+CURRENT_MAKEFILE := $(location)
+#$(error $(CURRENT_MAKEFILE))
+
+SUMMARIZER=phrase-entry-summarizer
+
+BINDIR := $(dir $(CURRENT_MAKEFILE))
+include $(BINDIR)/makefile.phrase
+
+ENTRY_MODELS_DIRECTORY=$(MODEL_DIRECTORY)/entry_models
+#$(error $(ENTRY_MODELS_DIRECTORY))
+
+phrase-entry-train: phrase-data $(ENTRY_MODELS_DIRECTORY)
+	find $(ENTRY_MODELS_DIRECTORY)/ -type f -name "*.data" | sed 's/-training.data//' | xargs -i{} make -f $(CURRENT_MAKEFILE) {}.model
+
+# TODO: is there an elegant way of declaring side products that should be removed in case of failure ?
+$(ENTRY_MODELS_DIRECTORY): $(MODEL_TRAINING_DATA) clean-entry
+	mkdir -p $(ENTRY_MODELS_DIRECTORY).temp
+	gunzip -c $(MODEL_TRAINING_DATA) | $(BINDIR_PHRASE)/field-mapper 1 "Digest::MD5::md5_hex" | awk -F"\t" -v target_dir=$(ENTRY_MODELS_DIRECTORY).temp '{ print $$0 >> ( target_dir "/" $$1 "-training.data" ) }'
+	mv $(ENTRY_MODELS_DIRECTORY).temp $(ENTRY_MODELS_DIRECTORY)
+
+phrase-entry-test: phrase-entry-train entries.model
+	@echo "Entries model has been generated !"
+
+# Dependency on all entry models ...
+entries.model: $(ENTRY_MODELS_DIRECTORY) $(MODEL_TRAINING_DATA) $(patsubst %.data.gz, %.arff, ${MODEL_TESTING_DATA})
+	$(BINDIR_GRAPH)/binary-classifier-weka weka.classifiers.meta.Vote combine $(patsubst %.data.gz, %.arff, ${MODEL_TESTING_DATA}) "$(foreach model_file, $(wildcard $(ENTRY_MODELS_DIRECTORY)/*.weka.model)", -P $(model_file)) $@
+
+clean-entry:
+	rm -rf *.temp
+	rm -rf $(ENTRY_MODELS_DIRECTORY)

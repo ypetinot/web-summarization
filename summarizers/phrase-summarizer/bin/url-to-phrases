@@ -1,0 +1,47 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+binmode(STDIN,':utf8');
+binmode(STDOUT,':utf8');
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+# only temporary
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+
+use GraphSummarizer;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+
+    my @fields = split /\t/, $line;
+    if ( scalar(@fields) != 2 ) {
+	print STDERR "Skipping invalid line: $line\n";
+    }
+    
+    my $url = shift @fields;
+    my $data = shift @fields;
+
+    my $data_length = length( $data );
+
+    print STDERR "Generating phrases for $url --> $url ($data_length)\n";
+
+    # 1 - render data
+    my ($chunk_mapped_field, $context_data, $appearance_map, $appearance_context_map) = GraphSummarizer::_chunkify_content( $data , []);
+
+    my @phrases;
+    map { my @tokens = map { lc( $_ ); } grep { $_ !~ m/^[[:punct:]]+$/so && length( $_ ); } split /\s+|[[:punct:]]+/, $_; push @phrases, @tokens; } @{ $chunk_mapped_field };
+
+    print join("\t",$url,join(" ",@phrases)) . "\n";
+
+}
+
+1;

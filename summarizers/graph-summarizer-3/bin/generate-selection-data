@@ -1,0 +1,17 @@
+#!/bin/bash -x
+
+# This script iterates through all the ODP categories and iteratively updates the index data
+# Note that adopting an iterative approach is realistic as it will allow us to deal with real
+# life cases where we progressively acquire more reference data
+
+BINDIR=`dirname $0`
+
+ROOT_DIRECTORY=$1
+TARGET=$2
+
+if [[ -z "${ROOT_DIRECTORY}" || -z "${TARGET}" ]]; then
+   echo "Usage: $0 <root-directory> <target-db>"
+   exit
+fi
+
+find ${ROOT_DIRECTORY}/ -maxdepth 5 -type f -name '*.anchortext' -size +0 | sed 's/.anchortext//' | xargs -i{} -P 1 -n 1 ${BINDIR}/url-featurization {} 2>/dev/null | ${BINDIR}/create-url-record | ${BINDIR}/update-selection-data ${TARGET} {}

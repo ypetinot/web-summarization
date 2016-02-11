@@ -1,0 +1,50 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../../../third-party/local/lib/";
+
+use JSON;
+
+binmode(STDIN,':utf8');
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/, $line;
+    
+    my $url = shift @fields;
+    my $category = shift @fields;
+    my $description = shift @fields;
+    my $json_data = shift @fields;
+    
+#    eval {
+	my $data = decode_json( $json_data );
+#    };
+#    if ( $@ ) {
+#	print "Problematic data: $json_data";
+#	exit;
+#    }
+
+    my $new_data = {};
+    $new_data->{ 'id' } = join( "::" , $category , $url );
+    $new_data->{ 'url' } = $url;
+    $new_data->{ 'category' } = $category;
+    $new_data->{ 'description' } = $description;
+    $new_data->{ 'features' } = '';
+    
+    foreach my $feature_key ( keys( %{ $data } ) ) {
+	for ( my $i = 0 ; $i < $data->{ $feature_key } ; $i++ ) {
+	    $new_data->{ 'features' } .= " " . $feature_key;
+	}
+    }
+
+    print encode_json( $new_data ) . "\n";
+
+}
+
+1;

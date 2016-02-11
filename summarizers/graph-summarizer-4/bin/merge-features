@@ -1,0 +1,52 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use JSON;
+use Text::Trim;
+
+my $features_definition_file = $ARGV[0];
+
+my %key2index;
+open FEATURES_DEFINITION_FILE, $features_definition_file or die "Unable to open features definition file ($features_definition_file): $!";
+while ( <FEATURES_DEFINITION_FILE> ) {
+
+    chomp;
+    my @definition_fields = split /\t/, trim($_);
+    my $key = shift @definition_fields;
+    my $index = shift @definition_fields;
+    my $surface = shift @definition_fields;
+
+    $key2index{ $key } = $index;
+
+}
+close FEATURES_DEFINITION_FILE;
+
+while ( <STDIN> ) {
+
+    chomp;
+    
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+    my @feature_sets = map { decode_json( $_ ); } @fields;
+    
+    my %merged_features;
+    foreach my $feature_set (@feature_sets) {
+	
+	# Feature sets are expected to be *non-overlapping* ...
+	map { $merged_features{ $key2index{ $_ } } = $feature_set->{ $_ }; } keys( %{ $feature_set } );
+
+    }
+
+    print join("\t", $url, encode_json( \%merged_features )) . "\n";
+
+}
+
+1;

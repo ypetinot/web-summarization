@@ -1,0 +1,17 @@
+BINDIR_DIST:=$(BINDIR)/../../../bin/
+BINDIR_GRAPH:=$(BINDIR)/../../graph-summarizer/bin/
+BINDIR_PHRASE:=$(BINDIR)/
+
+THIRD_PARTY_ROOT:=$(BINDIR)/../../../third-party/
+
+LINE_HEADING=>>
+
+#$(info BINDIR_DIST: $(BINDIR_DIST))
+#$(info BINDIR_GRAPH: $(BINDIR_GRAPH))
+#$(info BINDIR_PHRASE: $(BINDIR_PHRASE))
+
+include $(BINDIR_DIST)/makefile.category
+include $(BINDIR_PHRASE)/makefile.phrase.preprocessing
+include $(BINDIR_GRAPH)/makefile.graph.preprocessing
+
+

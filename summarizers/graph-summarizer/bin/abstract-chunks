@@ -1,0 +1,59 @@
+#!/usr/bin/env perl
+
+# abstracts chunk data - here we're looking at modeling NPs that originate from the target URL itself and that, therefore, are not shared among gists
+# each such NP is mapped to an extractive function
+
+# Given the summaries in a category, for an arbitrary summary, you will have up to K slots (to fill)
+# A slot can be categorized by several contexts (which we may be able to combine using some sort of regression function ?):
+# --> context in summaries
+# --> context in target content
+# --> context in anchortext
+# --> context in URL words
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/";
+
+use Chunk;
+
+binmode(STDIN,':utf8');
+binmode(STDOUT,':utf8');
+
+#my $appearance_threshold = 0.5;
+
+my @chunked_summaries;
+my %chunk2id;
+my %id2chunk;
+my %id2count;
+
+my @chunks = @{ Chunk::read_in_chunks() };
+
+# can we use the context of an NP to describe it ?
+# can we use the extraction function for an NP to describe it ?
+
+# Ideas:
+# Same number of unique NPs in summary, same role/structure ?
+# Similarity of context
+# Extraction rule
+# Stochastic graph to connect slots ?
+# Relationship of entity to site: HOW / WHAT / WHO
+
+# map chunks to slots
+map {
+    # do we want to use a ratio-based threshold
+    if ( $_->get_count() == 1 ) {
+	
+    }
+    else {
+	$_;
+    }
+} @chunks;
+
+
+foreach my $chunked_summary (@chunked_summaries) {
+    print join(" ", map { if ( $_ =~ m/__CHUNK__(\d+)__/ ) { $id2chunk{$1}; } else { $_; } } @{$chunked_summary}) . "\n";
+}
+
+1;

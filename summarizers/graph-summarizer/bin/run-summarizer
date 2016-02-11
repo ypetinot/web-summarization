@@ -1,0 +1,381 @@
+#!/usr/bin/env perl
+
+# Generates a single file with all experiment data/paths
+# (this file can later be used by evaluation scripts)
+
+# Input parameters:
+# * base category data path
+
+# Experiment description:
+# * run generation for all folds (10 fold) and all available model/generation algorithms
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/"
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Data;
+use Category::Folds;
+use Configuration;
+use GistGraph;
+use GistGraphBuilder::SemanticBuilder;
+#use GistGraphBuilder::SimilarityBuilder;
+use GistModel;
+
+our $GIST_GRAPH_BUILDER_CLASS='GistGraphBuilder::SemanticBuilder';
+
+# TODO: maybe it'd be nice to have this class as a base class for all summarizer afterall ?
+use GraphSummarizer;
+
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+
+binmode(STDIN,':utf8');
+binmode(STDERR,':utf8');
+binmode(STDOUT,':utf8');
+
+my $clean = 0;
+my $config = undef;
+my $id = $$;
+my $output = 'plain';
+my $fix = 0;
+my $cluster = 0;
+my $train = 0;
+my $test = 0;
+my $model = undef;
+my $plot = 0;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'clean' => \$clean, 'fix' => \$fix, 'cluster' => \$cluster, 'config=s' => \$config, 'model=s' => \$model, 'id=s' => \$id, 'output=s' => \$output, 'train' => \$train, 'test' => \$test, 'plot' => \$plot, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( $#ARGV != 2 );
+
+# category data base
+my $category_data_base = $ARGV[0];
+
+# points to actual fold base
+my $category_data_fold_path = $ARGV[1];
+
+# points to actual model base
+my $model_directory_path = $ARGV[2];
+
+if ( ! -f $category_data_base ) {
+    die "Category base does not exist: $category_data_base";
+}
+
+if ( ! -f $category_data_fold_path ) {
+    die "Category data file does not exist: $category_data_fold_path";
+}
+
+if ( ! -d $model_directory_path ) {
+    die "Model directory does not exist: $model_directory_path";
+}
+
+# Cross validation percentage
+my $CROSS_VALIDATION_PERCENTAGE=10;
+
+# appearance models
+my $appearance_models;
+
+# summarizers
+my $summarizers;
+
+# process configuration
+my $config_obj = undef;
+if ( defined( $config ) ) {
+
+    $config_obj = Configuration->load( $config );
+    
+}
+else {
+
+    # single summarizer configuration
+    # TODO ...
+    # die "Not supported - please provide models configuration ...";
+
+}
+
+# instantiate category data fold
+# TODO: add some logic to handle complete raw data ?
+# TODO: turn this into a library / factory inside the Category package
+# so we can load either the full category data or a fold
+# maybe this could be achieved through a smart builder + coercion ?
+my $category_data_fold = Category::Fold->restore( $category_data_base , $category_data_fold_path );
+if ( $cluster || $fix || $train ) {
+    $category_data_fold->prepare_data();
+}
+
+# The gist graph remains the same once the fold is set
+my $gist_graph = undef;
+
+if ( !$cluster ) {
+    print STDERR "Reloading existing gist-graph: $model_directory_path ...\n";
+    $gist_graph = GistGraph->restore( $category_data_fold , $model_directory_path );
+}
+
+if ( $cluster || ( !$gist_graph && $fix) ) {
+
+    print STDERR "Generating gist-graph: $model_directory_path ...\n";
+
+    # Clustering Algorithm
+    # 1 - identify NPs that are candidate for clustering (appearance ratio lower than certain threshold or NPs that appear only once in the category)
+    # 2 - iteratively abstract out words in the candidates, starting with the rarest, and continue until all the candidates have been attached to another NP cluster or the candidates have been completely abstracted out, whichever comes first
+
+    # cluster NPs based on their head only, and whether those are compatible or not
+    # Note that if two phrases have the same head but appear frequently each on their own, we do not attempt to cluster. This aspect should be handled by the "phrase compatibility" layer of the model
+    # expand/reduce head as NPs are being clustered together
+
+    # cluster NPs with highly frequent compound NP, even if not an exact match
+    # most frequent compound NP decides cluster ?
+
+    # Ideas for future developments: energy based clustering --> two clusterable NPs cannot appear in the same summary / the more an NP appear in a given form, the less likely it is to be clusterable with another one
+
+    # instantiate new GistGraph object
+    print STDERR ">> Instantiating Gist-Graph\n";
+    $gist_graph = $GIST_GRAPH_BUILDER_CLASS->build( category_data => $category_data_fold , model_directory => $model_directory_path );
+
+    my $generic_nodes = $gist_graph->get_generic_nodes();
+    my $target_specific_nodes = $gist_graph->get_target_specific_nodes();
+
+    # output report
+    if ( $debug ) {
+	_gist_graph_report( $gist_graph , $generic_nodes , $target_specific_nodes );
+    }
+    
+    # gist graph file
+    my $gist_graph_file = join("/", $model_directory_path, "gist_graph.json");
+
+    # write out gist graph
+    print STDERR ">> Writing out Gist-Graph\n";
+    $gist_graph->write_out( $gist_graph_file );
+ 
+=pod
+    print STDERR "\n\n ********** RELOADING ********** \n\n";
+    
+    # attempt to reload gist graph
+    my $reloaded_gist_graph = GistGraph->restore( $gist_graph_file , $category_data_fold );
+
+    # attempt to re-output report
+    _gist_graph_report( $reloaded_gist_graph );
+=cut
+   
+}
+
+print STDERR ">> Clustering done\n";
+print STDERR "\n";
+
+# instantiate new gist model
+# TODO: specify gist graph directly ... 
+my $gist_model = new GistModel( gist_graph => $gist_graph , raw_data => $category_data_fold , model_root => $model_directory_path );
+
+my @requested_summarizers;
+if ( defined( $model ) ) {
+    push @requested_summarizers, $model;
+}
+else {
+    push @requested_summarizers, keys( %{ $summarizers } );
+}
+
+foreach my $summarizer_id (@requested_summarizers) {
+    
+    my $summarizer = $summarizers->{ $summarizer_id };
+
+    if ( ! $summarizer ) {
+	print STDERR "Unknown summarizer id ($summarizer_id), skipping ...";
+	next;
+    }
+
+    my $summarizer_appearance_model_id = $summarizer->{ 'appearance-model' };
+    my $summarizer_appearance_model = $appearance_models->{ $summarizer_appearance_model_id };
+    my $summarizer_appearance_model_type = $summarizer_appearance_model->{ 'type' };
+    my $summarizer_appearance_model_config = $summarizer_appearance_model;
+    my $summarizer_inference_model = $summarizer->{ 'inference-model' };
+    my $summarizer_inference_mode = $summarizer->{ 'inference-mode' } || '';
+
+    eval {
+    
+	# 4 - learn per-np model
+	# Unique/Rare NPs are mapped to an extraction (e.g. ranking, but doesn't have to be) function
+	
+	# Combined function: indicator (appears or not) and extraction function (in case the NP is fully or partially templated) 
+	# --> break down slot filling function into: POS-based extraction, feature (position, window, etc) based extraction; and combine
+	
+	# model chunk data - here we're looking at modeling NPs that originate from the target URL itself and that, therefore, are not shared among gists
+	# each such NP is mapped to an extractive function
+	
+	# Given the summaries in a category, for an arbitrary summary, you will have up to K slots (to fill)
+	# A slot can be categorized by several contexts (which we may be able to combine using some sort of regression function ?):
+	# --> context in summaries
+	# --> context in target content
+	# --> context in anchortext
+	# --> context in URL words
+	
+	# Ideas:
+	# Same number of unique NPs in summary, same role/structure ?
+	# Similarity of context
+	# Extraction rule
+	# Stochastic graph to connect slots ?
+	# Relationship of entity to site: HOW / WHAT / WHO
+	
+	# General problem: summarization using NP graph. Each NP is modeled by a probability of appearing and we want to find a path in the graph that maximizes the likelihood of observed summaries. By doing so we learn a ''proto-typical'' summary representation for each category.
+	
+	# train model for noun-phrases appearance
+	my $has_appearance_model = $gist_model->has_appearance_model( $summarizer_appearance_model_type , $summarizer_appearance_model_config );
+	if ( $train || ( ! $has_appearance_model && $fix ) ) {
+	    $gist_model->train_appearance_model( $summarizer_appearance_model_type , $summarizer_appearance_model_config );
+	}
+	elsif ( ! $has_appearance_model ) {
+	    print STDERR "Appearance model is unavailable with the specified feature set: $summarizer_appearance_model_type ...\n";
+	    next;
+	}
+	
+	if ( ! $test ) {
+	    next;
+	}
+	
+	# set appearance model
+	if ( ! $gist_model->set_appearance_model( $summarizer_appearance_model_type , $summarizer_appearance_model_config ) ) {
+	    print STDERR "Unable to set appearance model ($summarizer_appearance_model_type) ... skipping ...\n";
+	    next;
+	} 
+	
+	# instantiate inference model(s)
+	if ( ! $gist_model->set_inference_model( $summarizer_inference_model , $summarizer_inference_mode ) ) {
+	    print STDERR "Unable to set inference model ($summarizer_inference_model) ... skipping ...\n";
+	    next;
+	}
+	
+	# process each test instance individually
+	my ( $test_instances , $test_instances_expected_outputs ) = $gist_model->raw_data()->get_test_url_data();
+	for (my $i = 0; $i<scalar(@{ $test_instances }); $i++) {
+
+	    my $test_instance = $test_instances->[ $i ];
+	    my $expected_gist_output = $test_instances_expected_outputs->[ $i ];
+	    
+	    my $test_url = $test_instance->get_data()->{'url'};
+
+	    # evaluate performance of the appearance model whenever possible
+	    my $appearance_model_evaluation_data = '';
+	    if ( $expected_gist_output ) {
+		$appearance_model_evaluation_data = $gist_model->np_appearance_model()->evaluate( $expected_gist_output );
+	    }
+
+	    print STDERR ">> Running summarization model on $test_url\n";
+
+	    # run inference
+	    # TODO: should the test data be prepared with the fold nodes ?
+	    my $gist = $gist_model->run( $test_instance->prepare_data( $gist_model->raw_data()->chunks() ) );
+	    
+	    my $serialized_model_state = encode_json( $gist_model->get_model_state() );
+	    my $serialized_gist_data = $gist->freeze();
+	    my $generated_gist = $gist->linearize();
+	    
+	    # write out summary data
+	    print join("\t", $test_url, $generated_gist, $summarizer_id, $summarizer_appearance_model_id, $serialized_gist_data, $serialized_model_state, $appearance_model_evaluation_data ) . "\n";
+	    
+	}
+
+    };
+    
+    if ( $@ ) {
+	print STDERR "An error occurred during the execution of $summarizer_id / $category_data_base / $category_data_fold_path: $@\n";
+    }
+
+}
+
+# serialize model
+# TODO: is this the right time/place to serialize the gist model and all the underlying appearance models ?
+if ( $train ) {
+    $gist_model->write_out();
+}
+
+# *** helper functions ***
+
+# print report
+sub _gist_graph_report {
+
+    my $gist_graph = shift;
+    my $generic_nodes = shift;
+    my $target_specific_nodes = shift;
+
+    # output gist graph statistics
+    print STDERR ">> Gist Graph Statistics\n";
+    print STDERR join("\t", "total number of nodes", scalar( @{ $gist_graph->get_nodes() } )) . "\n";
+    print STDERR join("\t", "total number of target-specific nodes", scalar( @{ $target_specific_nodes } )) . "\n";
+    print STDERR "\n";
+    
+    # output info on generic nodes
+    print STDERR ">> Generic Nodes:\n";
+    foreach my $generic_node (@{ $generic_nodes }) {
+	print STDERR _node_info( $generic_node ) . "\n";
+    }
+    print STDERR "\n";
+    
+    # output info on target-specific nodes
+    print STDERR ">> Target Specific Nodes:\n";
+    foreach my $target_specific_node (@{ $target_specific_nodes }) {
+	print STDERR _node_info( $target_specific_node) . "\n";
+    }
+    print STDERR "\n";
+
+}
+
+# get node info string
+sub _node_info {
+    my $node = shift;
+    return join("\t", $node->surface_string(), $node->position(), $node->count(), scalar( @{ $node->raw_chunks() } ), $node->genericity(), join( "::" , @{ $node->raw_chunks() }) ) ;
+
+}
+
+# usage
+# TODO: turn this into something that can be used by pod2usage
+sub usage() {
+
+}
+
+__END__
+
+=head1 NAME
+
+    sample - Using GetOpt::Long and Pod::Usage
+
+=head1 SYNOPSIS
+    
+    $0 <category-base> <raw-category-data> <model-repository-root> [--train] [--test] [--config=<summarizer-configurations-file>]
+    
+  Options:
+       -help            brief help message
+       -man             full documentation
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<-help>
+
+    A script that controls the training and testing of graph-based gisting models
+
+=item B<-man>
+
+    Prints the manual page and exits.
+
+=back
+
+=head1 DESCRIPTION
+
+    B<This program> will read the given input file(s) and do something
+    useful with the contents thereof.
+
+=cut
+
+1;

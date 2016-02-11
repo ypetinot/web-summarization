@@ -1,0 +1,28 @@
+#!/bin/bash -x
+
+# evaluate graph model given set of test gists
+
+BINDIR=`dirname $0`
+
+INPUT_FILE=$1;
+INPUT_CHUNKS_FILE=$2;
+CONTENT_FILE=$3;
+MODEL_DIR=$4;
+if [[ -z "${INPUT_FILE}" || -z "${INPUT_CHUNKS_FILE}" || -z "${CONTENT_FILE}" || -z "${MODEL_DIR}" ]]; then
+    echo "Usage: $0 <summary-file> <summary-chunks-file> <content-file> <model-dir>"
+    exit;
+fi
+
+
+# (???) Note we don't need to do any clustering as we can assume (?) that any given chunk will appear only once in a summary 
+
+# 1 - apply model to test summaries
+TEMP_MODEL_OUTPUT=${MODEL_DIR}/testing.output
+${BINDIR}/apply-graph-model ${CONTENT_FILE} ${MODEL_DIR} > ${TEMP_MODEL_OUTPUT}
+
+# 2 - compare model output with ideal output
+TEMP_COMPARE_SUMMARIES=${MODEL_DIR}/testing.comparison
+${BINDIR}/evaluate-summary ${INPUT_FILE} ${INPUT_CHUNKS_FILE} ${MODEL_DIR} ${TEMP_MODEL_OUTPUT}
+
+# clean up
+rm -rf ${TEMP_SUMMARY_DATA}

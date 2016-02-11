@@ -1,0 +1,617 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Folds;
+
+use Getopt::Long;
+use List::MoreUtils qw/uniq/;
+use Digest::MD5 qw/md5_hex/;
+use Pod::Usage;
+use WordNet::QueryData;
+
+my $DEBUG = 1;
+
+my $WNHOME = "$FindBin::Bin/../../../third-party/local/";
+my $wn = WordNet::QueryData->new(
+    dir => "$WNHOME/dict/",
+    verbose => 0,
+    noload => 1
+    );
+
+my $fold_id = undef;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+my $mode = undef;
+my $minimum_importance = undef;
+my $maximum_importance = undef;
+my $term = undef;
+
+my $MODE_TERMS = "terms";
+my $MODE_SALIENT = "salient";
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('mode=s' => \$mode,
+	   'minimum-importance=f' => \$minimum_importance,
+	   'maximum-importance=f' => \$maximum_importance,
+	   'term=s' => \$term,
+	   'fold-id=s' => \$fold_id, 'help|?' => \$help, man => \$man, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if ( ! defined( $fold_id ) );
+pod2usage(-exitstatus => 0) if ( $#ARGV < 2 );
+
+# category base
+my $category_base = shift @ARGV;
+
+# output file - training file
+my $out_training = shift @ARGV;
+
+# output file - testing file
+my $out_testing = shift @ARGV;
+
+# output file - features
+my $out_features = shift @ARGV;
+
+# output file - extra
+my $out_extra = shift @ARGV;
+
+# features
+my @features = @ARGV;
+
+if ( ! -f $category_base ) {
+    die "Category base does not exist: $category_base";
+}
+
+# 1 - load fold
+my $fold = Category::Folds->new( 'category_data_base' => $category_base )->load()->get_fold( $fold_id );
+
+# 2 - prepare features
+my @feature_specs;
+foreach my $feature (@features) {
+    
+    my @feature_fields = split /\//, $feature;
+    my $feature_id = shift @feature_fields;
+    my $feature_type = shift @feature_fields;
+    my $feature_spec = join("/", @feature_fields);
+
+    push @feature_specs, [ $feature_id , $feature_type , $feature_spec ];
+
+}
+
+my %features2count;
+my %features2index;
+my %features2values;
+my %tokens2count;
+
+my %frequencies;
+my %global;
+my %idfs;
+my %importances;
+my %unique_appearances;
+
+my $training_entries = $fold->fold_data();
+my $testing_entries = $fold->test_data();
+
+_generate_appearance_data( $training_entries , $out_training , 1 );
+_generate_appearance_data( $testing_entries , $out_testing );
+
+sub _generate_appearance_data {
+    
+    my $entries = shift;
+    my $output_file = shift;
+    my $do_training = shift || 0;
+
+    my $entry_count = scalar( @{ $entries } );
+
+    open OUTPUT_FILE, ">$output_file" or die "Unable to create output file ($output_file): $!";
+
+    # 2 - corpus level stats
+    if ( $do_training ) {
+
+	# compute category level genericity rankings
+	my @fields = ( 'summary' , 'content.phrases' , 'title' , 'anchortext.sentence' );
+	foreach my $field (@fields) {
+	
+	    foreach my $entry (@{ $entries }) {
+	    
+		my $field_phrases = $entry->get_field( $field );
+
+		map { $unique_appearances{ $field }{ $_ }++; } uniq ( _get_filtered_phrases( $field_phrases ) );
+
+	    }
+	    
+	    # compute idfs
+	    map { $idfs{ $field }{ $_ } = log( $entry_count / $unique_appearances{ $field }{ $_ } ); } keys( %{ $unique_appearances{ $field } } );
+
+	    my $n_phrases = scalar( keys( $idfs{ $field } ) );
+	    my @sorted_phrases = sort { $idfs{ $field }{ $a } <=> $idfs{ $field }{ $b } } keys( %{ $idfs{ $field } } );
+
+	    # compute genericities for this field
+	    my %genericities;
+	    for (my $i=0; $i<$n_phrases; $i++) {
+		my $phrase = $sorted_phrases[ $i ];
+		#$genericities{ $phrase } = ( $n_phrases - $i ) / $n_phrases;
+		$genericities{ $phrase } = $n_phrases - $i;
+	    }
+
+	    $global{ $field } = \%genericities;
+
+	    map { $frequencies{ $field }{ $_ } = $unique_appearances{ $field } { $_ } / $entry_count; } keys( %{ $unique_appearances{ $field } } );
+	    map { $importances{ $field }{ $_ } = $genericities{ $_ } / $n_phrases; } keys( %{ $unique_appearances{ $field } } );
+
+	}
+
+	open EXTRA, ">$out_extra" or die "Unable to open features file ($out_features): $!";
+
+	print EXTRA join("\t", 'phrase',
+			 ( map { "frequency-$_";  } @fields ),
+			 ( map { "genericity-$_"; } @fields ),
+			 ( map { "importance-$_"; } @fields ),
+	    ) . "\n";
+
+	foreach my $phrase (keys( %{ $global{ 'summary' } } )) {
+	    print EXTRA join("\t", $phrase,
+			     md5_hex( $phrase ),
+			     _abstraction_type( $phrase , \%unique_appearances , \@fields , $entry_count ),
+			     ( map { $frequencies{ $_ }{ $phrase } || 'N/A' } @fields ),
+			     ( map { $global{ $_ }{ $phrase } || 'N/A' } @fields ),
+			     ( map { $importances{ $_ }{ $phrase } || 'N/A' } @fields )
+		) . "\n";
+	}
+	close EXTRA;
+
+    }
+
+    # 3 - loop over fold entries
+    my $is_first = 1;
+    foreach my $entry (@{ $entries }) {
+
+	my $url = $entry->url();
+
+	my $url_content = $entry->get_field( 'content' );
+
+	# ground truth
+	my %summary_phrase2appearance;
+	my $summary_phrases = $entry->get_field( 'summary' );
+	map { $summary_phrase2appearance{ normalize_string( $_ ) }++; } ( split / /, $summary_phrases );
+
+	# candidate phrases for this entry
+	my @candidate_phrases;
+	my %entry_all_candidate_phrases;
+	my %entry_frequencies;
+
+# No !
+#	# first, the summary phrases must be included
+#	%entry_all_candidate_phrases = %summary_phrase2appearance;
+
+	my %content_phrase2appearance;
+	my $field_content_phrases = 'content.phrases';
+	my $content_phrases = $entry->get_field( $field_content_phrases );
+	map { 
+	    $entry_all_candidate_phrases{ normalize_string( $_ ) }++;
+	    $content_phrase2appearance{ $_ }++;
+	    $entry_frequencies{ $field_content_phrases }{ $_ }++;
+	} _get_filtered_phrases( $content_phrases );
+	
+	my $field_anchortext_basic = 'anchortext.basic';
+	my $anchortext_basic = $entry->get_field( $field_anchortext_basic );
+	map {
+	    $entry_all_candidate_phrases{ $_ }++;
+	    $entry_frequencies{ $field_anchortext_basic }{ $_ }++;
+	} _get_filtered_phrases( $anchortext_basic );
+
+	my $field_anchortext_sentence = 'anchortext.sentence';
+	my $anchortext_sentence = $entry->get_field( $field_anchortext_sentence );
+	map {
+	    $entry_all_candidate_phrases{ $_ }++;
+	    $entry_frequencies{ $field_anchortext_sentence }{ $_ }++;
+	} _get_filtered_phrases( $anchortext_sentence );
+
+	my $title = $entry->get_field( 'title' );
+	map { $entry_all_candidate_phrases{ $_ }++; } _get_filtered_phrases( $title );
+
+	my $url_words = $entry->get_field( 'url.words' );
+	map { $entry_all_candidate_phrases{ $_ }++; } _get_filtered_phrases( $url_words );
+
+#	map { $entry_all_candidate_phrases{ $_ }++; } keys( %{ $global{ 'summary' } } );
+#	map { $entry_all_candidate_phrases{ $_ }++; } keys( %{ $global{ 'content.phrases' } } );
+
+	# Mode-dependent filtering
+	if ( defined($mode) && $mode eq $MODE_SALIENT ) {
+	    
+	    # We only consider terms that are in the top N of salient terms for this URL
+	    #my $saliency_cutoff = 20;
+	    #my $saliency_cutoff = 1000000;
+	    my $saliency_cutoff = 100;
+
+	    @candidate_phrases = sort { _saliency( $b , \%entry_frequencies ) <=> _saliency( $a , \%entry_frequencies ) }
+	    grep { ( $frequencies{ 'summary' }{ $_ } || 0 ) < 0.25; }
+	    grep { ( $frequencies{ 'content.phrases' }{ $_ } || 0 ) < 0.1; }
+	    keys( %entry_all_candidate_phrases );
+
+	    if ( scalar(@candidate_phrases) > $saliency_cutoff ) {
+		splice @candidate_phrases, $saliency_cutoff;
+	    }
+
+	}
+	else {
+
+	    # By default we consider all terms available for this entry (highly skewed distribution !)
+	    @candidate_phrases = keys( %entry_all_candidate_phrases );
+
+	}
+
+	foreach my $phrase (@candidate_phrases) {
+
+	    if ( defined( $minimum_importance ) || defined ( $maximum_importance ) ) {
+		# we only focus on terms that appear anywhere between $minimum_importance and $maximum_importance in the reference gists
+		if ( 
+		    ( ! defined( $importances{ 'summary' }{ $phrase } ) ) ||
+		    ( $importances{ 'summary' }{ $phrase } < ( $minimum_importance || 0 ) ) || ( $importances{ 'summary' }{ $phrase } > ( $maximum_importance || 1 ) )
+		    ) {
+		    next;
+		}
+	    }
+
+	    if ( defined( $term ) && ( $phrase ne $term ) ) {
+		next;
+	    }
+	    
+	    my %phrase_features;
+
+	    # TODO: push this to the outer loop
+	    my @combinable;
+	    
+	    # Ground Truth
+	    my $ground_truth = ( $summary_phrase2appearance{ $phrase } ? 1 : 0 );
+	    
+	    # Appears in content ?
+	    my $feature_appears_in_content = 'appears_in_content::binary';
+	    _update_entry_features( \%phrase_features , $feature_appears_in_content, ( $content_phrase2appearance{ $phrase } || 0 ));
+	    #_update_entry_features( \%phrase_features , join("::", $feature_appears_in_content, 'numeric'), ( $content_phrase2appearance{ $phrase } || 0 ));
+	    push @combinable, $feature_appears_in_content;
+
+	    # Appears in anchortext basic ?
+	    my $feature_appears_in_anchortext_basic = 'appears_in_anchortext_basic::binary';
+	    _update_entry_features( \%phrase_features , $feature_appears_in_anchortext_basic, _n_match( $anchortext_basic , $phrase ));
+	    #_update_entry_features( \%phrase_features , join("::", $feature_appears_in_anchortext_basic, 'numeric'), _n_match( $anchortext_basic , $phrase ));
+	    push @combinable, $feature_appears_in_anchortext_basic;
+
+	    # Appears in anchortext sentence ?
+	    my $feature_appears_in_anchortext_sentence = 'appears_in_anchortext_sentence::binary';
+	    _update_entry_features( \%phrase_features , $feature_appears_in_anchortext_sentence , _n_match( $anchortext_sentence , $phrase ));
+	    #_update_entry_features( \%phrase_features , join("::", $feature_appears_in_anchortext_sentence, 'numeric'), _n_match( $anchortext_sentence , $phrase ));
+	    push @combinable, $feature_appears_in_anchortext_sentence;
+
+	    # Appears in title ?
+	    my $feature_appears_in_title = 'appears_in_title::binary';
+	    _update_entry_features( \%phrase_features , $feature_appears_in_title , _n_match( $title , $phrase ));
+	    push @combinable, $feature_appears_in_title;
+
+	    # TODO: this is super slow right now !
+	    # Appears in h1 / h2 section ? in outgoing link ?
+	    foreach my $target_section ('h1','h2','a') {
+		my $feature_appears_in_section_XX = "appears_in_section_${target_section}::numerical";
+		_update_entry_features( \%phrase_features , $feature_appears_in_section_XX , _appears_in_context( $url_content , $phrase , $target_section ));
+		# TODO: combine ?
+	    }
+
+	    # Appears in URL words ?
+	    my $feature_appears_in_url_words = 'appears_in_url_words::binary';
+	    _update_entry_features( \%phrase_features , $feature_appears_in_url_words, _n_match( $url_words , $phrase ));
+	    push @combinable, $feature_appears_in_url_words;
+
+	    # Relative position - Content ?
+	    my $feature_relative_position_content = 'relative_position_content::numeric';
+	    _update_entry_features( \%phrase_features , $feature_relative_position_content, _relative_position( $content_phrases , $phrase ));
+	    push @combinable, $feature_relative_position_content;
+
+	    # TODO: improve with better dictionary ?
+	    # Primary POS
+	    my $feature_primary_pos = 'primary_pos';
+	    _update_entry_features( \%phrase_features , join("::", $feature_primary_pos, 'class'), _get_primary_pos( $phrase ));
+
+	    # TODO: do we have to filter out meta-description (they're not being rendered anyways) ?
+
+	    # ****************** category features ****************************
+	    # More relevant if we consider models at the super-category level ?
+
+	    # Importance in category gists
+	    my $feature_genericity_in_category_gists = 'genericity_in_category_gists::numeric';
+	    _update_entry_features( \%phrase_features , $feature_genericity_in_category_gists, ( $global{ 'summary' }{ $phrase } || 0 ));
+	    push @combinable, $feature_genericity_in_category_gists;
+	    
+	    # Importance in category contents
+	    my $feature_genericity_in_category_contents = 'genericity_in_category_contents::numeric';
+	    _update_entry_features( \%phrase_features , $feature_genericity_in_category_contents, ( $global{ 'content.phrases' }{ $phrase } || 0 ));
+	    push @combinable, $feature_genericity_in_category_contents;
+
+	    # Importance in anchortext (sentence)
+	    my $feature_genericity_in_anchortext_sentence = 'genericity_in_anchortext_sentence::numeric';
+	    _update_entry_features( \%phrase_features , $feature_genericity_in_anchortext_sentence, ( $global{ 'anchortext.sentence' }{ $phrase } || 0 ));
+	    push @combinable, $feature_genericity_in_anchortext_sentence;
+
+	    # Is this phrase more important in gists than in contents ?
+	    my $feature_importance_gists_vs_contents = 'importance_gists_vs_contents::numeric';
+	    _update_entry_features( \%phrase_features , $feature_importance_gists_vs_contents, ( ($importances{ 'summary' }{ $phrase } || 0) > ( $importances{ 'content.phrases' }{ $phrase } || 0 ) ? 1 : 0 ));
+	    push @combinable, $feature_importance_gists_vs_contents;
+
+	    # Is this phrase more important in contents than in gists ?
+	    my $feature_importance_contents_vs_gists = 'importance_contents_vs_gists::numeric';
+	    _update_entry_features( \%phrase_features , $feature_importance_contents_vs_gists, ( ($importances{ 'summary' }{ $phrase } || 0) < ( $importances{ 'content.phrases' }{ $phrase } || 0 ) ? 1 : 0 ));
+	    push @combinable, $feature_importance_contents_vs_gists;
+
+#	    # Importance ratio in gists vs contents
+#	    my $feature_importance_gists_vs_contents_ratio = 'importance_gists_vs_contents_ratio::numeric';
+#	    _update_entry_features( \%phrase_features , $feature_importance_gists_vs_contents_ratio , ($importances{ 'summary' }{ $phrase } || 0) / ( ( $importances{ 'content.phrases' }{ $phrase } || 0 ) + 0.0000001 ));
+#	    push @combinable, $feature_importance_gists_vs_contents_ratio;
+
+	    # ****************** category features ****************************
+
+	    foreach my $feature_spec (@feature_specs) {
+		
+		# load features
+		my $current_features = $entry->get_field( $feature_spec->[0] , $feature_spec->[2] );
+		
+		# feature filtering ?
+		# TODO, but has to be based on global counts
+		# append feature values
+		foreach my $feature (keys(%{ $current_features })) {
+		    _update_entry_features( \%phrase_features , join("::", join("**", $phrase, $feature), $feature_spec->[1]), $current_features->{ $feature });
+		    #_update_entry_features( \%phrase_features , $feature, $feature_spec->[1], $current_features->{ $feature });
+		}
+		
+	    }
+	    
+	    # combined features
+	    for (my $i=0; $i<scalar(@combinable); $i++) {
+
+		my $feature1 = $combinable[ $i ];
+
+		for (my $j=0; $j<$i; $j++) {
+
+		    my $feature2 = $combinable[ $j ];
+		    
+		    if ( $DEBUG && ( $feature1 eq $feature2 ) ) {
+			die "Combining identical features: $feature1 / $feature2";
+		    }
+
+		    my $combined_value = ( $phrase_features{ $feature1 } || 0 ) * ( $phrase_features{ $feature2 } || 0 );
+
+		    _update_entry_features( \%phrase_features , join("::", join("**", "combined", $feature1, $feature2), 'numeric'), $combined_value );
+
+		}
+
+	    }
+
+	    print OUTPUT_FILE join("\t", $url, $phrase, $ground_truth, map{ $features2index{ $_ } . ":" . $phrase_features{ $_ }; } keys(%phrase_features)) . "\n";
+	    
+	}
+
+    }
+
+    close OUTPUT_FILE;
+
+    if ( $do_training ) {
+
+	open FEATURES_FILE, ">$out_features" or die "Unable to open features file ($out_features): $!";
+
+	foreach my $feature (keys( %features2index )) {
+	    
+	    my $feature_count = $features2count{ $feature } || 0;
+	    my $feature_index = $features2index{ $feature };
+
+	    my $feature_values = "N/A";
+	    if ( defined( $features2values{ $feature } ) ) {
+		$feature_values = '{' . join(",", keys( %{ $features2values{ $feature } } ) ) . '}';
+	    }
+
+	    print FEATURES_FILE join("\t", $feature_index, $feature, $feature_count, $feature_values) . "\n";
+
+	}
+
+	close FEATURES_FILE;
+
+    }
+
+}
+
+my $feature_count = 0;
+
+sub _update_entry_features {
+
+    my $entry = shift;
+    my $feature_key = shift;
+    my $feature_value = shift;
+
+    # update entry
+    $entry->{ $feature_key } = $feature_value;
+
+    # update global feature counts (i.e. we assume binary features ?)
+    if ( $feature_value ) {
+	$features2count{ $feature_key }++;
+    }
+
+    # create feature index if needed
+    if ( ! defined( $features2index{ $feature_key } ) ) {
+	$features2index{ $feature_key } = join("_", "f", ++$feature_count);
+    }
+
+    # keep track of all possible values
+    if ( $feature_key =~ m/::class$/ ) {
+	$features2values{ $feature_key }{ $feature_value }++;
+    }
+
+}
+
+sub _appears_in_context {
+
+    my $data = shift;
+    my $token = shift;
+    my $context = shift;
+
+    my $count = 0;
+
+    while ( $data =~ m|<${context}[^>]*>(?:(?!:</${context}>).)*${token}|sig ) {
+	$count++;
+    }
+
+    return $count;
+
+}
+
+sub _relative_position {
+
+    my $data = shift;
+    my $token = shift;
+
+    my $relative_position = 1;
+
+    if ( $data =~ m/$token/sig ) {
+	$relative_position = $-[0] / length($data);
+    }
+
+    return $relative_position;
+
+}
+
+sub _n_match {
+
+    my $data = shift;
+    my $token = shift;
+
+    my $n_matches = 0;
+
+    while ( $data =~ m/\Q$token\E/sig ) {
+	$n_matches++;
+    }
+
+    return $n_matches;
+
+}
+
+# This needs to be shared by all systems
+sub normalize_string {
+
+    my $string = shift;
+
+    $string =~ s/[[:punct:]]+//sig;
+    $string = lc( $string );
+
+    return $string;
+
+}
+
+sub _get_filtered_phrases {
+
+    my $string = shift;
+    my $threshold = shift || 0;
+
+    my @tokens = split / /, $string;
+    my %tokens2count;
+    map{ $tokens2count{ normalize_string( $_ ) }++; } @tokens;
+
+    return grep { length( $_ ) && ( $tokens2count{ $_ } > $threshold ) } keys( %tokens2count );
+
+}
+
+my %pos_cache;
+sub _get_primary_pos {
+
+    my $word = shift;
+    
+    if ( ! defined( $pos_cache{ $word } ) ) {
+	
+	my @all_pos = $wn->querySense( $word );
+
+	my $primary_pos = 'unknown';
+	if ( scalar(@all_pos) ) {
+	    $primary_pos = (split /\#/, $all_pos[0])[1];
+	}
+
+	$pos_cache{ $word } = $primary_pos;
+
+    }
+
+    return $pos_cache{ $word };
+
+}
+
+sub _abstraction_type {
+
+    my $word = shift;
+    my $unique_appearances = shift;
+    my $fields = shift;
+    my $reference_count = shift;
+
+    my $is_in_summary = 0;
+    my $is_in_other_fields = 0;
+
+    foreach my $field (@{ $fields }) {
+
+	my $count = $unique_appearances{ $field }{ $word } || 0;
+
+	if ( $field eq 'summary' ) {
+	    $is_in_summary = $count;
+	}
+	else {
+	    $is_in_other_fields += $count;
+	}
+
+    }
+
+    my $abstraction_type = undef;
+
+    if ( $is_in_summary && !$is_in_other_fields ) {
+
+	if ( $is_in_summary / $reference_count > 0.9 ) {
+	    # Generic term / Punctuation
+	    $abstraction_type = "generic";
+	}
+	if ( $is_in_summary / $reference_count > 0.2 ) {
+	    # Term that is a true abstraction of concepts
+	    $abstraction_type = "abstract";
+	}
+	else {
+	    # Term that is target specific but implied by the target URL.
+	    # e.g. a city might imply a country
+	    $abstraction_type = "abstract-unique";
+	}
+
+    }
+    
+    else {
+
+	# ?
+	$abstraction_type = "regular";
+
+    }
+
+    return $abstraction_type;
+
+}
+
+# compute saliency of a given term
+sub _saliency {
+
+    my $term = shift;
+    my $entry_frequencies = shift;
+
+    my $term_combined_idf = 0.2 * ( $idfs{ 'content.phrases' }{ $term } || 0 ) + 0.8 * ( $idfs{ 'anchortext.sentence' }{ $term } || 0 );
+    my $term_combined_df = 0.2 * ( $entry_frequencies->{ 'content.phrase' } || 0 ) + 0.8 * ( $entry_frequencies->{ 'anchortext.sentence' }{ $term } || 0 );
+    my $saliency = $term_combined_df * $term_combined_idf;
+
+    return $saliency;
+
+}
+
+1;

@@ -1,0 +1,428 @@
+#!/usr/bin/env perl
+
+# abstracts chunk data
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use JSON;
+use Lingua::Stem qw(stem);
+use WordNet::QueryData;
+
+use AbstractChunk;
+use Category::Data;
+use Chunk;
+use WikipediaResolver;
+
+binmode(STDIN,':utf8');
+binmode(STDOUT,':utf8');
+
+my $WNHOME = "$FindBin::Bin/../../../third-party/local/";
+my $wn = WordNet::QueryData->new(
+    dir => "$WNHOME/dict/",
+    verbose => 0,
+    noload => 1
+    );
+
+my $appearance_threshold = 0.5;
+
+my %tokens;
+my %chunk2id;
+my %chunk2summary;
+my %id2chunk;
+
+my %token2pos;
+
+my @chunkified_entries;
+
+my $summary_id = 0;
+while ( <STDIN> ) {
+
+    chomp;
+    my $line = $_;
+
+    my @chunk_elements = split / /, $line;;
+
+    # print STDERR "got: " . scalar(@chunk_elements) . "\n";
+    my @buffer;
+
+    my @chunkified_line;
+
+    foreach my $chunk_element (@chunk_elements) {
+	
+	my @fields = split /\//, $chunk_element;
+	my @fields_copy = @fields;
+
+	my $surface = shift @fields_copy;
+	my $pos = shift @fields_copy;
+	my $chunk_status = shift @fields_copy || '';
+
+	# keep track of all the tokens we see
+	my $normalized_token = lc( $surface );
+	if ( ! defined( $tokens{ $normalized_token } ) ) {
+	    $tokens{ $normalized_token } = {};
+	}
+	$tokens{ $normalized_token }->{ $summary_id }++;
+
+	# This/DT/B-NP is/VBZ/B-VP a/DT/B-NP sample/NN/I-NP sentence/NN/I-NP to/TO/B-VP see/VB/I-VP
+	# whether/IN/B-SBAR this/DT/B-NP NP/NNP/I-NP chunker/NN/I-NP is/VBZ/B-VP working/VBG/I-VP
+	# in/IN/B-PP New/NNP/B-NP York/NNP/I-NP ././O
+
+	if ( $chunk_status eq 'B-NP' ) {
+	    if ( scalar(@buffer) ) {
+		push @chunkified_line, update_chunk_stats(\@buffer,$summary_id);
+	    }
+	    @buffer = ( \@fields );
+	}
+	elsif (
+	    ( $chunk_status ne 'I-NP' )
+	    || ( $pos eq 'CC' && $chunk_status eq 'I-NP' ) # we split conjunctions of NPs
+	    || ( $pos =~ m/[[:punct:]]/o && $chunk_status eq 'I-NP' )
+	    ) 
+	{
+	    if ( scalar(@buffer) ) {
+		push @chunkified_line, update_chunk_stats(\@buffer,$summary_id);
+	    }
+	    @buffer = ();
+	    push @chunkified_line, update_chunk_stats([ \@fields ],$summary_id);
+	}
+	else {
+	    push @buffer, \@fields;
+	}
+
+    }
+
+    push @chunkified_entries, \@chunkified_line;
+    
+    # we are ready to process the next summary
+    $summary_id++;
+
+}
+
+my %type2count;
+
+# correction / abstraction pass
+map {
+
+    # normalize POS tags
+    # within a category a surface form can have only one POS
+    if ( scalar( @{ $id2chunk{$_}->{'terms'} } ) == 1 ) {
+	
+	my $token = $id2chunk{$_}->{'terms'}->[0]->{'surface'};
+	my $poss = $token2pos{$token};
+	if ( scalar( keys( %{ $poss } ) ) > 1 ) {
+	    
+	    my @sorted_poss = sort { $poss->{$b} <=> $poss->{$a} } keys(%{ $poss });
+	    my $most_likely_poss = $sorted_poss[0];
+
+	    if ( $id2chunk{$_}->{'type'} ne 'np' && $most_likely_poss =~ m/NN/ ) {
+		print STDERR "Correcting type of chunk ($_:$token) to np ...\n";
+		$id2chunk{$_}->{corrected} = join("/", $token, 'NN');
+		$id2chunk{$_}->{type} = 'np';
+	    }
+
+	}
+
+    }
+
+    # Attempt to to resolve NPs to wikipedia/wiktionary entries
+    # TODO: joint reordering of semantics to achieve word sense disambiguation ?
+    my $semantics = [];
+    if ( $id2chunk{$_}->{'type'} eq 'np' ) {
+	
+	# TODO: taking this out until I can figure out a better way of resolving individual strings
+	# Current issue is that this becomes a performance bottleneck when the target host is down
+	#$semantics = WikipediaResolver->resolve( $id2chunk{$_}->{'surface'} );
+	#$id2chunk{ $_ }->{'semantictype'} = WikipediaResolver->type( $best_candidate );
+
+	# validate the matches
+	my @selected_semantics = grep {
+
+	    my $concept = $_->[1];
+	    my $disambiguation = $_->[2];
+
+	    # TODO: make sure the last token of our chunk appears in the concept ?
+	    # Counter example: MP3 --> http://en.wikipedia.org/wiki/Punk_Rock_Superstar
+
+	    my $keep = 1;
+
+	    if ( defined( $disambiguation ) ) {
+		
+		my @disambiguation_tokens = split / /, $disambiguation;
+		foreach my $disambiguation_token (@disambiguation_tokens) {
+		    
+		    # TODO: the disambiguation tokens should appear at least once in same gist as the target chunk
+		    # TODO: can we only match non-stopwords ?
+		    my $disambiguation_token_occurrences = $tokens{ lc( $disambiguation_token ) };
+		    my $chunk_occurrences = $chunk2summary{ $_ };
+		    
+		    if ( ! defined( $disambiguation_token_occurrences ) || ! _cooccur( $disambiguation_token_occurrences , $chunk_occurrences ) ) {
+			$keep = 0;
+			last;
+		    }
+		    
+		}
+
+	    }
+
+	    $keep;
+
+	} @{ $semantics };
+	$semantics = \@selected_semantics;
+
+	# What do we do if this np cannot be resolved ?
+	# Attempt to resolve chunk using Wiktionary ?
+	
+    }
+
+    # Attempts to resolve to generic concept, or assigns to Type::Unknown
+    if ( scalar( @{ $semantics } ) ) {
+	    
+	# determine most frequent wikipedia entry for the current concept in the current category
+	# implicitly shorter/more generic concepts should be what we want (i.e. more frequent)
+
+	my @sorted_concepts = sort { length($a) <=> length($b) } @{ $semantics };
+	my $best_candidate = $sorted_concepts[ 0 ]->[0];
+	
+	# update semantic type counts for disambiguation purposes
+	map { $type2count{ $_ }++; } @{ $id2chunk{ $_ }->{'semantictype'} };
+	
+    }
+
+    $id2chunk{ $_ }->{'semantics'} = $semantics;
+
+} keys( %id2chunk );
+
+# identify most likely semantic types
+map {
+    
+    my @ranked_semantic_types = sort { $type2count{ $b } <=> $type2count{ $a } } @{ $id2chunk{$_}->{'semantictype'} };
+    $id2chunk{ $_ }->{'semantictype'} = \@ranked_semantic_types;
+    
+} grep { defined( $id2chunk{$_}->{'semantictype'} ) } keys( %id2chunk );
+
+my %term2isDictionaryTerm;
+
+# check whether individual terms are dictionary words
+map {
+
+#    # for now we simply reduce to the last token in the chunk,
+#    my $buffer = $id2chunk{ $_ }->{'terms'};
+#    my $reduced_chunk = $buffer->[ $#{ $buffer } ]->[ 0 ];
+
+#    if ( scalar(@{$buffer}) ) {
+#	while ( scalar(@{ $buffer }) > 1 && $buffer->[0]->[1] !~ m/NN/ ) {
+#	    print STDERR "Reducing buffer: " . join(" ", map { $_->[0]; } @{$buffer}) . "\n";
+#	    shift @{ $buffer };
+#	}
+#    }
+#    
+#    if ( scalar(@{$buffer}) == 0 ) {
+#	die "Invalid chunk ...";
+#    }
+
+#my $is_dictionary_word = grep { $_ =~ m/^\*$/o; } `echo ${reduced_chunk} | aspell -a | grep -v Aspell | grep -v '^\$'`;
+
+     my $terms = $id2chunk{ $_ }->{'terms'};
+
+     for (my $i=0; $i<scalar(@{ $terms }); $i++) {
+	 
+	 # Any reason we don't just use the normalized form here ? (worried about plurals ?)
+	 my $term = $terms->[ $i ]->{'normalized'};
+
+	 if ( ! defined( $term2isDictionaryTerm{ $term } ) ) {
+	  
+	     my @issues = grep { $_ !~ m/^\*$/o; } `echo '${term}' | aspell -a | grep -v Aspell | grep -v '^\$'`;
+	     $term2isDictionaryTerm{ $term } = scalar(@issues) ? 0 : 1;
+	     #$term2isDictionaryTerm{ $term } = $term . "-" . scalar(@issues);
+ 
+	 }
+
+	 $id2chunk{ $_ }->{'terms'}->[ $i ]->{ 'in_dictionary' } = $term2isDictionaryTerm{ $term };
+
+     }
+
+#    $id2chunk{ $_ }->{'reduced'} = { token => lc( $reduced_chunk ) , is_dictionary_word => $is_dictionary_word };
+    
+#} grep { $id2chunk{ $_ }->{'type'} eq 'np' } keys( %id2chunk );
+} keys( %id2chunk );
+
+my @chunkified_entries_final;
+my %chunks;
+
+# final pass
+map {
+
+    my $entry = $_;
+    my %type2count;
+
+    my @entry_final;
+
+    foreach my $chunk_id ( @{ $entry } ) {
+
+	# instantiate chunk
+	if ( ! defined( $chunks{ $chunk_id } ) ) {
+	    
+	    my $chunk = new Chunk( %{ $id2chunk{ $chunk_id } } );
+	    $chunks{ $chunk_id } = $chunk;
+	    
+	}
+
+	push @entry_final, $chunk_id;
+
+    }
+
+    push @chunkified_entries_final, \@entry_final;
+
+} @chunkified_entries;
+
+# sort chunks
+my @sorted_chunks = sort { $a->{id} cmp $b->{id} } values(%chunks);
+
+# write out category data (summaries + chunks)
+my $category_data = Category::Data->new( 'summaries' => \@chunkified_entries_final , 'chunks' => \@sorted_chunks );
+$category_data->write_out_data();
+
+sub update_chunk_stats {
+
+    my $buffer = shift;
+    my $summary_id = shift;
+
+    my $type = undef;
+    my $has_np = grep { $_->[1] =~ m/NN/; } @{$buffer};
+    if ( $has_np ) {
+	$type = 'np';
+    }
+    else {
+	$type = 'structural';
+    }
+
+    # stemming
+    my $final_token = $buffer->[ $#{ $buffer } ]->[0];
+
+    print STDERR "final token: $final_token\n";
+
+    my $stemmed_final_token = _stem($final_token);
+    if ( lc($stemmed_final_token) ne lc($final_token) ) {
+	
+	# update token
+	$buffer->[ $#{ $buffer } ]->[0] = $stemmed_final_token;
+	
+	# update POS if we have a plural
+	my $final_token_pos = $buffer->[ $#{ $buffer } ]->[1];
+	if ( $final_token_pos eq "NNS" ) {
+	    $buffer->[ $#{ $buffer } ]->[1] = "NN";
+	}
+
+    } 
+
+    my $original_string = join(" ", map { join("/", $_->[0], $_->[1]) } @{$buffer} );
+    my $surface_string = join(" ", map { $_->[0]; } @{$buffer});
+
+    if ( !length($original_string) ) {
+	die "Problem processing chunk ...";
+    }
+
+    my $string = lc($original_string);
+    if ( ! defined($chunk2id{$string}) ) {
+	$chunk2id{$string} = scalar( keys(%chunk2id) ) + 1;
+    }
+    my $chunk_id = $chunk2id{$string};
+    
+    map {
+	if ( ! defined($token2pos{$_->[0]}) ) {
+	    $token2pos{$_->[0]} = {};
+	}
+	$token2pos{$_->[0]}->{$_->[1]}++;
+    } @$buffer;
+
+    # Can we do this better/earlier ?
+    my @terms = map { 
+
+	{
+	    'surface' => $_->[0] ,
+	    'pos' => $_->[1] ,
+	    'status' => $_->[2] ,
+	    'normalized' => StringNormalizer::_plural_normalize($_->[0])
+	};
+
+    } @{ $buffer };
+
+    if ( ! defined( $id2chunk{ $chunk_id } ) ) {
+	$id2chunk{ $chunk_id } = {
+	    id => $chunk_id,
+	    surface => $surface_string,
+	    terms => \@terms,
+	    type => $type
+	};
+    }
+    $id2chunk{ $chunk_id }->{count}++;
+
+    # keep track of the summaries in which this chunk appears
+    if ( ! defined( $chunk2summary{ $chunk_id } ) ) {
+	$chunk2summary{ $chunk_id } = {};
+    }
+    $chunk2summary{ $chunk_id }->{ $summary_id }++;
+
+    return $chunk_id;
+
+}
+
+# abstraction function
+sub _abstract {
+
+    my $word = shift;
+
+    
+
+}
+
+# stemming function
+# TODO: move this to a utility class ?
+sub _stem {
+
+    my $token = shift;
+
+    my $stemmed_token = $token;
+
+    if ( $token !~ m/^\p{Punct}+$/ ) {
+
+	my $valid_form = ($wn->validForms("$token#n"))[0];
+	if ( $valid_form && length($valid_form) ) {
+	    
+	    if ( $valid_form =~ m/^(.+)\#n$/ ) {
+		$stemmed_token = $1;
+	    }
+	    
+	}
+
+    }
+
+    return $stemmed_token;
+
+}
+
+# check cooccurrence
+sub _cooccur {
+
+    my $disambiguation_token_occurrences = shift;
+    my $chunk_occurrences = shift;
+
+    foreach my $disambiguation_token_occurrence ( keys( %{ $disambiguation_token_occurrences } ) ) {
+	
+	if ( defined( $chunk_occurrences->{ $disambiguation_token_occurrence } ) ) {
+	    return 1;
+	}
+
+    }
+
+    return 0;
+
+}
+
+1;

@@ -1,0 +1,110 @@
+# Makefile defining the phrase-based gistimng model
+# Operates at the category level
+
+SUMMARIZER=phrase-summarizer
+#PHRASE_SUMMARIZER_WEKA_MODEL_CLASS=weka.classifiers.bayes.BayesNet
+#PHRASE_SUMMARIZER_WEKA_MODEL_CLASS=weka.classifiers.bayes.NaiveBayes
+#PHRASE_SUMMARIZER_WEKA_MODEL_CLASS=weka.classifiers.functions.SimpleLogistic
+PHRASE_SUMMARIZER_WEKA_MODEL_CLASS=weka.classifiers.functions.Logistic
+#PHRASE_SUMMARIZER_WEKA_MODEL_CLASS=weka.classifiers.functions.SMO
+#PHRASE_SUMMARIZER_WEKA_MODEL_CLASS=weka.classifiers.trees.J48
+
+BINDIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include $(BINDIR)/makefile.phrase.common
+
+# Features seem to be relevant only if we train per-term models, too much confusion otherwise
+include $(BINDIR)/../../../bin/makefile.features
+
+$(info $(LINE_HEADING) Phrase-based Summarizer)
+
+ifndef FOLD_ID
+$(error $(LINE_HEADING) No fold id provided, cannot proceed ...)
+else
+$(info $(LINE_HEADING) Fold id: $(FOLD_ID))
+endif
+
+MODEL_DIRECTORY := $(CATEGORY).models/$(SUMMARIZER)/$(FOLD_ID)
+
+MODEL_BASE := $(MODEL_DIRECTORY)/$(SUMMARIZER)
+MODEL_EXTRA := $(MODEL_DIRECTORY)/extra
+
+MODEL_FILE := $(MODEL_BASE).weka.model
+EVALUATION_FILE := $(MODEL_BASE).weka.test
+
+MODEL_FEATURES := $(MODEL_BASE).features
+MODEL_TRAINING_DATA_UNCOMPRESSED := $(MODEL_BASE)-training.data
+MODEL_TRAINING_DATA := $(MODEL_TRAINING_DATA_UNCOMPRESSED).gz
+
+MODEL_TESTING_DATA_UNCOMPRESSED := $(MODEL_BASE)-testing.data
+MODEL_TESTING_DATA := $(MODEL_TESTING_DATA_UNCOMPRESSED).gz
+
+phrase-train: $(MODEL_FILE)
+	@echo "$(LINE_HEADING) Done training model !"
+
+phrase-test: $(EVALUATION_FILE)
+	@echo "$(LINE_HEADING) Done testing model !"
+
+#%.model: %.weka.model
+#	rm -f $@
+#	ln -s $(notdir $<) $@ # do we want to switch to the target directory instead ?
+#	@echo "$(LINE_HEADING) Generated model file --> $@"
+
+#%.test: %.weka.test
+#	rm -f $@
+#	ln -s $(notdir $<) $@ # ditto
+#	echo "$(LINE_HEADING) Generated evaluation file --> $@"
+
+%.octave.model: %-training.data
+	@echo "$(LINE_HEADING) Done generating $@ !"
+
+%.weka.model: %-training.arff
+	$(BINDIR_GRAPH)/binary-classifier-weka $(PHRASE_SUMMARIZER_WEKA_MODEL_CLASS) train $< $@ $@.out
+	@echo "$(LINE_HEADING) Done generating $@ !"
+
+%.weka.test: %.weka.model %-testing.arff %.weka.test.diag
+	$(BINDIR_GRAPH)/binary-classifier-weka $(PHRASE_SUMMARIZER_WEKA_MODEL_CLASS) test $*-testing.arff $*.weka.model $@ /dev/null
+
+%.weka.test.diag: %.weka.model %-testing.arff
+	$(BINDIR_GRAPH)/binary-classifier-weka $(PHRASE_SUMMARIZER_WEKA_MODEL_CLASS) diag $*-testing.arff $*.weka.model $@ /dev/null
+	cat $*-testing.arff | grep '^{' > $@.1.temp
+	cat $@ | grep ":" | sed 's/\s\+/\t/g' > $@.2.temp
+	paste -d'\t' $@.1.temp $@.2.temp > $@
+	rm -f $@.*.temp
+
+%.svm-light.model: %-training.sparse
+	$(THIRD_PARTY_ROOT)/svm-light/build/svm_learn $< $@
+	@echo "$(LINE_HEADING) Done generating $@ !"
+
+%.svm-light.test: %.svm-light.model %-testing.sparse
+	$(THIRD_PARTY_ROOT)/svm-light/build/svm_classify $*-testing.sparse $*.svm-light.model $@ > $@.diag
+	@echo "$(LINE_HEADING) Done generating $@ !"
+
+%.svm-perf.model: %-training.sparse
+	$(THIRD_PARTY_ROOT)/svm-perf/build/svm_perf_learn -c 1000000 $< $@
+	@echo "$(LINE_HEADING) Done generating $@ !"
+
+%.svm-perf.test: %.svm-perf.model %-testing.sparse
+	$(THIRD_PARTY_ROOT)/svm-perf/build/svm_perf_classify $*-testing.sparse $*.svm-perf.model $@ > $@.diag
+	@echo "$(LINE_HEADING) Done generating $@ !"
+
+$(MODEL_DIRECTORY):
+	@echo "$(LINE_HEADING) Making model directory: $(MODEL_DIRECTORY)"
+	@mkdir -p $(MODEL_DIRECTORY)
+
+# Not sure why I need to add these dependencies but they avoid redundant runs of the following rule
+%.features %-training.data %-testing.data: $(MODEL_DIRECTORY) $(CATEGORY).summary.phrases $(CATEGORY).content.phrases $(CATEGORY).title $(CATEGORY).url.words $(FEATURES_PREREQUISITES)
+	@echo "\nGenerating appearance data: $*.features / $*-training.data / $*-testing.data"
+	$(BINDIR_PHRASE)/generate-appearance-data --mode=salient --fold-id=${FOLD_ID} $(CATEGORY) $*-training.data $*-testing.data $*.features $(MODEL_EXTRA) $(FEATURES)
+
+# TODO: move this up ?
+%.gz: %
+	gzip -f $<
+
+%.arff %.matrix %.sparse: %.data.gz $(MODEL_FEATURES)
+	gunzip -c $< | $(BINDIR_PHRASE)/map-data --format=$(subst .,,$(suffix $@))  --description="phrase-model" --features=$(MODEL_FEATURES) > $@.temp
+	mv $@.temp $@
+
+# TODO: probably need to remove more things ?
+phrase-clean:
+	rm -rf *~
+	rm -rf *.temp

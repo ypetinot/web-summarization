@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# train OCELOT model
+# training data (rendered dmoz corpus) is expected to be provided on STDIN
+
+TARGET_DIRECTORY=$1
+BINDIR=`dirname $0`
+
+PATH=$PATH:../../../third-party/local/bin/:../../../third-party/local/scripts/:
+
+NUMBER_OF_DOCUMENTS=0;
+
+SHORTOPTS="f:n:s:t:u:v:w:"
+LONGOPTS="fold-id:,number-of-documents:,source-vocabulary-size:,target-vocabulary-size:,source-vocabulary-stopwords-removal:,target-vocabulary-stopwords-removal:,source-vocabulary-threshold:,target-vocabulary-threshold:,"
+
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+while true; do
+
+    case "$1" in
+	-h | --help )
+	    usage; exit 0;;
+	-f | --fold-id )
+	    FOLD_ID=$2; shift 2;;
+	-n | --number-of-documents)
+	    NUMBER_OF_DOCUMENTS=$2; shift 2;;
+	-s | --source-vocabulary-size )
+            SOURCE_VOCABULARY_SIZE=$2; shift 2;;
+	-t | --target-vocabulary-size )
+            TARGET_VOCABULARY_SIZE=$2; shift 2;;
+	-u | --source-vocabulary-stopwords-removal )
+	    SOURCE_VOCABULARY_STOPWORDS_REMOVAL=$2; shift 2;;
+	-v | --target-vocabulary-stopwords-removal )
+	    TARGET_VOCABULARY_STOPWORDS_REMOVAL=$2; shift 2;;
+	-w | --source-vocabulary-threshold )
+	    SOURCE_VOCABULARY_THRESHOLD=$2; shift 2;;
+	-x | --target-vocabulary-threshold )
+	    TARGET_VOCABULARY_THRESHOLD=$2; shift 2;;
+	--)
+	    shift; break;;
+    esac
+
+done
+
+TARGET_DIRECTORY=$1
+
+# TODO : should we support a default fold id (0) instead of making it requirement ?
+if [[ -z "${TARGET_DIRECTORY}" || -z "${FOLD_ID}" ]]; then
+    echo "Usage: {{url<tab>content<tab>summary}} | $0 <TARGET DIRECTORY> --fold-id=<fold-id>";
+    exit 1;
+fi
+
+# run training via makefile
+OCELOT_MAKEFILE=${BINDIR}/makefile.ocelot
+make -f ${OCELOT_MAKEFILE} FOLD_ID=${FOLD_ID}
+
+exit 1;
+
+# run language model training
+# TODO: should this be integrated with dmoz-select-vocabulary (there are common options) ?
+# TODO: do we care about the eos/sos tag ?
+cat ${TARGET_DIRECTORY}/dmoz.ocelot.output.mapped | ngram-count -order 3 -text - -no-sos -no-eos -text - -lm ${TARGET_DIRECTORY}/dmoz.ocelot.output.lm -gtmin 0
+
+# run mgiza training
+
+# run sn2cooc to enable multithreaded giza++ processing
+#snt2cooc ${TARGET_DIRECTORY}/dmoz.ocelot.giza.cooc ${TARGET_DIRECTORY}/dmoz.ocelot.source.vocabulary ${TARGET_DIRECTORY}/dmoz.ocelot.output.vocabulary ${TARGET_DIRECTORY}/dmoz.ocelot.giza.snt
+
+#mgiza -ncpus 4 -ml 1000 -t ${TARGET_DIRECTORY}/dmoz.ocelot.source.vocabulary -s ${TARGET_DIRECTORY}/dmoz.ocelot.output.vocabulary -c ${TARGET_DIRECTORY}/dmoz.ocelot.giza.snt -o ${TARGET_DIRECTORY}/dic -CoocurrenceFile ${TARGET_DIRECTORY}/dmoz.ocelot.giza.cooc > ${TARGET_DIRECTORY}/myexperiment_giza.out 2> ${TARGET_DIRECTORY}/myexperiment_giza.err -hmmiterations 0 -model2iterations 0 -model3iterations 0 -model4iterations 0 -model5iterations 0 -model6iterations 0
+
+# merge alignments (from mgiza)
+#merge_alignment.py ${TARGET_DIRECTORY}/dic.A3.final.part* > ${TARGET_DIRECTORY}/dic.A3.final

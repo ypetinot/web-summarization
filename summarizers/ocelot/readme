@@ -1,0 +1,15 @@
+# Training phase
+
+# TODO: we need to generate dmoz.generic.rendered using agglomerated category folds ...
+# 1 - list out all categories
+# 2 - extract fold data (have script for that already)
+# 3 - training
+
+# map filtered dmoz data using the source/output vocabularies
+cat dmoz.ocelot.filtered | awk -F"\t" '{ print $5 }' | dmoz-map-vocabulary --vocabulary=dmoz.ocelot.output.vocabulary > dmoz.ocelot.output.mapped
+cat dmoz.ocelot.filtered | awk -F"\t" '{ print $7 }' | dmoz-map-vocabulary --vocabulary=dmoz.ocelot.source.vocabulary > dmoz.ocelot.source.mapped
+
+# produce training data for Giza++
+ocelot-vocabulary . dmoz.ocelot.source.mapped  dmoz.ocelot.source.vocabulary  dmoz.ocelot.output.mapped dmoz.ocelot.output.vocabulary > dmoz.ocelot.giza.snt
+
+# ******************************************************************************************************************************************************************

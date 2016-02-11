@@ -1,0 +1,16 @@
+#!/bin/env perl
+
+# this script builds a dictionary that forces translation of certain words in the source language to certain words in the target language
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../../../src/perl/";
+use lib "$FindBin::Bin/../../../third-party/local/lib/";
+
+use Getopt::Long;
+use Pod::Usage;
+
+use Vocabulary;
+

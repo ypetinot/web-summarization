@@ -1,0 +1,316 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Data;
+use Chunk;
+use GraphModel;
+use GraphSummarizer;
+
+use JSON;
+use Text::Trim;
+
+binmode(STDIN,':utf8');
+binmode(STDERR,':utf8');
+binmode(STDOUT,':utf8');
+
+sub usage() {
+    return "Usage: $0 <reference> <reference-chunks> <model-dir> <model-output>";
+}
+
+if ( scalar(@ARGV) != 4 ) {
+    die usage();
+}
+
+my $reference_file         = $ARGV[0];
+my $reference_chunks_file  = $ARGV[1];
+my $model_directory        = $ARGV[2];
+my $model_output_file      = $ARGV[3];
+
+if ( ! -f $reference_file ) {
+    die "Invalid reference file $reference_file: $!";
+}
+
+if ( ! -f $reference_chunks_file ) {
+    die "Invalid reference chunks file $reference_chunks_file: $!";
+}
+
+if ( ! -d $model_directory ) {
+    die "Invalid model directory $model_directory: $!";
+}
+
+# TODO: move this to a Model class ?
+my $model_file = join("/", $model_directory, "np.model");
+if ( ! -f $model_file ) {
+    die "Invalid model file: $model_file";
+}
+
+if ( ! -f $model_output_file ) {
+    die "Invalid model output file $model_output_file: $!";
+}
+
+# load reference summaries
+my ($urls, $reference_summaries) = GraphSummarizer::_load_contents($reference_file);
+
+# load reference chunks (assume that the set of chunks is shared by all reference summaries)
+my $reference_data = Category::Data->read_in_data($reference_chunks_file);
+my @reference_chunks = grep { $_->{type} eq 'np'; } @{ $reference_data->{'chunks'} };
+
+# load model
+my $model = GraphModel->read_in_data($model_file);
+
+# load model output
+my ($model_urls, $model_outputs) = GraphSummarizer::_load_contents($model_output_file); 
+
+if ( scalar(@$urls) != scalar(@$model_urls) ) {
+    die "[evaluate-summary] Mismatch between reference summaries and model outputs ...";
+}
+
+for (my $i=0; $i<scalar(@$urls); $i++) {
+
+    my $url = $urls->[$i];
+    my $reference_summary = $reference_summaries->[$i];
+
+    my $model_url = $model_urls->[$i];
+    my $model_output = from_json( $model_outputs->[$i] );
+
+    if ( $url ne $model_url ) {
+	die "[evaluate-summary] Mismatch between reference url and model url ...";
+    }
+
+    my %stats;
+
+    # 0 - match/align chunks between reference and model (this part can be questionable ?)
+    my %model_2_reference_alignment;
+    my %reference_2_model_alignment;
+    my @model_output_chunks = map { $model->get_node( $_ ) } keys( %{ $model_output->{'nodes'} } );
+    foreach my $model_output_chunk (@model_output_chunks) {
+
+	my $best_match_chunk = undef;
+	my $best_match_chunk_score = 0;
+
+	foreach my $reference_chunk (@reference_chunks) {
+
+	    my $match_score = $model_output_chunk->match($reference_chunk);
+	    if ( $match_score > $best_match_chunk_score ) {
+		$best_match_chunk = $reference_chunk;
+		$best_match_chunk_score = $match_score;
+	    }
+
+	}
+
+	# TODO: can we do better ?
+	if ( $best_match_chunk_score > 0.5 ) {
+	    $model_2_reference_alignment{ $model_output_chunk->get_id() } = $best_match_chunk->get_id();
+	    $reference_2_model_alignment{ $best_match_chunk->get_id() } = $model_output_chunk->get_id();
+	}
+
+    }
+
+    # *********************************************************************************************************************************
+    # 1 - produce raw evaluation data for indicator (evidence) function
+    # Precision/Recall
+
+    # we only consider chunks that appeared at least twice in the training data
+    # i.e. seen at least twice by the model
+    # note that this evaluation is as good as our np matching procedure
+    my @model_nodes = @{ $model->nodes() };
+    my %model_output_chunk_indicator_pr;
+    map { $model_output_chunk_indicator_pr{ $_->get_id() }++; } grep { ($_->{type} eq 'np') && ($_->get_count() > 1) } @model_nodes;
+
+    # expected set of nodes
+    # --> compute recall
+    my $set_count = 0;
+    my $indicator_recall_expected_count = 0;
+    foreach my $reference_chunk (@reference_chunks) {
+	
+	my $aligned_chunk_id = $reference_2_model_alignment{ $reference_chunk->get_id() };
+
+	my $is_set = 0;
+	if ( defined( $aligned_chunk_id ) ) {
+
+	    # stick to a specific set of chunks
+	    if ( ! defined( $model_output_chunk_indicator_pr{ $aligned_chunk_id} ) ) {
+		next;
+	    }
+
+	    $indicator_recall_expected_count++;
+	    $is_set = $model_output->{'nodes'}->{$aligned_chunk_id}->{'evidence'};
+
+	}
+
+	if ( $is_set > 0.5 ) {
+	    $set_count++;
+	}
+
+    }
+    # if there is no reference chunk does this mean perfect recall ?
+    my $recall = ( $indicator_recall_expected_count ) ? $set_count / $indicator_recall_expected_count : 1;
+
+    # identified set of nodes
+    # --> compute precision
+    my $match_count = 0;
+    my $indicator_precision_expected_count = 0;
+    foreach my $model_output_chunk (@model_output_chunks) {
+
+	my $aligned_chunk_id = $model_2_reference_alignment{ $model_output_chunk->get_id() };
+
+	# stick to a specific set of chunks
+	if ( ! defined( $model_output_chunk_indicator_pr{ $model_output_chunk->get_id() } ) ) {
+	    next;
+	}
+
+	if ( defined( $aligned_chunk_id ) ) {
+
+	    $indicator_precision_expected_count++;
+	    
+	    my $is_set = $model_output->{'nodes'}->{$model_output_chunk->get_id()}->{'evidence'};
+	    if ( $is_set > 0.5 ) {
+		$match_count++;
+	    }
+
+	}
+
+    }
+    # if there is no model chunk does this mean perfect precision ?
+    my $precision = ( $indicator_precision_expected_count ) ? $match_count / $indicator_precision_expected_count : 1;
+
+    # store indicator stats
+    $stats{'indicator'} = { 'precision' => $precision , 'recall' => $recall };
+    # *********************************************************************************************************************************
+    
+    # *********************************************************************************************************************************
+    # 2 - produce raw evaluation data for extractor function
+    # for tokens that cannot be aligned to the model
+    
+    # TODO: do we account for non matches of nodes containing slots ?
+
+    # store extractor stats
+    $stats{'extractor'} = undef;
+    # *********************************************************************************************************************************
+
+    # *********************************************************************************************************************************
+    # 3 - similarity (cosine) over NP based content only
+    my $reference_string = join ( " " , map {
+	
+	$_->get_surface_string();
+
+				  } @reference_chunks );
+
+    my $model_string = join ( " " , map { 
+
+	# TODO: this doesn't account for the inability to extract any slot value
+	# Will slightly (maybe ?) improve the perceived performance of the model, but should not be significant
+	my $entry = $model_output->{'nodes'}->{$_};
+	my @slot_values = @{ $entry->{'slot'} };
+	if ( scalar( @slot_values ) ) {
+	    $slot_values[0];
+	}
+	else {
+	    $model->get_node($_)->get_surface_string();
+	}
+
+			      } grep { $model_output->{'nodes'}->{$_}->{'evidence'} > 0.5 } keys( %{ $model_output->{'nodes'} } ) );
+    my $cosine_similarity = _compute_cosine_similarity($reference_string,$model_string);
+
+    # store node similarity stats
+    $stats{'node-similarity'} = {
+	'reference-string' => $reference_string ,
+	'model-string' => $model_string ,
+	'cosine-similarity' => $cosine_similarity
+	};
+    # *********************************************************************************************************************************
+
+    # *********************************************************************************************************************************
+    # 4 - similarity / ROUGE measures (complete)
+    my $model_summary = $model_output->{'gist'} || '';
+    my $rouge_scores = _compute_rouge_scores($reference_summary,$model_summary);
+
+    # store ROUGE similarity stats
+    $stats{'rouge-scores'} = {
+	'reference-summary' => $reference_summary ,
+	'model-summary' => $model_summary ,
+	'rouge-scores' => $rouge_scores
+	};
+    # *********************************************************************************************************************************
+
+    print to_json(\%stats) . "\n";
+
+}
+
+# compute cosine similarity between two strings
+sub _compute_cosine_similarity {
+
+    my $string1 = shift;
+    my $string2 = shift;
+
+    my $normalized_string1 = _normalize_string($string1);
+    my $normalized_string2 = _normalize_string($string2);
+
+    my @tokens1 = split /\s+/, $normalized_string1;
+    my @tokens2 = split /\s+/, $normalized_string2;
+
+    my %tokens1_counts;
+    map { $tokens1_counts{$_}++; } @tokens1;
+
+    my %tokens2_counts;
+    map { $tokens2_counts{$_}++; } @tokens2;
+
+    my %all_tokens;
+    map { $all_tokens{$_} += $tokens1_counts{$_}; } keys(%tokens1_counts);
+    map { $all_tokens{$_} += $tokens2_counts{$_}; } keys(%tokens2_counts);
+
+    my $similarity = 0;
+
+    if ( scalar(keys(%tokens1_counts)) && scalar(keys(%tokens2_counts)) ) {
+
+	my $dot_product = 0;
+	map { $dot_product += ($tokens1_counts{$_} || 0) * ($tokens2_counts{$_} || 0); } keys(%all_tokens); 
+
+	my $norm1 = 0;
+	map { $norm1 += $tokens1_counts{$_} ** 2; } keys(%all_tokens);
+
+	my $norm2 = 0;
+	map { $norm2 += $tokens2_counts{$_} ** 2; } keys(%all_tokens);
+
+	my $norm = sqrt( $norm1 * $norm2 );
+
+	$similarity = $dot_product / $norm;
+
+    }
+
+    return $similarity;
+
+}
+
+# (specific) string normalization
+# TODO: more normalization needed ?
+sub _normalize_string {
+
+    my $string = shift;
+    
+    my $normalized_string = lc($string);
+    $normalized_string = trim($normalized_string);
+    $normalized_string =~ s/[[:punct:]]+/ /sg;
+
+    return $normalized_string;
+
+}
+
+# compute ROUGE scores
+sub _compute_rouge_scores {
+
+    my $reference_summary = shift;
+    my $model_summary = shift;
+
+    return 0;
+
+}
+
+1;

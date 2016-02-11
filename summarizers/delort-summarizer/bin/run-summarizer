@@ -1,0 +1,13 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+DIST_BINDIR=${BINDIR}/../../../bin/
+
+SUMMARIZER_ROOTDIR=${BINDIR}/../
+
+SUMMARIZER_CLASS="Web::Summarizer::DelortSummarizer"
+SUMMARIZER_LIB=${SUMMARIZER_ROOTDIR}/src/
+SUMMARIZER_CONFIGURATION=${SUMMARIZER_ROOTDIR}/conf/configuration.conf
+
+# TODO: if we provide the summarizer root dir, there is no need to also specify the base class / system configuration
+${DIST_BINDIR}/run-summarizer ${SUMMARIZER_CLASS} --summarizer-root=${SUMMARIZER_ROOTDIR} --system-configuration=${SUMMARIZER_CONFIGURATION} $@

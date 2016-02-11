@@ -1,0 +1,12 @@
+BINDIR_PHRASE_PREPROCESSING := $(dir $(lastword $(MAKEFILE_LIST)))
+
+%.summary.phrases: %.summary.chunked
+	$(warning Generating gist phrases for $*)
+	cat $< | ${BINDIR_PHRASE_PREPROCESSING}/../../phrase-summarizer/bin/gist-to-phrases > $@
+
+%.content.phrases: %.content.rendered
+	$(warning Generating content phrases for $*)
+	cat $< | $(BINDIR_PHRASE_PREPROCESSING)/../../phrase-summarizer/bin/url-to-phrases > $@
+
+phrase-preprocessing-clean:
+	@rm -rf *.phrases

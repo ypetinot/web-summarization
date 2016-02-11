@@ -1,0 +1,386 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Data;
+use Chunk;
+use GraphModel;
+use GraphSummary;
+use GraphSummarizer;
+
+use JSON;
+use Text::Trim;
+
+binmode(STDIN,':utf8');
+binmode(STDERR,':utf8');
+binmode(STDOUT,':utf8');
+
+sub usage() {
+    return "Usage: $0 <reference> <reference-chunks> <model-dir> <model-output>";
+}
+
+if ( scalar(@ARGV) != 4 ) {
+    die usage();
+}
+
+my $reference_file         = $ARGV[0];
+my $reference_chunks_file  = $ARGV[1];
+my $model_directory        = $ARGV[2];
+my $model_output_file      = $ARGV[3];
+
+# load reference summaries
+if ( ! -f $reference_file ) {
+    die "Invalid reference file $reference_file: $!";
+}
+my ($urls, $reference_summaries) = GraphSummarizer::_load_contents($reference_file);
+
+# load model
+my $model_file = join("/", $model_directory, "np.model");
+if ( ! -f $model_file ) {
+    die "Invalid model file: $model_file";
+}
+my $model = GraphModel->read_in_data($model_file);
+
+# load reference chunks (assume that the set of chunks is shared by all reference summaries)
+if ( ! -f $reference_chunks_file ) {
+    die "Invalid reference chunks file $reference_chunks_file: $!";
+}
+my @reference_summaries = map{ my @tokens = split /\s+/, $_; \@tokens; } @{ (GraphSummarizer::_load_contents( $reference_chunks_file , 0 ))[0] };
+my @reference_chunks = map { my $array_ref = $_; my @chunk_ids = @{ $array_ref }; my @chunks = map { $model->get_node($_); } @chunk_ids; \@chunks; } @reference_summaries;
+
+if ( ! -d $model_directory ) {
+    die "Invalid model directory $model_directory: $!";
+}
+
+# load model output
+if ( ! -f $model_output_file ) {
+    die "Invalid model output file $model_output_file: $!";
+}
+my ($model_urls,$model_outputs) = GraphSummarizer::_load_contents($model_output_file); 
+
+if ( scalar(@$urls) != scalar(@$model_urls) ) {
+    die "[evaluate-summary] Mismatch between reference summaries and model outputs ...";
+}
+
+if ( scalar(@$urls) != scalar(@reference_chunks) ) {
+    die "[evaluate-summary] Mismatch between reference summaries and reference nodes ...";
+}
+
+for (my $i=0; $i<scalar(@$urls); $i++) {
+
+    my $url = $urls->[$i];
+    my $reference_summary = $reference_summaries->[$i];
+
+    my $model_url = $model_urls->[$i];
+    my $model_output = GraphSummary->deserialize( $model_outputs->[$i] );
+    $model_output->model( $model );
+
+    if ( $url ne $model_url ) {
+	die "[evaluate-summary] Mismatch between reference url and model url ...";
+    }
+
+    my %stats;
+
+    my @model_output_chunks = @{ $model_output->get_active_nodes() };
+
+    {
+
+	# *********************************************************************************************************************************
+	# 1 - produce raw evaluation data for indicator (evidence) function
+	# Precision/Recall
+	
+	# expected set of nodes
+	# --> compute recall
+	my $indicator_set_count = 0;
+	my @indicator_recall_set;
+	foreach my $reference_chunk ( @{ $reference_chunks[$i] } ) {
+	    
+	    my $reference_chunk_id = $reference_chunk->get_id();
+	    
+	    # only consider frequent NPs here
+	    if ( $reference_chunk->get_type() ne 'np' ) {
+		next;
+	    }
+	    
+	    # only considers non-unique nodes
+	    if ( !$model->is_known_np($reference_chunk_id) ) {
+		next;
+	    }
+		
+	    push @indicator_recall_set, [ $reference_chunk->get_representative_string(), $reference_chunk_id, $model->get_count( $reference_chunk ) ];
+	    
+	    if ( $model_output->get_evidence( $reference_chunk_id ) > 0.5 ) {
+		$indicator_set_count++;
+	    }
+	    
+	}
+	# if there is no reference chunk does this mean perfect recall ?
+	my $indicator_recall = ( scalar(@indicator_recall_set) ) ? $indicator_set_count / scalar(@indicator_recall_set) : 1;
+	
+	# identified set of nodes
+	# --> compute precision
+	my $indicator_match_count = 0;
+	my @indicator_precision_set;   
+	foreach my $model_output_chunk (@model_output_chunks) {
+	    
+	    my $model_output_chunk_id = $model_output_chunk->get_id();
+	    
+	    # only consider frequent NPs here
+	    if ( ( $model_output_chunk->get_type() ne 'np' ) || !$model->is_known_np($model_output_chunk_id) ) {
+		next;
+	    }
+	    
+	    # only consider nodes that are actually activated
+	    if ( $model_output->get_evidence( $model_output_chunk_id ) < 0.5 ) {
+		next;
+	    }
+	    
+	    push @indicator_precision_set, [ $model_output_chunk->get_representative_string(), $model_output_chunk_id, $model->get_count( $model_output_chunk ) ];
+	    
+	    foreach my $reference_chunk (@{ $reference_chunks[$i] }) {
+		
+		if ( $model_output_chunk->same_as($reference_chunk->get_id()) ) {
+		    $indicator_match_count++;
+		    last;
+		}
+		
+	    }
+	    
+	}
+	# if there is no model chunk does this mean perfect precision ?
+	my $indicator_precision = ( scalar(@indicator_precision_set) ) ? $indicator_match_count / scalar(@indicator_precision_set) : 1;
+
+	# store indicator stats
+	$stats{'indicator'} = { 'precision_set' => \@indicator_precision_set ,
+				'precision' => $indicator_precision ,
+				'recall_set' => \@indicator_recall_set ,
+				'recall' => $indicator_recall };
+	# *********************************************************************************************************************************
+    
+    }
+
+    {
+	
+	# *********************************************************************************************************************************
+	# 2 - produce raw evaluation data for extractor function
+	# for tokens that cannot be aligned to the model
+	
+	# Focus on NPs that are unique to the current summary (NPs that have not been clustered with other ones during data preparation),
+	# and whether we effectively extract them, once again using Precision/Recall
+	# TODO: do we account for non matches of nodes containing slots ?
+	
+	# expected set of strings
+	my $extractor_set_count = 0;
+	my @extractor_recall_set;
+	foreach my $reference_chunk ( @{ $reference_chunks[$i] } ) {
+	    
+	    my $reference_chunk_id = $reference_chunk->get_id();
+    
+	    # only consider frequent NPs here
+	    if ( ( $reference_chunk->get_type() ne 'np' ) ) {
+		next;
+	    }
+	    
+	    # only consider "unknown" NPs
+	    if ( $model->is_known_np($reference_chunk_id) ) {
+		next;
+	    }
+	    
+	    my $np_string = $reference_chunk->get_representative_string();
+	    if ( length($np_string) ) {
+		push @extractor_recall_set, [ $np_string , $reference_chunk_id , $model->get_count( $reference_chunk ) ];
+	    }
+	    
+	}
+
+	# identified set of strings
+	my $extractor_match_count = 0;
+	my @extractor_precision_set;   
+	foreach my $model_output_chunk (@model_output_chunks) {
+	    
+	    my $model_output_chunk_id = $model_output_chunk->get_id();
+	    
+	    # only consider NPs here
+	    if ( ( $model_output_chunk->get_type() ne 'np' ) ) {
+		next;
+	    }
+
+	    # only consider "unknown" NPs
+	    if ( $model->is_known_np($model_output_chunk_id) ) {
+		next;
+	    }
+
+	    my $np_string = $model_output_chunk->get_representative_string();
+	    if ( length($np_string) ) {
+		push @extractor_precision_set, [ $np_string , $model_output_chunk_id , $model->get_count( $model_output_chunk ) ];
+	    }
+
+	    
+	}
+
+	foreach my $extractor_precision_set_element (@extractor_precision_set) {
+	    foreach my $extractor_recall_set_element (@extractor_recall_set) {
+		if ( _compute_cosine_similarity($extractor_precision_set_element->[0],$extractor_recall_set_element->[0]) > 0.5 ) {
+		    $extractor_match_count++;
+		    last;
+		}
+	    }
+	}
+
+	# TODO: can we do better than duplicating the code above ?
+	foreach my $extractor_recall_set_element (@extractor_recall_set) {
+	    foreach my $extractor_precision_set_element (@extractor_precision_set) {
+		if ( _compute_cosine_similarity($extractor_precision_set_element->[0],$extractor_recall_set_element->[0]) > 0.5 ) {
+		    $extractor_set_count++;
+		    last;
+		}
+	    }
+	}
+
+	# if there is no reference chunk does this mean perfect precision/recall ?
+	my $extractor_recall = ( scalar(@extractor_recall_set) ) ? $extractor_set_count / scalar(@extractor_recall_set) : 1;
+	my $extractor_precision = ( scalar(@extractor_precision_set) ) ? $extractor_match_count / scalar(@extractor_precision_set) : 1;
+	
+	
+	# store indicator stats
+	$stats{'extractor'} = { 'precision_set' => \@extractor_precision_set ,
+				'precision' => $extractor_precision ,
+				'recall_set' => \@extractor_recall_set ,
+				'recall' => $extractor_recall };
+	# *********************************************************************************************************************************
+
+    }
+
+    {
+	
+	# *********************************************************************************************************************************
+	# 3 - similarity (cosine) over NP based content only
+	my $reference_string = join ( " " , map {
+	    
+	    $_->get_surface_string();
+	    
+				      } @{ $reference_chunks[$i] } );
+	
+	my $model_string = join ( " " , map { 
+	    
+	    # TODO: this doesn't account for the inability to extract any slot value
+	    # Will slightly (maybe ?) improve the perceived performance of the model, but should not be significant
+	    my $node_state = $model_output->get_state( $_->get_id() );
+	    my @slot_values = @{ $node_state->[1] };
+	    if ( scalar( @slot_values ) ) {
+		$slot_values[0];
+	    }
+	    else {
+		$_->get_surface_string();
+	    }
+	    
+				  } grep { $model_output->get_evidence( $_->get_id() ) > 0.5 } @{ $model->nodes() } );
+	my $cosine_similarity = _compute_cosine_similarity($reference_string,$model_string);
+	
+	# store node similarity stats
+	$stats{'node-similarity'} = {
+	    'reference-string' => $reference_string ,
+	    'model-string' => $model_string ,
+	    'cosine-similarity' => $cosine_similarity
+	};
+	# *********************************************************************************************************************************
+	
+    }
+
+    {
+	
+	# *********************************************************************************************************************************
+	# 4 - similarity / ROUGE measures (complete)
+	my $model_summary = $model_output->{'gist'} || '';
+	my $rouge_scores = _compute_rouge_scores($reference_summary,$model_summary);
+	
+	# store ROUGE similarity stats
+	$stats{'rouge-scores'} = {
+	    'reference-summary' => $reference_summary ,
+	    'model-summary' => $model_summary ,
+	    'rouge-scores' => $rouge_scores
+	};
+	# *********************************************************************************************************************************
+	
+    }
+
+    print to_json(\%stats) . "\n";
+
+}
+
+# compute cosine similarity between two strings
+sub _compute_cosine_similarity {
+
+    my $string1 = shift;
+    my $string2 = shift;
+
+    my $normalized_string1 = _normalize_string($string1);
+    my $normalized_string2 = _normalize_string($string2);
+
+    my @tokens1 = split /\s+/, $normalized_string1;
+    my @tokens2 = split /\s+/, $normalized_string2;
+
+    my %tokens1_counts;
+    map { $tokens1_counts{$_}++; } @tokens1;
+
+    my %tokens2_counts;
+    map { $tokens2_counts{$_}++; } @tokens2;
+
+    my %all_tokens;
+    map { $all_tokens{$_} += $tokens1_counts{$_}; } keys(%tokens1_counts);
+    map { $all_tokens{$_} += $tokens2_counts{$_}; } keys(%tokens2_counts);
+
+    my $similarity = 0;
+
+    if ( scalar(keys(%tokens1_counts)) && scalar(keys(%tokens2_counts)) ) {
+
+	my $dot_product = 0;
+	map { $dot_product += ($tokens1_counts{$_} || 0) * ($tokens2_counts{$_} || 0); } keys(%all_tokens); 
+
+	my $norm1 = 0;
+	map { $norm1 += ( $tokens1_counts{$_} || 0 ) ** 2; } keys(%all_tokens);
+
+	my $norm2 = 0;
+	map { $norm2 += ( $tokens2_counts{$_} || 0 ) ** 2; } keys(%all_tokens);
+
+	my $norm = sqrt( $norm1 * $norm2 );
+
+	$similarity = $dot_product / $norm;
+
+    }
+
+    return $similarity;
+
+}
+
+# (specific) string normalization
+# TODO: more normalization needed ?
+sub _normalize_string {
+
+    my $string = shift;
+    
+    my $normalized_string = lc($string);
+    $normalized_string = trim($normalized_string);
+    $normalized_string =~ s/[[:punct:]]+/ /sg;
+
+    return $normalized_string;
+
+}
+
+# compute ROUGE scores
+sub _compute_rouge_scores {
+
+    my $reference_summary = shift;
+    my $model_summary = shift;
+
+    return 0;
+
+}
+
+1;

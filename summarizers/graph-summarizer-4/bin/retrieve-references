@@ -1,0 +1,36 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+CATEGORY_BASE=$1
+FOLD=$2
+LIST_FORMAT=$3
+
+function _format() {
+
+    DO_FORMAT=$1
+
+    if [[ "${DO_FORMAT}" -ne "1" ]]; then
+	cat - | tr '\t' ' ' | tr '\n' '\t'
+    else
+	cat -
+    fi
+}
+
+# Temporarily accept target category as first argument ...
+#REFERENCES=`${BINDIR}/../../../bin/dmoz-category-fold --train --fields=_category_path ${FOLD} ${CATEGORY_BASE} | _format ${LIST_FORMAT}`
+${BINDIR}/../../../bin/dmoz-category-fold --train --fields=_category_path ${FOLD} ${CATEGORY_BASE} | _format ${LIST_FORMAT}
+
+## For now simply return training URLs
+#cat - | while read URL; do
+#    echo -e "${URL}\t${REFERENCES}"
+#done;
+
+## | $(BINDIR)/object-featurizer --features="$(FEATURES_NO_SPEC)" --repository-base=$(REPOSITORY_BASE) --max=1000 2>/dev/null | $(BINDIR)/reference-query-mapper | 
+
+##cat - | while read URL REQUEST; do
+##    
+##    #RESPONSE=`curl --silent "${REQUEST}"`
+##    REFERENCES=`curl --silent -d "${REQUEST}" 'http://southpaw.cs.columbia.edu:8080/solr/odp-index/select' | ${BINDIR}/extract-references`
+##    echo -e "${URL}\t${REFERENCES}"
+##    
+##    done;

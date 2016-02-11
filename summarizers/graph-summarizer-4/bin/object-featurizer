@@ -1,0 +1,63 @@
+#!/usr/bin/env perl
+
+# Given a stream of (object) URLs, produce corresponding set of features
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use DMOZ::UrlFeaturizer;
+
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+my $repository_base = undef;
+my $features = undef;
+my $max = undef;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, man => \$man, 'debug|d' => \$debug, 'features=s' => \$features , 'repository-base=s' => \$repository_base , 'max=i' => \$max) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( ! defined( $features ) || ! defined( $repository_base ) );
+
+binmode(STDIN,':utf8');
+
+my @feature_keys = split /\s+/, $features;
+
+# Instantiate URL featurizer
+my $url_featurizer = new DMOZ::UrlFeaturizer( repository_base => $repository_base , feature_keys => \@feature_keys );
+
+while( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+
+    # 1 - collect features for the target URL
+    # Note: the category is provided only as a convenience to access the underlying data repository
+    my $features = $url_featurizer->collect_features( $url );
+
+    if ( defined( $max ) && scalar(keys( %{ $features } )) > $max ) {
+
+	my @sorted_keys = ( sort { $features->{ $b } <=> $features->{ $a } } keys( %{ $features } ) );
+	map{ delete $features->{ $_ } } splice ( @sorted_keys , $max );
+
+    }
+
+    # 3 - output
+    print join("\t", $url, @fields, encode_json( $features ) ) . "\n";
+
+}
+
+1;

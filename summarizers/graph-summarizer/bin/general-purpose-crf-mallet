@@ -1,0 +1,36 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+MALLET_ROOT=${BINDIR}/../mallet/mallet-2.0.7/
+
+MODE=$1
+TEMPLATE_FILE=$2
+INPUT_FILE=$3
+MODEL_FILE=$4
+OUT_FILE=$5
+
+if [[ -z ${MODE} || -z ${INPUT_FILE} || -z "${MODEL_FILE}" ]]; then
+    echo "Usage: $0 <mode> <training-file|testing-file> <model-file>"
+    exit
+fi
+
+BINDIR=`dirname $0`;
+
+MALLET_CLASS=cc.mallet.grmm.learning.GenericAcrfTui
+MALLET_OPTIONS="-cp ${MALLET_ROOT}/class:${MALLET_ROOT}/lib/mallet-deps.jar:${MALLET_ROOT}/lib/grmm-deps.jar"
+
+MALLET_MODEL=${BINDIR)/crf_model.template
+
+function dump {
+    if [[ -z "${OUT_FILE}" ]]; then
+	cat - 
+    else
+	cat - | tee ${OUT_FILE}
+    fi
+}
+
+if [[ ${MODE} == "train" ]]; then
+    java ${MALLET_OPTIONS} ${MALLET_CLASS} --training ${INPUT_FILE} --testing ${INPUT_FILE} --model-file ${TEMPLATE_FILE} | dump
+else
+    java ${MALLET_OPTIONS} ${MALLET_CLASS} --testing  ${INPUT_FILE} --model-file ${TEMPLATE_FILE} | dump
+fi

@@ -1,0 +1,10 @@
+if [ $# != 1 ]; then
+	echo "usage: $0 target_url";
+	exit 1;
+fi
+
+# way too slow ...
+#DMOZ_DATA_FILE=../data/randomized_dmoz_data.en
+#pick-random-line $DMOZ_DATA_FILE | awk -F'\t' '{print $3}'
+
+java dmozindexer.RandomPicker 1 2>/dev/null | awk -F'\t' '{print $3}'

@@ -1,0 +1,54 @@
+#!/bin/bash -x
+
+# generate graph model given set of input web gists
+
+# Examples:
+
+# Interesting, ''faceted'' summarization
+# ../../conference-data/full/experiment.1/data/local/data/ypetinot/data/dmoz_repository/Top/Arts/Television/84d1e574373ea5b4c75fb30fd06e6df7.summary
+
+CHUNK_FILE=$1;
+SUMMARY_FILE=$2;
+CONTENT_FILE=$3;
+MODEL_DIR=$4;
+if [[ -z "${CHUNK_FILE}" || -z "${SUMMARY_FILE}" || -z "${CONTENT_FILE}" || -z "${MODEL_DIR}" ]]; then
+    echo "Usage: $0 <chunk-file> <summary-file> <content-file> <model-dir>"
+    exit;
+fi
+
+BINDIR=`dirname $0`;
+
+# create model directory
+mkdir -p ${MODEL_DIR};
+rm -rf ${MODEL_DIR}/*
+
+# 3 - perform NP clustering
+# group compound NPs with identical final NP
+# group high-similarity NPs
+# np entailment based clustering (?)
+TEMP_CLUSTERED_CHUNKING_DATA=`mktemp`
+cat ${CHUNK_FILE} | ${BINDIR}/cluster-chunks ${SUMMARY_FILE} > ${TEMP_CLUSTERED_CHUNKING_DATA}
+
+# 4 - learn per-np model
+# Unique/Rare NPs are mapped to an extraction (e.g. ranking, but doesn't have to be) function
+# Frequent NPs are mapped to an indicator function 
+# Combined function: indicator (appears or not) and extraction function (in case the NP is fully or partially templated) 
+# --> break down slot filling function into: POS-based extraction, feature (position, window, etc) based extraction; and combine
+TEMP_MODELED_CHUNKING_DATA=${TEMP_CLUSTERED_CHUNKING_DATA}.modeled
+cat ${TEMP_CLUSTERED_CHUNKING_DATA} | ${BINDIR}/model-chunks ${SUMMARY_FILE} ${CONTENT_FILE} ${MODEL_DIR} > ${TEMP_MODELED_CHUNKING_DATA}
+
+# 5 - perform NP abstraction ? / NP merging (based on extraction function)
+# An NP that is unique after clustering is should be (fully ?) abstracted
+# abstract out contiguous NPs that are unique in the category (alternatively those that are below a certain appearance ratio ?)
+# slots should be represented by a feature-based extraction function
+# learn to merge those functions as these get clustered up
+#TEMP_ABSTRACTED_CHUNKING_DATA=${TEMP_CLUSTERED_CHUNKING_DATA}.abstracted
+#cat ${TEMP_CLUSTERED_CHUNKING_DATA} | ${BINDIR}/abstract-chunks > ${TEMP_ABSTRACTED_CHUNKING_DATA}
+#cat ${TEMP_CLUSTERED_CHUNKING_DATA} > ${TEMP_ABSTRACTED_CHUNKING_DATA}
+
+# 6 - generate graph
+NP_GRAPH_MODEL=${MODEL_DIR}/np.model
+cat ${TEMP_MODELED_CHUNKING_DATA} > ${NP_GRAPH_MODEL}
+
+# clean up
+rm -rf ${TEMP_SUMMARY_DATA} ${TEMP_CHUNKING_DATA} ${TEMP_ABSTRACTED_CHUNKING_DATA} ${TEMP_CLUSTERED_CHUNKING_DATA} ${TEMP_ABSTRACTED_CHUNKING_DATA} ${TEMP_MODELED_CHUNKING_DATA}

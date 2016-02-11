@@ -1,0 +1,202 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Getopt::Long;
+use Pod::Usage;
+
+my $help = 0;
+my $debug = 0;
+my $man = 0;
+
+my $description = undef;
+my $features_file = undef;
+my $format = undef;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('description=s' => \$description, 'features=s' => \$features_file, 'format=s' => \$format, 'help|?' => \$help, man => \$man, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if ( ! defined( $description ) || ! defined( $features_file ) );
+
+my %features;
+my %features2index;
+my %features2range;
+my %index2feature;
+my %index2new;
+my %new2index;
+my %new2key;
+my %new2type;
+
+# TODO: turn this into a parameter
+my $min_feature_count = 2;
+
+my $n_features = 0;
+
+{
+
+#TODO: create class to handle features ?
+    open FEATURES_FILE, $features_file or die "Unable to open eatures file ($features_file): $!";
+    while ( <FEATURES_FILE> ) {
+	
+	chomp;
+	
+	my @fields = split /\t/, $_;
+	if ( scalar(@fields) < 4 ) {
+	    print STDERR "Skipping invalid feature entry: $_\n";
+	}
+	
+	my $feature_index = shift @fields;
+	my $feature_key = shift @fields;
+	my $feature_count = shift @fields;
+	my $feature_range = shift @fields;
+
+	my $feature_type = undef;
+	if ( $feature_key =~ m/::([^:])+$/ ) {
+	    $feature_type = $1;
+	}
+
+	if ( $feature_count < $min_feature_count ) {
+	    next;
+	}
+
+	$features2index{ $feature_key } = $feature_index;
+	$index2feature{ $feature_index } = $feature_key;
+
+	$features2range{ $feature_key } = $feature_range;
+	
+	my $new = $n_features++;
+	$index2new{ $feature_index } = $new;
+	$new2index{ $new } = $feature_index;
+	$new2key{ $new } = $feature_key;
+	$new2type{ $new } = $feature_type;
+
+	$features{ $feature_key } = $feature_count;
+	
+    }
+    close FEATURES_FILE;
+
+}
+
+if ( $format eq 'arff' ) {
+    # print header
+    print STDOUT "\@RELATION $description\n";
+    print STDOUT "\n";
+}
+
+for (my $i=0; $i<$n_features; $i++) {
+
+    my $feature_index = $new2index{ $i };
+
+    if ( $format eq 'arff' ) {
+
+	my $feature_key = $new2key{ $i };
+	my $feature_range = $features2range{ $feature_key };
+
+	my $feature_type = 'NUMERIC';
+	if ( $feature_key =~ m/::[^:]+$/ ) {
+	    $feature_type = uc( $feature_type );
+	    if ( $feature_range ne 'N/A' ) {
+		$feature_type = $feature_range;
+	    }
+	}
+
+	print STDOUT "\@ATTRIBUTE $feature_index $feature_type \% ==> ($i) $feature_key\n";
+
+    }
+
+}
+
+if ( $format eq 'arff' ) {
+
+    my $feature_type = '{0,1}';
+    print STDOUT "\@ATTRIBUTE ground_truth $feature_type\n";
+
+    print STDOUT "\n";
+    print STDOUT "\@DATA\n";
+
+}
+
+# print individual instances
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/, $line;
+
+    my $url = shift @fields;
+    my $phrase = shift @fields;
+    my $ground_truth = shift @fields;
+    
+    my %instance_mapping;
+    
+    foreach my $field (@fields) {
+	
+	my @subfields = split /:/, $field;
+	my $feature_index = shift @subfields;
+	my $feature_value = shift @subfields;
+
+	if ( ! defined( $index2new{ $feature_index } ) ) {
+	    next;
+	}
+
+	my $feature_new = $index2new{ $feature_index };
+
+	my $value = $feature_value;
+	if ( $new2type{ $feature_new } eq 'binary' ) {
+	    $value = $value ? 1 : 0;
+	}
+
+	$instance_mapping{ $feature_new } = $value;
+
+    }
+
+    if ( $format eq 'arff' ) {
+
+	print "{" . 
+	    join(",", 
+		 ( map { join( " " , $_ , $instance_mapping{ $_ }); } sort { $a <=> $b } grep { $instance_mapping{ $_ } } keys( %instance_mapping ) ),
+		 join(" ", $n_features, $ground_truth)
+	    ) . 	    
+	    "} %\t$phrase\t$ground_truth\t\n";
+	
+    }
+    elsif ( $format eq 'matrix' ) {
+	
+	my @vector;
+
+	for (my $i=0; $i<$n_features; $i++) {
+	    push @vector, ( defined( $instance_mapping{ $i } ) ? $instance_mapping{ $i } : 0 );
+	}
+	push @vector, $ground_truth;
+
+	print join(" ", @vector) . "\n";
+
+    }
+    elsif ( $format eq 'sparse' ) { # svm-light format
+     
+	my @vector;
+
+	push @vector, ( $ground_truth ? 1 : -1 );
+	my @selected_indices = sort { $a <=> $b } keys( %instance_mapping );
+	foreach my $feature_new (@selected_indices) {
+	    push @vector, join(":", $feature_new, $instance_mapping{ $feature_new });
+	}
+
+	print join(" ", @vector) . "\n";
+
+    }
+    else {
+	die "Format not supported";
+    }
+
+}
+
+1;

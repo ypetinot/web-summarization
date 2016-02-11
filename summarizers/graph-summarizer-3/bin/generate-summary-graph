@@ -1,0 +1,562 @@
+#!/usr/bin/env perl
+
+# Learn graph weights
+# Input graph + set of training paths
+# pb --> are the paths still relevant if the graph is custom --> probably not
+# --> create alternative paths at slot locations
+# --> create bypasses
+
+# For the purpose of training weights, we consider slot locations as binary variables ~ however during the testing phase we populate the graph with potential fillers, as well as complete paths from the target URL data (?)
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Web::Summarizer::Graph2;
+
+use File::Slurp qw/write_file/;
+use Getopt::Long;
+use Graph;
+use Graph::Directed;
+use Graph::Undirected;
+use Graph::Reader::Dot;
+use Graph::Writer::Dot;
+use Graph::Reader::XML;
+use Graph::Writer::XML;
+use JSON;
+use List::Util qw/max min sum/;
+use List::MoreUtils qw/uniq each_array/;
+use Pod::Usage;
+use POSIX;
+use Statistics::Basic qw(:all);
+
+my $DEBUG = 1;
+
+my $iterations = 100;
+my $use_shortest_path = 1;
+my $use_early_update = 1;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+my $mode = undef;
+my $input_dir = undef;
+my $output_dir = undef;
+my $object_dir = undef;
+my $slot_features_file = undef;
+
+$| = 1;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions(
+    'abstract' => \$do_abstraction,
+    'apply-slotting' => \$apply_slotting,
+    'incremental' => \$do_incremental,
+    'mode=s' => \$mode,
+    'minimum-importance=f' => \$minimum_importance,
+    'maximum-importance=f' => \$maximum_importance,
+    'reference-cluster-limit=i' => \$reference_cluster_limit,
+    'output-directory=s' => \$output_directory,
+    'term=s' => \$term,
+    'fold-id=s' => \$fold_id,
+    'input-dir=s' => \$input_dir,
+    'output-dir=s' => \$output_dir,
+    'object-dir=s' => \$object_dir,
+    'iterations=i' => \$iterations,
+    'slot-features=s' => \$slot_features_file,
+    'help|?' => \$help, man => \$man, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0) if ( !$input_dir || !$output_dir );
+
+while ( <STDIN> ) {
+
+    chomp;
+    
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+    my $reference_objects_json = shift @fields;
+
+    my $reference_objects = decode_json( $reference_objects_json );
+    
+
+# 1 - Generate (raw) graph
+print STDERR ">> Generating gist graph ...\n";
+my $summary_graph = new SummaryGraph();
+
+
+my $graph_reader = Graph::Reader::XML->new();
+my $graph = $graph_reader->read_graph( $input_graph );
+
+# Instantiate common manager
+my $graph_controller = new Web::Summarizer::Graph2( graph => $graph );
+
+print STDERR ">> Learning gist graph weights ...\n";
+
+# Input: gist-graph G + (URL,path) pairs
+# Output: edge features weights determining the importance (cost) of individual edges
+# Edge cost ~ exponential model
+
+# Observations is the URL and its associated content ? --> mapped to features ? what features ? factor nodes "appearance" costs with co-occurrence costs
+# edge_features = [ w_i appears in source , w_j appears in source , w_i is slot , w_i has candidate fillers (in title) , ... ] --> use appearance prior as bias + joint appearance prior as bias ?
+
+my $training_data_file = join("/", $input_dir, "paths");
+
+# 0 - read-in features definition
+# features such that affect edge weights only 
+# Features describe the input object and are specifically attached to the graph edges
+# Total number of features : N * E
+my ( $edge_features , $edge_features_definition ) = _load_features( $input_dir );
+my ( $object_features , $object_features_definition ) = _load_features( $object_dir );
+
+# x is a combination of edge-specific features and object-level features
+my %x;
+foreach my $url (keys(%{ $edge_features })) {
+
+    # Make sure there we have a matching object entry for each edge entry
+    if ( ! defined( $object_features->{ $url } ) ) {
+	die "Edge/Object features entries mismatch for URL $url ...";
+    }
+
+    $x{ $url } = { $Web::Summarizer::Graph2::Definitions::FEATURES_KEY_EDGE => $edge_features->{ $url } ,
+		   $Web::Summarizer::Graph2::Definitions::FEATURES_KEY_OBJECT => $object_features->{ $url } };
+
+}
+
+# 1 - read-in training samples
+# x --> raw/featurized data for target URL
+# y --> path in gist graph
+open TRAINING_DATA, $training_data_file or die "Unable to open training data file ($training_data_file) : $!";
+my %y;
+{
+    map { chomp; my @tokens = split /\t/, $_; my $url = shift @tokens; $y{ $url } = \@tokens; } <TRAINING_DATA>;
+}
+close TRAINING_DATA;
+
+if ( ! scalar(keys(%x)) ) {
+    die "Invalid training data provided ...";
+}
+elsif ( scalar(keys(%x)) != scalar(keys(%y)) ) {
+    die "Invalid training data provided - sample paths do not match sample features ...";
+}
+
+# Load slot features
+my %fillers;
+if ( defined( $slot_features_file ) ) {
+    
+    open SLOT_FEATURES_FILE, $slot_features_file or die "Unable to open slot features file ($slot_features_file): $!";
+    while ( <SLOT_FEATURES_FILE> ) {
+	
+	chomp;
+	my @fields = split /\t/, $_;
+
+	if ( scalar(@fields) != 2 ) {
+	    next;
+	}
+
+	my $url = shift @fields;
+	my $fillers_json = shift @fields;
+
+	$fillers{ $url } = decode_json( $fillers_json );
+
+    }
+    close SLOT_FEATURES_FILE;
+
+}
+     
+my $params = {};
+$params->{ 'use_shortest_path' } = $use_shortest_path;
+$params->{ 'use_early_update' } = $use_early_update;
+$params->{ 'acceptance_min_length' } = min( map{ scalar(@{ $_ }); } values(%y) );
+$params->{ 'acceptance_max_length' } = max( map{ scalar(@{ $_ }); } values(%y) );
+#$params->{ 'beam_size' } = 10;
+$params->{ 'beam_size' } = 5;
+$params->{ 'object_features' } = $object_features_definition;
+my @length_distribution = map { scalar(@{ $_ }) } values(%y);
+$params->{ 'length_distribution' } = \@length_distribution;
+$params->{ 'length_distribution_bucket_size' } = 5;
+
+# 0 - compute reference features
+my %features_reference;
+my %graphs;
+my %y_activated;
+foreach my $url (keys(%x)) {
+
+    # Instantiate gist-graph for this instance
+    print STDERR "Specializing gist graph for $url --> ";
+    $graphs{ $url } = $graph_controller->specialize( $url , $x{ $url } , $fillers{ $url } );
+    print STDERR "[specialized] --> ";
+
+    # At this point the slot nodes should have been replaced with their actual - virtual - slot filler
+    # We get the activated path
+    $y_activated{ $url } = $graphs{ $url }->activate_path( $y{ $url } );
+
+    # Compute reference features for this instance
+    $features_reference{ $url } = $graphs{ $url }->_compute_path_features( $y_activated{ $url } , $params );
+    print STDERR "[done]\n";
+
+}
+
+# 1 - initialize features and weights
+# Fine grain weights, edge costs are a linear combination of these weights
+my %w;
+
+print STDERR "\n";
+
+# 2 - iterate
+my $ALPHA = 1;
+print STDERR "Structured perceptron now learning ...\n";
+for (my $i=0; $i<$iterations; $i++) {
+
+    my %optimal_paths;
+    my $updated = 0;
+
+    my %w_copy = %w;
+
+    # 2 - 1 - iterate over training samples
+    foreach my $url (keys( %y_activated )) {
+
+	my $updated_url = 0;
+
+	# \phi(x,y)
+	# $features_reference{ $url };
+	$params->{ 'current_target_url' } = $url;
+	$params->{ 'current_target' } = $y_activated{ $url };
+
+	# 2 - 1 - 1 - find optimal path for the current training sample
+	# Identify optimal path given current w
+        # We don't need to update the graph, the weights can be absorbed dynamically (beam search !)
+	my $path_optimal = $graphs{ $url }->_optimal_path( \%w , $url , $params);
+	$optimal_paths{ $url } = $path_optimal;
+      	
+	# 2 - 1 - 2 - update weights based on features (energy) error
+	# w is in feature space
+	my ($update_feature_ids , $features_optimal , $affected_edges) = $graphs{ $url }->_update_feature_ids( $features_reference{ $url } , $path_optimal , $params );
+	my @update_feature_ids_actual;
+	foreach my $feature_id (@{ $update_feature_ids }) {
+	    
+	    my $feature_reference = ( $features_reference{ $url }->{ $feature_id } || $Web::Summarizer::Graph2::Definitions::FEATURE_DEFAULT );
+	    my $feature_current = ( $features_optimal->{ $feature_id } || $Web::Summarizer::Graph2::Definitions::FEATURE_DEFAULT );
+	    
+	    my $feature_delta = $feature_reference - $feature_current;
+	    if ( $feature_delta ) {
+		
+		$updated++;
+		$updated_url++;
+
+		if ( $DEBUG > 2 ) {
+		    print STDERR "\tUpdating feature $feature_id --> $feature_delta\n";
+		}
+
+		my $feature_updated_value = undef;
+		if ( $use_shortest_path ) {
+		    # shortest path formulation
+		    $feature_updated_value = Web::Summarizer::Graph2::_feature_weight( \%w , $feature_id ) - $ALPHA * $feature_delta;
+		}
+		else {
+		    # longest path formulation
+		    $feature_updated_value = Web::Summarizer::Graph2::_feature_weight( \%w , $feature_id ) + $ALPHA * $feature_delta;
+		}
+
+		$w{ $feature_id } = $feature_updated_value;
+		push @update_feature_ids_actual, $feature_id;
+
+	    }
+
+	}
+
+	if ( $updated_url ) {
+	    # Mark all (can we optimize that ?) along the optimal path as dirty
+	    foreach my $url2 (keys( %y_activated )) {
+		map { $graphs{ $url2 }->mark_edge_dirty( $_ ); } @{ $affected_edges };
+	    }
+	}
+
+	# 2 - 1 - 3 - --> if in shared mode we average (?) connected weights
+	# --> effective number of model parameters depends on mode: shared/non-shared
+	# TODO
+	
+	print STDERR "\n";
+
+    }
+
+    # 2 - 2 - compute current error level ~ loop on all paths for which the ground-truth is available
+    # Measure ? --> Edge P/R ? Node P/R ?
+    my @node_jaccards;
+    my @edge_jaccards;
+    foreach my $url (keys(%y_activated)) {
+
+	my $current_path = $optimal_paths{ $url };
+	my $true_path = $y_activated{ $url };
+
+	my ($node_jaccard, $edge_jaccard) = _node_edge_jaccard( $true_path , $current_path );
+	push @node_jaccards, $node_jaccard;
+	push @edge_jaccards, $edge_jaccard;
+
+    }
+    my $average_node_jaccard = mean( @node_jaccards );
+    my $average_edge_jaccard = mean( @edge_jaccards );
+
+    my $norm_w = _norm( \%w );
+
+#    if ( $DEBUG ) {
+	my @change_set = map { join(":", $_, $w{ $_ }); } grep { !defined( $w_copy{ $_ } ) || ( $w_copy{ $_ } != $w{ $_ } ); } keys(%w);
+	my $change_set_size = scalar(@change_set);
+	print STDERR "Iteration \#$i / Average Node Jaccard: $average_node_jaccard / Average Edge Jaccard: $average_edge_jaccard / $updated / $norm_w / $change_set_size\n";
+    if ( $DEBUG > 2 ) {
+	print STDERR "w: " . join(" ", @change_set) . "\n";
+    }
+	print STDERR "\n";
+#    }
+
+    #$ALPHA /= 5;
+
+}
+
+# 3 - Write out final edge weights
+my $weights_json = encode_json( \%w );
+my $weights_file = join("/", $output_dir, "weights");
+open WEIGHTS_FILE, ">$weights_file" or die "Unable to create weights file ($weights_file): $!";
+print WEIGHTS_FILE $weights_json;
+close WEIGHTS_FILE;
+
+# 4 - Write graph to file (note that the graph remains unchanged for now)
+my $output_graph = join("/", $output_dir, "graph.trained");
+my $writer = Graph::Writer::XML->new();
+$writer->write_graph($graph, $output_graph);
+
+# 5 - Write out model params
+my $params_json = encode_json( $params );
+my $params_file = join("/", $output_dir, $Web::Summarizer::Graph2::Definitions::FILE_PARAMS);
+write_file( $params_file , $params_json );
+
+print STDERR ">> Done learning gist graph weights ...\n";
+
+sub _norm {
+
+    my $vector = shift;
+
+    my $temp_norm = 0;
+    map { $temp_norm += $_^2; } values(%{ $vector });
+    
+    return sqrt( $temp_norm );
+
+}
+
+sub _node_edge_jaccard {
+
+    my $reference_path = shift;
+    my $path = shift;
+
+    my %nodes;
+    my %edges;
+
+    my $node_intersection = 0;
+    my $edge_intersection = 0;
+
+    map { $nodes{ $_ }++; } @{ $reference_path };
+    foreach my $node (@{ $path }) {
+	if ( defined( $nodes{ $node } ) ) {
+	    $node_intersection++;
+	}
+	$nodes{ $node }++;
+    }
+
+    for (my $i=0; $i<scalar(@{ $reference_path })-1; $i++) {
+	my $edge = join("::", $reference_path->[ $i ], $reference_path->[ $i + 1 ]);
+	$edges{ $edge }++;
+    }
+
+    for (my $i=0; $i<scalar(@{ $path })-1; $i++) {
+	my $edge = join("::", $path->[ $i ], $path->[ $i + 1 ]);
+	if ( defined( $edges{ $edge } ) ) {
+	    $edge_intersection++;
+	}
+	$edges{ $edge }++;
+    }
+
+    my $node_jaccard = $node_intersection / scalar( keys( %nodes ) );
+    my $edge_jaccard = $edge_intersection / scalar( keys( %edges ) );
+
+    return ( $node_jaccard , $edge_jaccard );
+
+}
+
+=pod
+sub _get_edge_keys {
+
+    my $from = shift;
+    my $to = shift;
+
+    my @edge_keys;
+
+    foreach my $edge_feature (@{ $edge_features }) {
+	push @edge_keys, join("::", $from, $to, $edge_feature);
+    }
+
+    return \@edge_keys;
+
+}
+=cut
+
+=pod
+sub _lp_solve_shortest_path {
+
+    my $graph = shift;
+    my $from = shift;
+    my $to = shift;
+
+    my %edge2id;
+    my %id2edge;
+    my $n = 0;
+
+    # 1 - generate lp problem
+    my @minimization_components;
+    my @constraints;
+    foreach my $edge ($graph->edges()) {
+
+	my ($edge_from,$edge_to) = @{ $edge };
+	my $opposite_edge = ($edge_to,$edge_from);
+	my $opposite_edge_key = _edge_key( $opposite_edge );
+
+	my $edge_weight = $graph->get_edge_weight( $edge );
+	my $edge_key = _edge_key( $edge );
+
+	for my $entry ( [$edge,$edge_key] , [$opposite_edge,$opposite_edge_key] ) {
+
+	    my $edge = $entry->[ 0 ];
+	    my $edge_key = $entry->[ 1 ];
+
+	    if ( ! defined( $edge2id{ $key } ) ) {
+		my $id = $n++;
+		$edge2id{ $key } = $id;
+		$id2edge{ $id } = $edge;
+	    }
+
+	}
+	
+	my $edge_id = $edge2id{ $edge_key };
+
+	push @minimization_components, "$edge_weight * $edge_key";
+	push @constraints, "$edge_id >= 0";
+
+    }
+    
+    foreach my $node ($graph->nodes()) {
+
+	my @incoming_edges = $graph->incoming_edges();
+	my @outgoing_edges = $graph->outgoing_edges();
+
+	
+
+    }
+
+    print LP_PROBLEM "min: " . join(" + ", @minimization_components) . "\n";
+    
+    # Constraints
+    foreach my $constraint (@constraints) {
+	print LP_PROBLEM "$constraint\n";
+    }
+
+    # 2 - solve lp problem
+
+}
+=cut
+
+=pod
+sub _dot_product {
+
+    my $vector1 = shift;
+    my $vector2 = shift;
+
+    my $size1 = scalar(@{ $vector1 });
+    my $size2 = scalar(@{ $vector2 });
+
+    if ( $size1 != $size2 ) {
+	die "Mismatch in vector sizes !";
+    }
+
+    my @result;
+    for (my $i=0; $i<$size1; $i++) {
+	$result[ $i ] = $vector1->[ $i ] * $vector2->[ $i ];
+    }
+
+    return \@result;
+
+}
+=cut
+
+sub _adjusted_feature_value {
+
+    my $prior = shift;
+    my $in_instance_value = shift;
+    my $in_instance_expectation = shift;
+
+    my $adjusted_feature_value = $prior * ( $in_instance_expectation ? min( $in_instance_value / $in_instance_expectation , 1) : 1 );
+
+}
+
+sub _load_features {
+
+    my $input_dir = shift;
+
+    my $features_file = join("/", $input_dir, "features");
+    my $features_definitions_file = join("/", $input_dir, "features.definition");
+    my $features_types_file = join("/", $input_dir, "features.types");
+
+    open FEATURES, $features_file or die "Unable to open features file ($features_file) : $!";
+    my %x;
+    {
+	map {
+	    chomp;
+	    my @tokens = split /\t/, $_;
+	    my $url = shift @tokens;
+	    my $entry = decode_json( shift @tokens );
+	    $x{ $url } = $entry;
+	} <FEATURES>;
+    }
+    close FEATURES;
+
+    open FEATURES_DEFINITION, $features_definitions_file or die "Unable to open features definition file ($features_definitions_file) : $!";
+    my %feature_key_2_index;
+    my %feature_index_2_key;
+    while ( <FEATURES_DEFINITION> ) {
+	
+	chomp;
+	
+	my @fields = split /\t/, $_;
+	my $feature_key = shift @fields;
+	my $feature_index = shift @fields;
+
+	$feature_key_2_index{ $feature_key } = $feature_index;
+	$feature_index_2_key{ $feature_index } = $feature_key;
+	
+    }
+    close FEATURES_DEFINITION;
+    my @features_definition = keys( %feature_index_2_key );
+
+    my @features_types;
+    if ( -f $features_types_file ) {
+
+	open FEATURES_TYPES, $features_types_file or die "Unable to open training feature types file ($features_types_file): $!";
+	while ( <FEATURES_TYPES> ) {
+	    
+	    chomp;
+	    push @features_types, $_;
+	    
+	}
+	close FEATURES_TYPES;
+
+    }
+
+    return ( \%x , \@features_definition );
+
+}
+
+1;

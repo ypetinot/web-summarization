@@ -1,0 +1,14 @@
+#!/bin/bash
+
+#TARGET_DIR=$1;
+#if [[ -z "${TARGET_DIR}" ]]; then
+#   echo "Usage: $0 <target-dir>";
+#   exit;
+#fi
+
+BINDIR=`dirname $0`
+
+# create target dir
+#mkdir -p ${TARGET_DIR}
+
+cat | xargs -i{} ${BINDIR}/generate-data-single {}.summary {}.chunks {}.content {}.models

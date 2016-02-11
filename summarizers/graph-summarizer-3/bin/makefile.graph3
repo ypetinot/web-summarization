@@ -1,0 +1,111 @@
+# Makefile defining the graph-base web summarizer
+# Operates at the category level
+
+SUMMARIZER=graph-summarizer-3
+
+BINDIR := $(dir $(lastword $(MAKEFILE_LIST)))
+BINDIR_DIST := $(BINDIR)/../../../bin/
+
+include $(BINDIR_DIST)/makefile.category
+include $(BINDIR_DIST)/makefile.features
+include $(BINDIR)/../../phrase-summarizer/bin/makefile.phrase.preprocessing
+
+$(warning $(LINE_HEADING) $(SUMMARIZER))
+
+ifndef FOLD_ID
+$(error $(LINE_HEADING) No fold id provided, cannot proceed ...)
+else
+$(warning $(LINE_HEADING) Fold id: $(FOLD_ID))
+endif
+
+ifndef REPOSITORY_BASE
+$(error $(LINE_HEADING) No repository base provided, cannot proceed ...)
+else
+$(warning $(LINE_HEADING) Repository base: $(REPOSITORY_BASE))
+endif
+
+MODEL_DIRECTORY := $(CATEGORY).models/$(SUMMARIZER)/$(FOLD_ID)/
+
+MODEL_GRAPH_RAW := $(MODEL_DIRECTORY)/graph.raw/
+MODEL_GRAPH_FEATURES_BASE := $(MODEL_DIRECTORY)/graph.features/
+MODEL_GRAPH_FEATURES_DEFINITION := $(MODEL_GRAPH_FEATURES_BASE)/features.definition
+MODEL_GRAPH_FEATURES_FILE := $(MODEL_GRAPH_FEATURES_BASE)/features
+MODEL_GRAPH_SLOT_FEATURES := $(MODEL_DIRECTORY)/slots.features/
+MODEL_GRAPH_TEST := $(MODEL_GRAPH_RAW)/test/
+MODEL_GRAPH_TRAINED := $(MODEL_DIRECTORY)/graph.trained/
+MODEL_TEST_OUTPUT := $(MODEL_DIRECTORY)/test.out
+
+CATEGORY_BASE := ${CURDIR}/${CATEGORY}
+
+FEATURES:=content.rendered.ngrams.1/binary/decode_json/count_filter::2 content.rendered.ngrams.2/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.1/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.2/binary/decode_json/count_filter::2 title.ngrams.1/binary/decode_json/count_filter::2
+
+#.PRECIOUS:
+
+graph3-reference-training: graph3-graph-features-non-persistent
+	$(warning $(LINE_HEADING) Generating reference data for $(CATEGORY) ...)
+	$(warning $(LINE_HEADING) Done generating reference data for $(CATEGORY).)
+
+# TODO: do we evaluate this ? how ?
+graph3-reference:
+	$(warning $(LINE_HEADING) Collecting reference entries for $(CATEGORY) ...)
+	$(BINDIR)/retrieve-references --fold-id=$(FOLD_ID) --configuration=$(CONFIGURATION_LOCATION) $(CATEGORY)
+	$(warning $(LINE_HEADING) Done collecting reference entries !)
+
+graph3-topology: $(MODEL_GRAPH_RAW)
+	$(warning )
+	$(warning $(LINE_HEADING) Done generating topology ! $@)
+
+graph3-features: $(MODEL_GRAPH_FEATURES) $(MODEL_GRAPH_SLOT_FEATURES)
+	$(warning )
+	$(warning $(LINE_HEADING) Done generating features ! $@)
+
+#$(MODEL_GRAPH_RAW):
+#	$(warning $(LINE_HEADING) Generating $@ ...)
+#	mkdir -p $@
+#	$(BINDIR)/generate-raw-graph --fold-id=${FOLD_ID} --abstract --output-dir=$@ --reference-cluster-limit=0 $(CATEGORY)
+#	$(warning $(LINE_HEADING) Done generating $@ !)
+
+$(MODEL_GRAPH_FEATURES_BASE):
+	mkdir -p $@
+
+$(MODEL_GRAPH_FEATURES_DEFINITION): $(MODEL_GRAPH_FEATURES_BASE) $(FEATURES_PREREQUISITES_MAPPING)
+	$(warning $(LINE_HEADING) Generating $@ ...)
+	cat -n $(FEATURES_PREREQUISITES_MAPPING) | sed 's/^\s\+//' | awk -F"\t" '{ print $$2 "\t" $$1 "\t" $$3 }' > $@
+
+graph3-graph-features-non-persistent: $(FEATURES_PREREQUISITES) $(MODEL_GRAPH_FEATURES_DEFINITION)
+	$(BINDIR_DIST)/join-multiple $(FEATURES_PREREQUISITES) | $(BINDIR)/merge-features --no-index $(MODEL_GRAPH_FEATURES_DEFINITION)
+
+$(MODEL_GRAPH_FEATURES_FILE):
+	$(warning $(LINE_HEADING) Generating $@ ...)
+	make graph3-graph-features-non-persistent > $@
+	$(warning $(LINE_HEADING) Done generating $@ !)
+
+# TODO: better dependencies for initial fillers identification ?
+$(MODEL_GRAPH_SLOT_FEATURES): $(FEATURES_PREREQUISITES) $(FEATURES_PREREQUISITES_MAPPING)
+	$(warning $(LINE_HEADING) Generating $@ !)
+	mkdir -p $@
+	cat ${CURDIR}/*.ngrams.2.mapping | awk -F"\t" '{ print $$2 }' | sort -u | iconv -c -f utf8 -t utf8 | $(BINDIR)/select-slot-fillers > $@/$(CATEGORY).fillers.selection
+	cat $@/$(CATEGORY).fillers.selection | $(BINDIR)/generate-slot-features ${CATEGORY_BASE} content.rendered anchortext.basic anchortext.sentence title url.words > $@/$(CATEGORY).fillers.features
+	$(warning $(LINE_HEADING) Done generating $@ !)
+
+$(MODEL_GRAPH_TRAINED): $(MODEL_GRAPH_RAW) $(MODEL_GRAPH_FEATURES) $(MODEL_GRAPH_SLOT_FEATURES)
+	$(warning $(LINE_HEADING) Generating $@ !)
+	mkdir -p $@
+	$(BINDIR)/learn-graph --input-dir=$(MODEL_GRAPH_RAW) --output-dir=$@ --object-dir=$(MODEL_GRAPH_FEATURES) --iterations=10 --slot-features=$(MODEL_GRAPH_SLOT_FEATURES)/$(CATEGORY).fillers.features
+	$(warning $(LINE_HEADING) Done generating $@ !)
+
+# TODO: we do not rely on categorical information - we need to first generate a set of relevant reference objects
+graph3-test:
+	$(BINDIR)/collect-test-entries --fold-id=$(FOLD_ID) $(CATEGORY) 2>/dev/null | $(BINDIR)/object-featurizer --features="$(FEATURES_NO_SPEC)" --repository-base=$(REPOSITORY_BASE) --max=1000 2>/dev/null | $(BINDIR)/reference-query-mapper | perl $(BINDIR)/retrieve-references
+#| $(BINDIR)/generate-summary-graph
+#| $(BINDIR)/generate-gist --model-dir=$(MODEL_GRAPH_TRAINED) --object-dir=$(MODEL_GRAPH_FEATURES) --slot-features=$(MODEL_GRAPH_SLOT_FEATURES)/$(CATEGORY).fillers.features $(CATEGORY) $(MODEL_GRAPH_TEST)/* > $(MODEL_TEST_OUTPUT)
+
+# TODO: move this up ?
+%.gz: %
+	gzip -f $<
+
+# TODO: probably need to remove more things ?
+graph3-clean:
+	rm -rf ${MODEL_DIRECTORY}
+	rm -rf *~
+	rm -rf *.temp

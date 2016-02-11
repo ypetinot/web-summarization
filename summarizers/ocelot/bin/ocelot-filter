@@ -1,0 +1,62 @@
+#!/usr/bin/env perl
+
+# filters raw DMOZ data for subsequent training of the OCELOT word correspondence algorithm
+
+use strict;
+use warnings;
+
+use PerlIO;
+
+use Encode qw(:fallbacks);
+local $PerlIO::encoding::fallback = ' ';
+
+binmode(STDIN, ":encoding(utf8)");
+binmode(STDOUT, ":utf8");
+
+my $stats_total_number_pairs = 0;
+my $stats_total_corrupted = 0;
+my $stats_total_invalid_url = 0;
+my $stats_total_incomplete_data = 0;
+my $stats_total_too_short = 0;
+my $stats_total_too_long = 0;
+
+my $line_count = 0;
+
+while(<STDIN>) {
+
+    chomp;
+    
+    my $line = $_;
+
+    my @fields = split /\t/, $line;
+
+    if ( scalar(@fields) != 3 ) {
+	print STDERR "[$0] corrupted record at line $line_count, skipping ...\n";
+	$stats_total_corrupted++;
+	next;
+    }
+
+    # only $5/$7 (description/content) needed downstream
+    #my ($id, $category_id, $url, $title, $description, $category, $content) = @fields;
+    my ( $url , $description , $content ) = @fields;
+
+    # OCELOT filtering
+    if ( length($content) < 400 || length($description) < 60 ) {
+	print STDERR "[$0] too short for OCELOT training for URL $url, skipping ...\n";
+	$stats_total_too_short++;
+	next;
+    }
+
+    $stats_total_number_pairs++;
+
+    # output line to STDOUT
+    print STDOUT "$line\n";
+
+}
+
+print STDERR "number of corrupted records: $stats_total_corrupted\n";
+print STDERR "number of records with overly short source/output: $stats_total_too_short\n";
+#print STDERR "number of records with overly long source/output: $stats_total_too_long\n";
+print STDERR "number of valid records: $stats_total_number_pairs\n";
+
+1;

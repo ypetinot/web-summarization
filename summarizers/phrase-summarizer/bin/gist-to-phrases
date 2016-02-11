@@ -1,0 +1,45 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+
+    my @fields = split /\t/, $line;
+    if ( scalar(@fields) != 2 ) {
+	print STDERR "Skipping invalid line: $line\n";
+    }
+    
+    my $url = shift @fields;
+    my $data = shift @fields;
+
+    my @line_tokens = split / /, lc( $data );
+
+    my @phrases;
+    foreach my $line_token (@line_tokens) {
+	
+	my @token_components = split /\//, $line_token;
+	if ( scalar(@token_components) != 3 ) {
+	    print STDERR "Skipping invalid token: $line_token\n";
+	}
+
+	my ($token,$pos,$status) = @token_components;
+	
+	if ( $pos =~ m/NN/sio ) {
+	    push @phrases, $token;
+	}
+	else {
+	    # Nothing for now
+	}
+
+    }
+
+    print join("\t",$url,join(" ",@phrases)) . "\n";
+
+}
+
+1;

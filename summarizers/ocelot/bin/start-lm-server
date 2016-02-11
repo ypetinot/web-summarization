@@ -1,0 +1,7 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../../dist.rc
+
+# /ngrams/summary/3/-no-sos+++-no-eos.model
+${BINDIR_THIRD_PARTY}/ngram -lm ${ROOTDIR_DATA}/ngrams/summary/5/-gt1min+++10+++-gt2min+++10+++-gt3min+++10+++-gt4min+++10+++-gt5min+++10+++-unk.model -order 3 -debug 2 -server-port 5010

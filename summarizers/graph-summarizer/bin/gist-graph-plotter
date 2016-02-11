@@ -1,0 +1,39 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use GistGraph;
+
+# category data base
+my $category_data_base = $ARGV[0];
+  
+# points to actual fold base
+my $category_data_fold_path = $ARGV[1];
+
+# points to actual model base
+my $model_directory_path = $ARGV[2];
+
+if ( ! -f $category_data_base ) {
+    die "Category base does not exist: $category_data_base";
+}
+
+if ( ! -f $category_data_fold_path ) {
+    die "Category data file does not exist: $category_data_fold_path";
+}
+
+if ( ! -d $model_directory_path ) {
+    die "Model directory does not exist: $model_directory_path";
+}
+
+my $category_data_fold = Category::Fold->restore( $category_data_base , $category_data_fold_path );
+my $gist_graph = GistGraph->restore( $category_data_fold , $model_directory_path );
+
+$gist_graph->plot();
+
+1;

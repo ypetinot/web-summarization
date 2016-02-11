@@ -1,0 +1,167 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Data;
+
+use JSON;
+
+binmode(STDIN, ':utf8');
+binmode(STDOUT, ':utf8');
+
+my $category_base = shift @ARGV;
+my $corpus_data = shift @ARGV;
+my @content_modalities = @ARGV;
+
+# For now use category stats as a proxy for global stats ? --> there is no notion of category anymore
+# Note: you should label the slots based on the slot filler selection process --> so we for all URLs, including test URLs
+
+# Load category data
+my $category_data = new Category::Data( category_data_base => $category_base );
+my $url_data = $category_data->url_data();
+
+my %feature_mapping;
+
+# 1 - generate list of all target modality fields
+my @modality_fields;
+foreach my $modality (@content_modalities) {
+    # look at all 1/2/3 grams ?
+    for (my $order = 1; $order <= 3; $order++) {
+	my $modality_field_data = join(".", $modality, "ngrams", $order);
+	push @modality_fields, $modality_field_data;
+    }
+}
+
+foreach my $url (keys ( %{ $url_data } )) {
+
+    my $url_datum = $url_data->{ $url };
+    my $features = {};
+    
+    print STDERR "Generating filler features for $url ...\n";
+    
+    # 1 - generate candidate fillers for the target URL
+    my $candidates = _collect_candidate_fillers( $url_datum , \@modality_fields );
+    
+    # 2 - collect features for the selected fillers
+    foreach my $candidate (@{ $candidates }) {
+
+	# 1 - map candidate back to the actual string it represents
+	my $candidate_string = $feature_mapping{ $candidate };
+	if ( $candidate_string =~ m/\[\[NULL\]\]/ ) {
+	    next;
+	}
+
+	# 2 - generate features for the target string
+	my $candidate_features = _generate_features( $url_datum , \@content_modalities , $candidate_string );
+	#map { $features->{ join("::", $url, $_) } = $candidate_features->{ $_ }; } keys( %{ $candidate_features } );
+	map { $features->{ $candidate_string }->{ $_ } = $candidate_features->{ $_ }; } keys( %{ $candidate_features } );
+
+    }
+
+    # Output features
+    print join("\t", $url, encode_json( $features )) . "\n";
+
+}
+
+sub _collect_candidate_fillers {
+
+    my $url_datum = shift;
+    my $fields = shift;
+
+    my %candidate_fillers;
+
+    foreach my $field (@{ $fields }) {
+
+	# load field, including mapping !
+	my ( $modality_data_json , $modality_data_mapping ) = $url_datum->get_field( $field , undef , 1 );
+	if ( ! $modality_data_json ) {
+	    print STDERR ">> Missing modality data: $field ...\n";
+	}
+	my $modality_data = decode_json( $modality_data_json );
+	
+	map { 
+	    
+	    my $feature_key = $_;
+	    
+	    my @ngram_key_fields = split /-/, $feature_key;
+	    my $ngram_key = pop @ngram_key_fields;
+	    
+	    if ( ! defined( $candidate_fillers{ $ngram_key } ) ) {
+		$candidate_fillers{ $ngram_key } = [];
+	    }
+	    push @{ $candidate_fillers{ $ngram_key } }, $feature_key;
+	    
+	    # keep track of feature mappings
+	    $feature_mapping{ $feature_key } = $modality_data_mapping->{ $feature_key };
+	    
+	} keys( %{ $modality_data } );
+	
+    }
+
+    # at least 1 occurrence in two distinct modalities ?
+    map { if ( scalar( @{ $candidate_fillers{ $_ } } ) < 2 ) { delete $candidate_fillers{ $_ }; } } keys( %candidate_fillers );
+
+    # ranking --> by number of modalities and low number of occurrences in each modality
+    my @sorted_candidate_fillers = sort { scalar( @{ $candidate_fillers{ $b } } ) <=> scalar( @{ $candidate_fillers{ $a } } ) } keys( %candidate_fillers );
+
+    # only consider top 10 --> definitely an upper bound on the number of filler for any gist !
+    my $candidate_limit = 10;
+    if ( scalar( @sorted_candidate_fillers ) > $candidate_limit ) {
+	splice @sorted_candidate_fillers, $candidate_limit;
+    }
+
+    my @selected_fillers = map { $candidate_fillers{ $_ }->[ 0 ]; } @sorted_candidate_fillers;
+
+    return \@selected_fillers;
+
+}
+
+# generate features --> must be generated from non-segmented content
+sub _generate_features {
+
+    my $url_datum = shift;
+    my $fields = shift;
+    my $candidate = shift;
+
+    my %features;
+    my %appearance_counts;
+
+    foreach my $field (@{ $fields }) {
+	
+	# load field
+	my $modality_content = $url_datum->get_field( $field );
+	
+	while ( $modality_content =~ m/\W\Q$candidate\E\W/sig ) {
+	    $appearance_counts{ $field }++;
+	}
+
+	if ( $appearance_counts{ $field } ) {
+	    
+	    my $appearance_key = join("::" , $field , "appearance" );
+	    $features{ $appearance_key } = $appearance_counts{ $field };
+		
+	    while ( $modality_content =~ m/(\w+)\W\Q$candidate\E\W(\w+)/sig ) {
+		
+		my $context_pre = lc( $1 || '' );
+		my $context_post = lc( $2 || '' );
+		
+		$features{ join("::", $appearance_key, "context::${context_pre}::${context_post}") }++;
+		
+	    }
+
+	}
+
+    }
+
+    return \%features;
+
+}
+
+1;

@@ -1,0 +1,19 @@
+# Note: you should label the slots based on the slot filler selection process --> so we for all URLs, including test URLs
+
+my %feature_mapping;
+    
+# 2 - collect features for the selected fillers
+foreach my $candidate (@{ $candidates }) {
+    
+    # 1 - map candidate back to the actual string it represents
+    my $candidate_string = $feature_mapping{ $candidate };
+    if ( $candidate_string =~ m/\[\[NULL\]\]/ ) {
+	next;
+    }
+    
+    # 2 - generate features for the target string
+    my $candidate_features = _generate_features( $url_datum , \@content_modalities , $candidate_string );
+    #map { $features->{ join("::", $url, $_) } = $candidate_features->{ $_ }; } keys( %{ $candidate_features } );
+    map { $features->{ $candidate_string }->{ $_ } = $candidate_features->{ $_ }; } keys( %{ $candidate_features } );
+    
+}

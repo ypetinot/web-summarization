@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# Main experiment script - goes through list of ODP category, group as required, and run underlying scripts to control the learning process
+# Input: 

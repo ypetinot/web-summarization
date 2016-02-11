@@ -1,0 +1,661 @@
+#!/usr/bin/env perl
+
+# 1 - build raw gist graph for all the test URLs
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Folds;
+use DMOZ::CategoryRepository;
+use Modalities;
+use Web::Summarizer::Graph2;
+use Web::Summarizer::Graph2::Definitions;
+use WordGraph;
+use WordGraph::DataExtractor;
+use WordGraph::EdgeWeighter::StructuredPerceptronEdgeWeighter;
+use WordGraph::GraphConstructor::SummaryGraphConstructor;
+use WordGraph::GraphConstructor::FilippovaGraphConstructor;
+use WordGraph::Decoder::BeamSearchDecoder;
+use WordGraph::Decoder::ExactDecoder;
+use WordGraph::Decoder::FilippovaDecoder;
+use WordGraph::EdgeCost::LinearCost;
+
+use Digest::MD5 qw/md5_hex/;
+use File::Path qw/make_path/;
+use File::Slurp qw/read_file write_file/;
+use Getopt::Long;
+use GistTokenizer;
+use Graph::Writer::Dot;
+use Graph::Writer::XML;
+use JSON;
+use List::Util qw/max min sum/;
+use List::MoreUtils qw/uniq each_array/;
+use Pod::Usage;
+use POSIX;
+use Statistics::Basic qw(:all);
+
+binmode(STDIN,':utf8');
+binmode(STDOUT, ':utf8');
+$| = 1;
+
+my $DEBUG = 1;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+my $enable_precomputed_slots = 0;
+my $enable_slotting_adjectives = 1;
+my $enable_slotting_adverbs = 1;
+
+my $do_output_reference_data = 0;
+my $mode = undef;
+my $minimum_importance = undef;
+my $maximum_importance = undef;
+my $output_directory = undef;
+my $reference_cluster = undef;
+
+# Global option (not parameter) as it impacts graph construction
+# TODO: can the graph be built so that a path can easily be "removed" ? --> probably not
+my $reference_cluster_limit = undef;
+
+my $repository_base = undef;
+my $target_url = undef;
+my $target_url_data_location = undef;
+my $term = undef;
+
+my $configuration = undef;
+my $default_reference_ranker_class = 'WordGraph::ReferenceRanker';
+my $default_graph_constructor_class = 'WordGraph::GraphConstructor::FilippovaGraphConstructor';
+my $default_decoder_class = 'WordGraph::Decoder::ExactDecoder';
+# TODO: create a more generic edge weighter to use as default ?
+my $default_edge_weighter_class = 'WordGraph::EdgeWeighter';
+my $default_edge_cost_class = 'WordGraph::EdgeCost::LinearCost';
+my $system = undef;
+
+my $dev_set_ratio = 0; # TODO: this should be a model parameter
+my $input_dir = undef;
+my $object_dir = undef;
+my $slot_features_file = undef;
+my $feature_service = undef;
+my $modalities_list = undef;
+my $modalities_ngrams_list = undef;
+
+my $execution_reference_ranking = 0;
+my $execution_word_graph_construction = 0;
+my $execution_word_graph_train = 0;
+my $execution_word_graph_test = 0;
+
+binmode(STDIN,':utf8');
+binmode(STDOUT,':utf8');
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions(
+    'execution-reference-ranking' => \$execution_reference_ranking,
+    'execution-word-graph-construction' => \$execution_word_graph_construction,
+    'execution-word-graph-train' => \$execution_word_graph_train,
+    'execution-word-graph-test' => \$execution_word_graph_test,
+    'enable-precomputed-slots' => \$enable_precomputed_slots,
+    'enable-slotting-adjectives' => \$enable_slotting_adjectives,
+    'enable-slotting-adverbs' => \$enable_slotting_adverbs,
+    'configuration=s' => \$configuration,
+    'mode=s' => \$mode,
+    'minimum-importance=f' => \$minimum_importance,
+    'maximum-importance=f' => \$maximum_importance,
+    'reference-cluster=s' => \$reference_cluster,
+    'reference-cluster-limit=i' => \$reference_cluster_limit,
+    'repository-base=s' => \$repository_base,
+    'output-reference-data' => \$do_output_reference_data,
+    'output-directory=s' => \$output_directory,
+    'system=s' => \$system,
+    'target=s' => \$target_url,
+    'target-data=s' => \$target_url_data_location,
+    'term=s' => \$term,
+    'feature-service=s' => \$feature_service,
+    'use-dev-set=f' => \$dev_set_ratio,
+    'help|?' => \$help, man => \$man, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+
+# TODO: ultimately the reference cluster should not be required
+pod2usage(-exitstatus => 0, -verbose => 2) if ( ! defined( $repository_base ) || ! defined( $reference_cluster ) );
+#pod2usage(-exitstatus => 0) if ( $#ARGV < 0 || ! $output_directory );
+
+# DMOZ repository
+my $category_repository = DMOZ::CategoryRepository->new( $repository_base );
+if ( ! $category_repository ) {
+    die ">> Unable to load DMOZ repository data ...";
+}
+
+# for debugging purposes ... ok
+
+# *****************************************************************************************************************************
+# 0 - configurations
+# *****************************************************************************************************************************
+
+my %systems;
+
+# default system
+if ( ! $configuration ) {
+
+    $systems{ 'default' } = {
+	decoder => $default_decoder_class,
+	edge_weighter => $default_edge_weighter_class,
+	edge_cost => $default_edge_cost_class
+    };
+
+}
+elsif ( -f $configuration ) {
+
+#    %systems = %{ JSON->new->relaxed()->decode( read_file( $configuration ) ) };
+    %systems = %{ decode_json( read_file( $configuration ) ) };
+
+}
+else {
+    
+    die "Please provide a configuration file ...";
+
+}
+
+# ****************************************************************************************************************************
+# 1 - edge features (features are an integral part of the graph)
+# ****************************************************************************************************************************
+
+# TODO : move this to WordGraph's construction method
+
+my $modalities_lists = new Modalities();
+my @modalities_fluent = @{ $modalities_lists->modalities() };
+my @modalities_ngrams = @{ $modalities_lists->modalities_ngrams() };
+my @modalities = @modalities_fluent;
+
+my @edge_features;
+
+# Adding high-level features
+
+# Source/Sink/Edge prior
+push @edge_features, new WordGraph::EdgeFeature::NodePrior( id => $Web::Summarizer::Graph2::Definitions::FEATURE_PRIOR );
+
+# Soure/Sink/Edge types
+push @edge_features, new WordGraph::EdgeFeature::NodeType( id => $Web::Summarizer::Graph2::Definitions::FEATURE_TYPE );
+
+# Adding features for fluent modalities
+foreach my $modality_fluent (@modalities_fluent) {
+
+    # Edge target frequency
+    push @edge_features, new WordGraph::EdgeFeature::NodeFrequency( id => $Web::Summarizer::Graph2::Definitions::FEATURE_FREQUENCY ,
+								    modality => $modality_fluent );
+
+    if ( defined( $feature_service ) ) {
+    
+        # Source/Sink/Edge semantics
+        # (projection in both directions for edge)
+	push @edge_features, new WordGraph::EdgeFeature::NodeSemantics( id => $Web::Summarizer::Graph2::Definitions::FEATURE_SEMANTICS,
+									modality => $modality_fluent ,
+									semantics_server => $feature_service );
+    
+    }
+
+}
+
+# Adding features for ngram-ified modalities
+foreach my $ngram_modality (@modalities_ngrams) {
+
+    # Edge source/sink/joint conditioning
+    push @edge_features, new WordGraph::EdgeFeature::NodeConditioning( id => $Web::Summarizer::Graph2::Definitions::FEATURE_CONDITIONING,
+								       modality => $ngram_modality,
+								       semantics_server => $feature_service );
+
+}
+
+# *****************************************************************************************************************************
+
+# for debugging purposes ... not ok
+
+# *****************************************************************************************************************************
+# 3 - load target data
+# *****************************************************************************************************************************
+
+my $target_data = undef;
+
+if ( $target_url ) {
+    
+    # Load target url data
+
+    # Note: obviously in a real world setting, the category is unknown, but here this is how we can access the input data
+    #$target_data = $category_repository->get_url_data( $target_url , $target_url_data_location );
+    
+    # allows to not go through the repository to load a target url
+    my $category_data = new Category::Data( category_data_base => $target_url_data_location );
+    $target_data = $category_data->load_url_data( $target_url );
+
+}
+
+# Instantiate data extractor
+my $data_extractor = new WordGraph::DataExtractor( modalities => $modalities_lists );
+
+# for debugging purposes ... not ok
+    
+# Iterate over all requested systems
+foreach my $system_key (keys( %systems )) {
+    
+    if ( $system ) {
+	if ( $system ne $system_key ) {
+	    next;
+	}
+    }
+    
+    print STDERR ">> running $system_key ...\n";
+    
+    my $run_system = $systems{ $system_key };
+    
+    # *******************************************************************************************************************
+    # 1 - collect reference objects/paths
+    # *******************************************************************************************************************
+    
+    my @reference_entries; # used to build the summary graph
+    my @dev_entries; # used to fit the model on top of the summary graph
+    
+    my $reference_ranker_class = $run_system->{ 'reference-ranker' } || $default_reference_ranker_class;
+    _load_class( ${reference_ranker_class} );
+    
+    # instantiate ranker
+    my $reference_ranker_params = { category_repository => $category_repository ,
+				    reference_cluster => $reference_cluster ,
+				    target_instance => $target_data ,
+				    data_extractor => $data_extractor };
+    my $reference_ranker_params_custom = $run_system->{ 'reference-ranker-params' };
+    if ( $reference_ranker_params_custom ) {
+	map { $reference_ranker_params->{ $_ } = $reference_ranker_params_custom->{ $_ } } keys %{ $reference_ranker_params_custom };
+    }
+    my $reference_ranker = ( $reference_ranker_class )->new( %{ $reference_ranker_params } );
+    if ( $do_output_reference_data && $output_directory ) {
+	$reference_ranker->output_directory( $output_directory )
+    }
+
+    # rank
+    # TODO: add caching in case multiple systems use the same reference ranker
+    my $ranked_reference_data = $reference_ranker->reference_entries_sorted();
+    @reference_entries = @{ $ranked_reference_data };
+
+    if ( ! scalar( @reference_entries ) ) {
+	print STDERR "No reference entry provided ...\n";
+    }
+    
+    # TODO : each ranking/truncating configuration leads to a distinct summary graph instance
+    # TODO / Baseline : output summary selected first by each ranking configuration
+    
+    my $effective_reference_cluster_limit = $run_system->{ 'reference-cluster-limit' } || $reference_cluster_limit;
+    if ( $dev_set_ratio ) {
+	
+	# by default we use 2/3 of the reference data to build the summary graph, and the remaining third to train the model
+	if ( ! $effective_reference_cluster_limit ) {
+	    my $n_entries = scalar( @reference_entries );
+	    $effective_reference_cluster_limit = int( $dev_set_ratio * $n_entries );
+	}
+	
+	@dev_entries = splice @reference_entries , $effective_reference_cluster_limit;
+	
+    }
+    else {
+
+	if ( $effective_reference_cluster_limit && ( $effective_reference_cluster_limit < scalar( @reference_entries ) ) ) {
+	    splice @reference_entries , $effective_reference_cluster_limit;
+	}
+	
+	@dev_entries = @reference_entries;
+	
+    }
+    
+    # TODO (if relevant) : populate graph with reference contents paths
+    #foreach my $reference_entry (@{ $reference_entries }) {
+    #    _insert_reference_content( $reference_graph , \%reference_stats , $reference_entry->url() , _generate_sequence( $reference_entry->get_field( 'content.phrases' ) ) );
+    #}
+    
+    if ( ! $execution_word_graph_construction ) {
+	next;
+    }
+
+    my $graph_constructor_class = $run_system->{ 'graph-constructor' } || $default_graph_constructor_class;
+    my $decoder_class = $run_system->{ 'decoder' } || $default_decoder_class;
+    my $edge_weighter_class = $run_system->{ 'edge-weighter' } || $default_edge_weighter_class;
+    my $edge_cost_class = $run_system->{ 'edge-cost' } || $default_edge_cost_class;
+
+    # 2 - (dynamically) identify partner sentence based on:
+    # --> similarity --> use as ordering for next move, but use SA + Sentence energy to pick as partner sentence
+foreach my $reference_entry
+
+    # 3 - align with partner sentence
+
+    # 4 - find highest energy combination between two sentences
+    # --> slot locations ? --> at each location decide whether to keep or replace with target object token (compatible with sentence energy approach)
+
+    # --> repeat
+
+
+
+    
+    # ************************************************************************************************************************
+    # 2 - create word graph instance
+    # ************************************************************************************************************************
+    
+    my $summary_graph = new WordGraph( data_extractor => $data_extractor , features => \@edge_features );
+    
+    # ************************************************************************************************************************
+    
+    # ************************************************************************************************************************
+
+    # 3 - 2 - instantiate word graph constructor
+    # TODO : this should become a parameter
+    #my $graph_constructor = new WordGraph::GraphConstructor::SummaryGraphConstructor();
+    #my $graph_constructor = new WordGraph::GraphConstructor::FilippovaGraphConstructor( enable_adjective_slots => $enable_slotting_adjectives,
+    #                                                                                    enable_adverb_slots => $enable_slotting_adverbs );
+
+    my $graph_constructor = ( _load_class( ${graph_constructor_class} ) )->new(
+	enable_adjective_slots => $enable_slotting_adjectives,
+	enable_adverb_slots => $enable_slotting_adverbs,
+	target_object => $target_data,
+	data_extractor => $data_extractor );
+    
+    print STDERR ">> generating gist graph ...\n";
+
+    my $graph_paths = $graph_constructor->construct( $summary_graph , \@reference_entries );
+    if ( ! $summary_graph->consistency() ) {
+	die "Summary graph is not consistent ...";
+    }
+    
+    # Experimental: detect nodes that have a weight of one (i.e. non-aligned) and that are not supported by the target object
+    my @non_aligned_nodes = grep { $summary_graph->get_vertex_weight( $_ ) > 1 } $summary_graph->vertices();
+
+    print STDERR ">> done generating summary graph !\n";
+    
+    # ***********************************************************************************************************************
+    
+    if ( ! $execution_word_graph_train ) {
+	next;
+    }
+
+    # ******************************************************************************************************
+    # 5 - Generate edge weight parameters
+    # ******************************************************************************************************
+    
+    # Input: gist-graph G + (URL,path) pairs
+    # Output: edge features weights determining the importance (cost) of individual edges
+    # Edge cost ~ exponential model
+    
+    # Learn graph weights
+    # Input graph + set of training paths
+    # pb --> are the paths still relevant if the graph is custom --> probably not
+    # --> create alternative paths at slot locations
+    # --> create bypasses
+    
+    # For the purpose of training weights, we consider slot locations as binary variables ~ however during the testing phase we populate the graph with potential fillers, as well as complete paths from the target URL data (?)
+    
+    my $params = {};
+    
+    # copy all system params into the params hash
+    foreach my $param_key (keys %{ $run_system }) {
+	$params->{ $param_key } = $run_system->{ $param_key };
+    }
+    
+    $params->{ $Web::Summarizer::Graph2::Definitions::WORDGRAPH_PARAMS_FEATURE_SERVICE } = $feature_service;
+
+    $params->{ 'acceptance_min_length' } = min( map{ scalar(@{ $_ }); } values(%{ $graph_paths }) );
+    $params->{ 'acceptance_max_length' } = max( map{ scalar(@{ $_ }); } values(%{ $graph_paths }) );
+    #$params->{ 'beam_size' } = 10;
+    
+    my @length_distribution = map { scalar(@{ $_ }) } values(%{ $graph_paths });
+    $params->{ 'length_distribution' } = \@length_distribution;
+    $params->{ 'length_distribution_bucket_size' } = 5;
+    
+    # 4 - 0 - instantiate decoder
+    # Note: the edge cost is part of the decoder to allow to test different cost schemes using the same graph (should make sense this way)
+    # Note: in that case should features and feature weights also be part of the decoder ?
+    my $edge_cost = ( _load_class( ${edge_cost_class} ) )->new();
+    my $decoder = ( _load_class( ${decoder_class} ) )->new( edge_cost => $edge_cost , params => $params );
+    
+    if ( $execution_word_graph_train ) {
+	
+	print STDERR ">> Learning gist graph weights ...\n";
+	
+	# 4 - 1 - initialize features and weights
+	# Fine grain weights, edge costs are a linear combination of these weights
+	my $edge_weighter = ( _load_class( ${edge_weighter_class} ) )->new( graph => $summary_graph , decoder => $decoder , instances => \@reference_entries );
+	my $weights = $edge_weighter->compute_weights( $params );
+	
+	print STDERR ">> Done learning gist graph weights ...\n";
+	
+    }
+    
+    # ************************************************************************************************************************
+    
+    # ************************************************************************************************************************
+    # 6 - Write out everything we can !
+    # ************************************************************************************************************************
+    
+=pod
+# 5 - 1 - Write out summary graph
+    $summary_graph->serialize( $output_directory );
+    
+# 5 - 2 - Write out model params
+    my $params_json = encode_json( $params );
+    my $params_file = join("/", $output_directory, $Web::Summarizer::Graph2::Definitions::FILE_PARAMS);
+    write_file( $params_file , $params_json );
+    
+# 5 - 3 - Write out reference paths
+    print STDERR "\tWriting out reference paths and features ...\n";
+    my $output_file_paths = join("/", $output_directory, "paths");
+    my $output_file_features = join("/", $output_directory, "features");
+    open OUTPUT_FILE_FEATURES, ">$output_file_features" or die "Unable to create features file ($output_file_features): $!";
+    open OUTPUT_FILE_PATHS, ">$output_file_paths" or die "Unable to create paths file ($output_file_paths): $!";
+    foreach my $reference_path (@reference_entries) {
+    
+    my $reference_url = $reference_path->[0];
+    my $reference_sequence = $reference_path->[1];
+    my $reference_entry = $reference_path->[2];
+    
+    print OUTPUT_FILE_PATHS join("\t", $reference_url , grep{ defined( $_ ); } @{ $reference_sequence }) . "\n";
+    
+    }
+    close OUTPUT_FILE_PATHS;
+    close OUTPUT_FILE_FEATURES;
+=cut
+
+=pod
+# 5 - 4 - Write out feature definitions
+    print STDERR "\tWriting out feature definitions ...\n";
+my $output_file_features_definition = join("/", $output_directory, "features.definition");
+open OUTPUT_FILE_FEATURES_DEFINITION, ">$output_file_features_definition" or die "Unable to create features definition file ($output_file_features_definition): $!";
+foreach my $feature_name (keys( %feature2id )) {
+    print OUTPUT_FILE_FEATURES_DEFINITION join("\t", $feature_name, $feature2id{ $feature_name }) . "\n";
+}
+close OUTPUT_FILE_FEATURES_DEFINITION;
+
+# 5 - 5 - Write out feature types
+my $output_file_feature_types = join("/", $output_directory, "features.types");
+open OUTPUT_FILE_FEATURE_TYPES, ">$output_file_feature_types" or die "Unable to create feature types file ($output_file_feature_types): $!";
+foreach my $edge_feature (@{ $edge_features }) {
+    print OUTPUT_FILE_FEATURE_TYPES join("\t", $edge_feature) . "\n";
+}
+close OUTPUT_FILE_FEATURE_TYPES;
+=cut
+    
+    # *************************************************************************************************************************
+    
+    if ( ! $execution_word_graph_test ) {
+	next;
+    }
+
+    if ( $target_url ) {
+	
+	my $summary = '';
+	
+	if ( $target_data ) {
+	    
+	    # switch to testing mode
+	    $decoder->test_mode( 1 );
+	    
+	    # TODO : decoding should trigger slot node expansion, even for non-learning-based decoders (i.e. Filippova's)
+	    my $summary_path = $decoder->decode( $summary_graph , $target_data );
+	    $summary = _verbalize_path( $summary_path , $target_data );
+
+	}
+	
+	#my $sub_system_id = join( "-" , $decoder_class , $edge_weighter_class , $edge_cost_class );
+	my $sub_system_id = $system_key;
+	
+	print join("\t", $target_url, $summary, $sub_system_id) . "\n";
+	
+    }
+    
+    print STDERR "\n\n";
+    
+}
+
+sub _verbalize_path {
+    
+    my $sequence = shift || [];
+    my $target_data = shift;
+    
+    return join(" ", map { $_ =~ s/\<[^>]+\>(\/\d+)?:://s; $_ =~ s/\/\d+$//s; $_ } map { $_->realize( $target_data ); } grep { $_ !~ m/\<bog\>/ && $_ !~ m/\<eog\>/ } @{ $sequence });
+    
+}
+
+# TODO (?) : post slotting (to group slots for which context may vary) ?
+
+my %frequencies;
+
+sub _find_slot_candidates {
+    
+    my $path_entries = shift;
+    
+    my %directed_pairs;
+    
+    # 1 - scan all entries and keep track of directed pairs, appearance counts and separating paths
+    foreach my $path_entry (@{ $path_entries }) {
+	
+	my $path_id = $path_entry->[ 0 ];
+	my $path_sequence = $path_entry->[ 1 ];
+	
+	my $string_token_count = scalar(@{ $path_sequence });
+	
+	for (my $i=0; $i<$string_token_count; $i++) {
+	    
+	    # Note: largest separation length is at least 1 and no more than 25% the length of the associated gist
+	    for ( my $j=$i+2; ( ( $j<$string_token_count ) && ( ( $j - $i ) < 0.25 * $string_token_count ) ); $j++ ) {
+		
+		my $token1 = $path_sequence->[ $i ];
+
+		my $pair_key = join("::", $path_sequence->[ $i ], $path_sequence->[ $j ]);
+
+		if ( ! defined( $directed_pairs{ $pair_key } ) ) {
+		    $directed_pairs{ $pair_key } = {
+			'from' => $path_sequence->[ $i ],
+			'to'   => $path_sequence->[ $j ],
+			'paths' => []
+		    };
+		}
+		
+		my @copy = @{ $path_sequence };
+		my @path = splice @copy , ($i+1), ($j-$i-1);
+		push @{ $directed_pairs{ $pair_key }->{ 'paths'} }, [$path_id , $i , $j , \@path];
+
+	    }
+
+	}
+       
+    }
+
+    # Remove pairs that occur only once
+    foreach my $pair_key (keys(%directed_pairs)) {
+	if ( scalar( @{ $directed_pairs{ $pair_key }->{ 'paths' } } ) <= 1 ) {
+	    delete $directed_pairs{ $pair_key };
+	}
+    }
+
+    # Filtering
+    foreach my $pair_key (keys(%directed_pairs)) {
+
+	my $pair_data  = $directed_pairs{ $pair_key };
+	my $pair_from  = $pair_data->{ 'from' };
+	my $pair_to    = $pair_data->{ 'to' };
+	my $pair_paths = $pair_data->{ 'paths' };
+
+	my %variations2seen;
+	my @variations = grep { defined( $_ ); } map {
+	    my $variation_key = join(" ", @{ $_->[ 3 ] });
+	    if ( defined( $variations2seen{ $variation_key } ) ) {
+		undef;
+	    }
+	    else {
+		$variations2seen{ $variation_key } = 1;
+		$_;
+	    }
+	} @{ $pair_paths };
+
+	my $keep_pair = 1;
+
+	# Remove pairs for which there is only one intervening path
+	if ( scalar(@variations) < 3 ) {
+	    $keep_pair = 0;
+	}
+	else {
+
+	    # Average frequency of intermediate terms, must be lower than surrounding terms
+	    my @frequency_maxima;
+	    foreach my $variation (@variations) {
+		
+		my $frequency_sum = 0;
+		my $frequency_maximum = max( map { $frequencies{ _normalized($_) }; } @{ $variation->[ 3 ] } );
+		
+		push @frequency_maxima, $frequency_maximum;
+		
+	    }
+	    my $pair_intervening_path_frequency_max = max( @frequency_maxima );
+	    my $from_frequency = $frequencies{ _normalized($pair_from) };
+	    my $to_frequency = $frequencies{ _normalized($pair_to) };
+	    if ( 
+		( ( $pair_from ne $Web::Summarizer::Graph2::Definitions::NODE_BOG ) && ( $pair_intervening_path_frequency_max >= $from_frequency ) ) ||
+		( ( $pair_to ne $Web::Summarizer::Graph2::Definitions::NODE_EOG ) && ( $pair_intervening_path_frequency_max >= $to_frequency ) )
+		) {
+		$keep_pair = 0;
+	    }
+   
+	}
+	
+	if ( ! $keep_pair ) {
+	    delete $directed_pairs{ $pair_key };
+	}
+	else {
+	    # set target length for slot location
+	    $directed_pairs{ $pair_key }->{ 'length' } = median( map { length( @{ $_ } ) } @variations );
+	}
+
+    }
+        
+    # Move additional filtering steps here ?
+    # TODO
+    
+    return \%directed_pairs;
+
+}
+
+sub _load_class {
+    
+    my $class_name = shift;
+    
+    eval( "use $class_name;" );
+    if ( $@ ) {
+	die "An error occurred while loading custom class $class_name: $@";
+    }
+    
+    return $class_name;
+    
+}
+
+1;

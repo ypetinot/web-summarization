@@ -1,0 +1,23 @@
+#!/bin/bash
+
+#for level in 1 2 3 4; do find /local/ypetinot/data/dmoz_repository_www_2012/ -maxdepth 5 -type f -name '*.coverage' | while read COVERAGE_FILE; do CATEGORY=`echo ${COVERAGE_FILE} | sed 's/.coverage//' | tr '/' '\t' | awk -F"\t" '{ print $6 "\t" $7 "\t" $8 "\t" $9 }'`; cat ${COVERAGE_FILE} | while read LINE; do echo -e "${CATEGORY}\t${LINE}"; done; done | /proj/nlp/users/ypetinot/ocelot/svn-research/trunk/summarizers/phrase-summarizer/bin/average-coverage --target-range=$level > analysis.$level.out; done;
+
+png('boxplot-3.png')
+table <- read.delim(sep="\t",file='./analysis.3.out',header=TRUE)
+boxplot(table$summary.phrases.0.content.phrases, table$summary.phrases.1.anchortext.basic, table$summary.phrases.2.anchortext.sentence, table$summary.phrases.3.summary.phrases, table$summary.phrases.4.content.phrases, names=c("content\nphrases","anchortext\nbasic","anchortext\nsentence","cluster\nphrases","cluster\ncontent"), ylab="Gist coverage ratio", xlab="Content source", main="Top::SC::SSC")
+dev.off()
+
+png('boxplot-4.png')
+table <- read.delim(sep="\t",file='./analysis.4.out',header=TRUE)
+boxplot(table$summary.phrases.0.content.phrases, table$summary.phrases.1.anchortext.basic, table$summary.phrases.2.anchortext.sentence, table$summary.phrases.3.summary.phrases, table$summary.phrases.4.content.phrases, names=c("content\nphrases","anchortext\nbasic","anchortext\nsentence","cluster\nphrases","cluster\ncontent"), ylab="Gist coverage ratio", xlab="Content source", main="Top::SC::SSC::SSSC")
+dev.off()
+
+png('boxplot-2.png')
+> table <- read.delim(sep="\t",file='./analysis.2.out',header=TRUE)
+> boxplot(table$summary.phrases.0.content.phrases, table$summary.phrases.1.anchortext.basic, table$summary.phrases.2.anchortext.sentence, table$summary.phrases.3.summary.phrases, table$summary.phrases.4.content.phrases, names=c("content\nphrases","anchortext\nbasic","anchortext\nsentence","cluster\nphrases","cluster\ncontent"), ylab="Gist coverage ratio", xlab="Content source", main="Top::SC")
+> dev.off()
+
+png('boxplot-1.png')
+table <- read.delim(sep="\t",file='./analysis.1.out',header=TRUE)
+boxplot(table$summary.phrases.0.content.phrases, table$summary.phrases.1.anchortext.basic, table$summary.phrases.2.anchortext.sentence, table$summary.phrases.3.summary.phrases, table$summary.phrases.4.content.phrases, names=c("content\nphrases","anchortext\nbasic","anchortext\nsentence","cluster\nphrases","cluster\ncontent"), ylab="Gist coverage ratio", xlab="Content source", main="Top")
+dev.off()

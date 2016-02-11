@@ -1,0 +1,27 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+SUMMARIZER_MAKEFILE_LOCATION=$1
+SUMMARIZER_MAKEFILE_TARGET_CLEAN=$2
+SUMMARIZER_MAKEFILE_TARGET=$3
+SUMMARIZER_MAKEFILE_BASE_DIRECTORY=$4
+FOLD_ID=$5
+CATEGORY_BASE_NAME=$6
+
+echo -e "http://www.syracusenewtimes.com/\thttp://www.wcbizj.biz/\thttp://www.nysun.com/\thttp://www.stargazette.com/" | while read URL REFERENCES; do
+
+    TEMP_FILE_REFERENCES=`mktemp`
+    echo -e "${REFERENCES}" | tr '\t' '\n' > ${TEMP_FILE_REFERENCES}
+
+    # For now we're passing category information, but this will not be required in the future
+    make --silent -f ${SUMMARIZER_MAKEFILE_LOCATION} -C ${SUMMARIZER_MAKEFILE_BASE_DIRECTORY} ${SUMMARIZER_MAKEFILE_TARGET} FOLD_ID=${FOLD_ID} TARGET_URL="${URL}" REFERENCE_URLS=${TEMP_FILE_REFERENCES} CATEGORY=${CATEGORY_BASE_NAME} REPOSITORY_BASE=/local/ypetinot/data/dmoz_repository_www_2012/
+#2>/dev/null
+
+#    cat ${SUMMARIZER_MAKEFILE_BASE_DIRECTORY}/${CATEGORY_BASE_NAME}.models/graph-summarizer-4/${FOLD_ID}/test.out | while read SUMMARIZER_OUTPUT_LINE; do
+#	echo -e "${SUMMARIZER_OUTPUT_LINE}\tgraph4";
+#    done;
+
+    rm -f ${TEMP_FILE_REFERENCES}
+
+done;

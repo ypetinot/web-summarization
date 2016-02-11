@@ -1,0 +1,29 @@
+=pod
+# Compute category-level stats
+print STDERR "Computing category stats ...\n";
+my %vocabulary;
+foreach my $reference_entry (@{ $training_entries }) {
+
+# map { $idfs{ $field }{ $_ } = log( $entry_count / $unique_appearances{ $field }{ $_ } ); } keys( %{ $unique_appearances{ $field } } );
+    # _generate_reference_data( $training_entries , $out_training );
+    my $n_phrases = scalar( keys( $idfs{ $field } ) );
+    my @sorted_phrases = sort { $idfs{ $field }{ $a } <=> $idfs{ $field }{ $b } } keys( %{ $idfs{ $field } } );
+	
+    # compute genericities for this field
+    my %genericities;
+    for (my $i=0; $i<$n_phrases; $i++) {
+	my $phrase = $sorted_phrases[ $i ];
+	#$genericities{ $phrase } = ( $n_phrases - $i ) / $n_phrases;
+	$genericities{ $phrase } = $n_phrases - $i;
+    }
+    
+    $global{ $field } = \%genericities;
+    
+    map { $frequencies{ $field }{ $_ } = $unique_appearances{ $field } { $_ } / $entry_count; } keys( %{ $unique_appearances{ $field } } );
+    map { $importances{ $field }{ $_ } = $genericities{ $_ } / $n_phrases; } keys( %{ $unique_appearances{ $field } } );
+
+my $content = $reference_entry->get_field( 'content.phrases' );
+map { $vocabulary{ $_ }++; } uniq map { normalize_string( $_ ); } split / |\p{Punct}/, $content;
+
+}
+=cut

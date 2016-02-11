@@ -1,0 +1,318 @@
+#!/usr/bin/env perl
+
+# Compute average intra-category and inter-category similarity (as well as related statistics, e.g. LCS) for the category sample provided on STDIN
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use GraphModel;
+use Chunk;
+use Clusterer::Hierarchical;
+use Algorithm::Diff qw(
+        LCS LCS_length LCSidx
+        diff sdiff compact_diff
+        traverse_sequences traverse_balanced );
+use Statistics::Descriptive;
+use Text::Trim;
+
+if ( scalar(@ARGV) <= 0 ) {
+    die "Usage: $0 <repository-base>";
+}
+
+my $repository_base = $ARGV[0];
+
+my @categories = map { my $line = $_; chomp $line; join("/", $repository_base, $line); } <STDIN>;
+my @categories_strings = map {  _load_category_gist_strings( $_ ); } @categories;
+
+my @final_intra_category_statistics;
+my @final_inter_category_statistics;
+
+foreach my $category_strings (@categories_strings) {
+
+    # Intra-category statistics
+    my $intra_category_statistics = _intra_category_statistics( $category_strings ); 
+    push @final_intra_category_statistics, $intra_category_statistics;
+    
+    # Inter-category statistics
+    my @all_inter_category_statistics;
+    foreach my $category_strings2 (@categories_strings) {
+	
+	if ( $category_strings eq $category_strings2 ) {
+	    next;
+	}
+	
+	my $pair_inter_category_statistics = _inter_category_statistics( $category_strings , $category_strings2 );
+	push @all_inter_category_statistics, $pair_inter_category_statistics;
+	
+    }
+    my $inter_category_statistics = _average_statistics( \@all_inter_category_statistics );
+    push @final_inter_category_statistics, $inter_category_statistics;
+    
+}
+
+# average statistics
+my $average_intra_category_statistics = _average_statistics( \@final_intra_category_statistics );
+my $average_inter_category_statistics = _average_statistics( \@final_inter_category_statistics );
+
+# output statistics
+_output_statistics( "intra-category" , $average_intra_category_statistics );
+_output_statistics( "inter-category" , $average_inter_category_statistics );
+
+# support functions
+
+# compute intra-category statistics
+sub _intra_category_statistics {
+
+    my $category_strings = shift;
+
+    my %category_statistics;
+
+    # hierarchical clustering
+    foreach my $mode ('single-link' , 'average-link' , 'all-links') {
+	
+	# If we had a common linear template then very likely, average-link/all-links clustering would yield large clusters
+	# Large single link clusters could indicate that there is shared information, but not in the form of a single - largely - shared pattern
+	# my $clusterer = new Clusterer::Hierarchical( mode => $mode , similarity_threshold_min => 0.3 , similarity_measure => \&_compute_similarity );
+	my $clusterer = new Clusterer::Hierarchical( mode => $mode , similarity_threshold_min => 0 , similarity_measure => \&_compute_cosine_similarity );
+	my ( $clusters , $clusters_stats ) = $clusterer->cluster( $category_strings );
+	my $cluster_stat = Statistics::Descriptive::Full->new();
+	$cluster_stat->add_data( map{ scalar(@{ $_ });} @$clusters);
+	my $cluster_size_arithmetic_mean = $cluster_stat->mean();
+	my $cluster_size_geometric_mean = $cluster_stat->geometric_mean();
+	my $cluster_size_harmonic_mean = $cluster_stat->harmonic_mean();
+	
+	$category_statistics{ join("::",'hierarchical_clustering',$mode,'count') } = scalar(@$clusters);
+	$category_statistics{ join("::",'hierarchical_clustering',$mode,'size_arithmetic_mean') } = $cluster_size_arithmetic_mean;
+	$category_statistics{ join("::",'hierarchical_clustering',$mode,'size_geometric_mean') } = $cluster_size_geometric_mean;
+	$category_statistics{ join("::",'hierarchical_clustering',$mode,'size_harmonic_mean') } = $cluster_size_harmonic_mean;
+
+    }
+
+    # average similarity and average lcs length
+    my $n = 0;
+    my $total_similarity = 0;
+    my $total_lcs_length = 0;
+    
+    for (my $i=0; $i<scalar(@$category_strings); $i++) {
+	
+	for (my $j=$i+1; $j<scalar(@$category_strings); $j++) {
+
+	    $n++;
+	    $total_similarity += _compute_similarity( $category_strings->[$i] , $category_strings->[$j] );
+	    $total_lcs_length += _compute_lcs_length( $category_strings->[$i] , $category_strings->[$j] );   
+
+	}
+
+    }
+
+    $category_statistics{ 'average_similarity' } = $n ? ( $total_similarity / $n ) : $n;
+    $category_statistics{ 'average_lcs_length' } = $n ? ( $total_lcs_length / $n ) : $n;
+
+    return \%category_statistics;
+
+}
+
+# compute inter-category statistics
+sub _inter_category_statistics {
+
+    my $category_strings_1 = shift;
+    my $category_strings_2 = shift;
+
+    my %category_statistics;
+
+    my $n = 0;
+    my $total_similarity = 0;
+    my $total_lcs_length = 0;
+
+    for (my $i=0; $i<scalar(@$category_strings_1); $i++) {
+	
+	for (my $j=0; $j<scalar(@$category_strings_2); $j++) {
+	    
+	    $n++;
+	    $total_similarity += _compute_similarity( $category_strings_1->[$i] , $category_strings_2->[$j] );
+	    $total_lcs_length += _compute_lcs_length( $category_strings_1->[$i] , $category_strings_2->[$j] );   
+
+	}
+	
+    }
+    
+    $category_statistics{ 'average_similarity' } = $n ? ( $total_similarity / $n ) : $n;
+    $category_statistics{ 'average_lcs_length' } = $n ? ( $total_lcs_length / $n ) : $n;
+
+    return \%category_statistics;
+
+}
+
+# load gist strings for a given category
+sub _load_category_gist_strings {
+
+    my $category_base = shift;
+
+    # load category data
+    my $category_graph = new GraphModel( join(".", $category_base, "opt.graph.summary.chunks") );
+    
+    # cluster graph
+    $category_graph->cluster();
+
+    # get gist strings
+    my $summaries = $category_graph->filtered_summaries( sub { return ( $_->is_np() && ! $category_graph->is_target_specific_np($_->get_id()) ) } );
+    my @np_strings = map { my @summary = @{$_}; join( " " , map { $_->get_surface_string(); } @summary) } @$summaries;
+
+    return \@np_strings;
+
+}
+
+# compute similarity between two strings
+sub _compute_similarity {
+
+    my $string1 = shift;
+    my $string2 = shift;
+
+    my %all_terms;
+    my %_terms1;
+    my %_terms2;
+    
+    my @terms1 = split /\s+/, $string1;
+    my @terms2 = split /\s+/, $string2;
+
+    map { $_terms1{$_}++; $all_terms{$_}++; } @terms1;
+    map { $_terms2{$_}++; $all_terms{$_}++; } @terms2;
+
+    my $overlap_count = 0;
+    foreach my $term (@terms1) {
+	if ( defined($_terms2{$term}) ) {
+	    $overlap_count++;
+	}
+    }
+
+    my $score = 0;
+    if ( scalar(keys(%all_terms)) ) {
+	$score = $overlap_count / scalar(keys(%all_terms));
+    }
+
+    return $score;
+
+}
+
+# compute cosine similarity between two strings
+sub _compute_cosine_similarity {
+
+    my $string1 = shift;
+    my $string2 = shift;
+
+    my $normalized_string1 = _normalize_string($string1);
+    my $normalized_string2 = _normalize_string($string2);
+
+    my @tokens1 = split /\s+/, $normalized_string1;
+    my @tokens2 = split /\s+/, $normalized_string2;
+
+    my %tokens1_counts;
+    map { $tokens1_counts{$_}++; } @tokens1;
+
+    my %tokens2_counts;
+    map { $tokens2_counts{$_}++; } @tokens2;
+
+    my %all_tokens;
+    map { $all_tokens{$_} += $tokens1_counts{$_}; } keys(%tokens1_counts);
+    map { $all_tokens{$_} += $tokens2_counts{$_}; } keys(%tokens2_counts);
+
+    my $similarity = 0;
+
+    if ( scalar(keys(%tokens1_counts)) && scalar(keys(%tokens2_counts)) ) {
+
+	my $dot_product = 0;
+	map { $dot_product += ($tokens1_counts{$_} || 0) * ($tokens2_counts{$_} || 0); } keys(%all_tokens); 
+
+	my $norm1 = 0;
+	map { $norm1 += ( $tokens1_counts{$_} || 0 ) ** 2; } keys(%all_tokens);
+
+	my $norm2 = 0;
+	map { $norm2 += ( $tokens2_counts{$_} || 0 ) ** 2; } keys(%all_tokens);
+
+	my $norm = sqrt( $norm1 * $norm2 );
+
+	$similarity = $dot_product / $norm;
+
+    }
+
+    return $similarity;
+
+}
+
+# (specific) string normalization
+# TODO: more normalization needed ?
+sub _normalize_string {
+
+    my $string = shift;
+    
+    my $normalized_string = lc($string);
+    $normalized_string = trim($normalized_string);
+    $normalized_string =~ s/[[:punct:]]+/ /sg;
+
+    return $normalized_string;
+
+}
+
+# compute length of LCS between two strings
+sub _compute_lcs_length {
+
+    my $string1 = shift;
+    my $string2 = shift;
+
+    my %all_terms;
+    my %_terms1;
+    my %_terms2;
+    
+    my @terms1 = split /\s+/, $string1;
+    my @terms2 = split /\s+/, $string2;
+
+    my $score = LCS_length( \@terms1 , \@terms2 ); 
+
+    return $score;
+
+}
+
+# average statistics
+sub _average_statistics {
+
+    my $all_statistics = shift;
+
+    my %average_statistics;
+    my $n = scalar(@$all_statistics);
+
+    foreach my $statistics (@$all_statistics) {
+	
+	if ( scalar(keys(%average_statistics)) == 0 ) {
+	    map { $average_statistics{ $_ } = 0; } keys( %$statistics );
+	}
+
+	foreach my $key (keys(%average_statistics)) {
+	    $average_statistics{ $key } += $statistics->{ $key };
+	}
+
+    }
+
+    if ( $n ) {
+	map { $average_statistics{ $_ } /= $n; } keys( %average_statistics );
+    }
+
+    return \%average_statistics;
+
+}
+
+# output statistics
+sub _output_statistics {
+
+    my $label = shift;
+    my $statistics = shift;
+
+    print join( "\t" , $label , map{ join(":", $_, $statistics->{$_}) } keys(%$statistics)) . "\n";
+
+}
+
+1;

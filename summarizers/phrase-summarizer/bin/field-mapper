@@ -1,0 +1,81 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Getopt::Long;
+use Pod::Usage;
+
+my %field2func;
+my %cache;
+
+my @fields;
+my @functions;
+
+while ( scalar(@ARGV) ) {
+    
+    my $field_index = shift @ARGV;
+    my $field_mapper = shift @ARGV;
+
+    if ( $field_index !~ m/^\d+$/ || ! defined( $field_mapper ) ) {
+	die "Invalid index/mapper combination provided: $field_index / $field_mapper";
+    }
+
+    my @mapper_scopes = split /::/, $field_mapper;
+    if ( scalar(@mapper_scopes) > 1 ) {
+	my $function_name = pop @mapper_scopes;
+	my $function_space = join("::", @mapper_scopes);
+	eval "use $function_space qw/$function_name/";
+    }
+
+    $field2func{ $field_index } = $field_mapper;
+
+}
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    
+    # TODO: add parameter for field separator
+    my $field_separator = "\t";
+
+    my @fields = split /$field_separator/, $line;   
+    for (my $i=1; $i<=scalar(@fields); $i++) {
+	$fields[ $i - 1 ] = _map_field( $i , $fields[ $i - 1 ] );
+    }
+
+    print join($field_separator, @fields) . "\n";
+
+}
+
+sub _map_field {
+
+    my $index = shift;
+    my $value = shift;
+    
+    my $updated_value = $value;
+    my $func = $field2func{ $index };
+
+    if ( defined( $func ) ) {
+
+	my $key = join("::",$func,$value);
+	if ( ! defined( $cache{ $key } ) ) {
+	    no strict;
+	    $cache{ $key } = $func->( $value );
+	}
+	$updated_value = $cache{ $key };
+
+    }
+
+    return $updated_value;
+
+}
+
+1;

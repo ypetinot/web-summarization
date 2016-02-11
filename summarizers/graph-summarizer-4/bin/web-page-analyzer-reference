@@ -1,0 +1,184 @@
+#!/usr/bin/env perl
+
+# CURRENT : could this script also act as a tool to generate the "alignment" between two pages ?
+
+=pod
+##sub BEGIN {
+    use LWP::Simple;
+#print LWP::Simple::get( 'http://www.princeton.edu' );
+    getprint( 'http://www.princeton.edu' );
+    exit;
+##}
+
+1;
+=cut
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../data/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Data::Dumper;
+use Getopt::Long;
+use List::Util qw/max/;
+use Pod::Usage;
+
+use Category::UrlData;
+use DMOZ::GlobalData;
+
+use TargetAdapter::ConfusionNetworkTargetAdapter;
+use TargetAdapter::Extractive::Analyzer;
+use TargetAligner;
+use TargetAligner::RankingTargetAligner;
+use Web::Summarizer::UrlSignature;
+
+#binmode( STDOUT , ':utf8' );
+
+my $debug = 0;
+my $help  = 0;
+my $man   = 0;
+
+my $adapter_class = undef;
+my $aligner_class = undef;
+my $mirrored_analysis = 0;
+my $modalities = undef;
+my $ranker_class = undef;
+my $reference_summary = undef;
+my $reference_url = undef;
+my $signature = 0;
+
+#Getopt::Long::Configure("bundling pass_through");
+GetOptions('help|?' => \$help, man => \$man,
+	   'reference-url=s' => \$reference_url,
+	   'adapter=s' => \$adapter_class,
+	   'aligner=s' => \$aligner_class,
+	   'mirrored-analysis' => \$mirrored_analysis,
+	   'ranker=s' => \$ranker_class,
+	   'signature' => \$signature,
+	   'reference-summary=s' => \$reference_summary,
+	   'modalities=s' => \$modalities,
+	   'debug|d' => \$debug
+    ) or pod2usage(2);
+
+my $target_url = $ARGV[ 0 ];
+if ( ! defined( $target_url ) ) {
+    pod2usage(2);
+    exit;
+}
+
+my $target_url_data = Category::UrlData->load_url_data( $target_url );
+my $reference_url_data = defined( $reference_url ) ? Category::UrlData->load_url_data( $reference_url ) : undef;
+
+# TODO: instantiate single ranker and then, if required, use it to instantiate TargetAligner ?
+my %ranker_params;
+if ( defined( $modalities ) ) {
+    my @_modalities = split /\,/ , $modalities;
+    $ranker_params{ 'alignment_sources' } = \@_modalities;
+}
+
+if ( $signature ) {
+
+    my $global_data = new DMOZ::GlobalData;
+    my $signature_generator = new Web::Summarizer::UrlSignature( global_data => $global_data );
+    my $target_signature = $signature_generator->compute( $target_url_data );
+
+    my $coordinates = $target_signature->coordinates;
+    map {
+	print join( "\t" , $_ , $coordinates->{ $_ } ) . "\n";
+    } sort { $coordinates->{ $b } <=> $coordinates->{ $a } } keys( %{ $coordinates } );
+
+}
+elsif ( defined( $reference_url_data ) && $mirrored_analysis ) {
+
+    my $analyzer = new TargetAdapter::Extractive::Analyzer;
+    my ( $clusters_1 , $cluster_2 ) = $analyzer->mutual( $target_url_data , $reference_url_data , target_threshold => 2 , reference_threshold => 2 );
+
+    my @lists = map {
+	my $cluster = $_;
+	my $object_specific = $cluster->raw_sequences;
+	my @object_list = sort { $object_specific->{ $b } <=> $object_specific->{ $a } } keys( %{ $object_specific } );
+	[ \@object_list , $object_specific ];
+    } ( $clusters_1 , $cluster_2 );
+    
+    print join( ' & ' , map { "\\multicolumn{2}{c}{$_}" } ( $target_url_data->url , $reference_url_data->url ) ) . " \\\\\n";
+    print "\\cline{1-4}\n";
+    my $n = max( map { scalar( @{ $_->[ 0 ] } ) } @lists );
+    for ( my $i = 0 ; $i < $n ; $i++ ) {
+	my $count_ok = 0;
+	my $line = join( ' & ' , map {
+	    my $term = $_->[ 0 ]->[ $i ];
+	    my $term_count = $_->[ 1 ]->{ $term };
+	    # TODO : this should be handled by the analyzer
+	    my $word_count = scalar( split /\s+/, $term );
+	    if ( $term_count >= $word_count + 1 ) {
+		$count_ok++;
+	    }
+	    ( $term , $term_count )
+		    } @lists );
+	if ( $count_ok < 1 ) {
+	    last;
+	}
+	print "$line \\\\\n";
+    }
+
+}
+elsif ( defined( $reference_url ) && defined( $adapter_class ) ) {
+
+    my $adapter = _instantiate_class( $adapter_class , { target => $target_url_data , model_base => '' , probability_threshold_substitution => 0.5 } );
+
+    my $reference_instance = Category::UrlData->load_url_data( $target_url );
+    if ( defined( $reference_summary ) ) {
+	$reference_instance->set_field ( 'summary' , $reference_summary , namespace => 'dmoz' , store => 1 );
+    }
+
+    my $original_summary = $reference_instance->summary_modality->utterance;
+    my $adapted_summary = $adapter->adapt( $original_summary );
+
+    my $adaptation_stats = $adapter->stats;
+    print Dumper( $adaptation_stats ) . "\n";
+
+}
+elsif ( defined( $reference_url_data ) ) {
+    
+    my %aligner_params = %ranker_params;
+    $aligner_params{ target } = $target_url_data;
+    $aligner_params{ token_ranker_class } = $ranker_class;
+
+    my $target_aligner = ( Web::Summarizer::Utils::load_class( $aligner_class || 'TargetAligner::RankingTargetAligner' ) )->new( %aligner_params );
+    my $target_alignment = $target_aligner->align( $reference_url_data );
+
+    print Dumper( $target_alignment ) . "\n";
+
+}
+elsif( defined( $ranker_class ) ) {
+
+    # 1 - instantiate utterance (single token ?) ranker
+    my $token_ranker = ( Web::Summarizer::Utils::load_class( $ranker_class ) )->new( %ranker_params );
+
+    # 2 - rank
+    my $ranked_tokens = $token_ranker->generate_ranking( $target_url_data );
+    my $n_ranked_tokens = scalar( @{ $ranked_tokens } );
+    for ( my $i=0; $i<$n_ranked_tokens; $i++ ) {
+	my $ranked_token = $ranked_tokens->[ $i ];
+	print join( "\t" , $i , $ranked_token->id ) . "\n";
+    }
+
+}
+else {
+    die "No action requested ...";
+}
+
+sub _instantiate_class {
+    
+    my $class_name = shift;
+    my $params = shift || {};
+
+    return ( Web::Summarizer::Utils::load_class( $class_name ) )->new( %{ $params } );
+
+}
+
+1;

@@ -1,0 +1,3 @@
+# data production for all summarizers
+cat dmoz.all.data | ./bin/dmoz-prepare-filter 2>/dev/null | ./bin/dmoz-prepare-render > dmoz.all.data.prepared
+

@@ -1,0 +1,246 @@
+#!/usr/bin/env perl
+
+# simply return summary for the target url
+# supports 2 modes: content-based and context-based, although currently there is no actual difference in the summarization algorithm itself
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Getopt::Long;
+use Pod::Usage;
+use URI;
+use URI::URL;
+use File::Path;
+use File::Temp qw/tempfile/;
+use XML::Generator escape => 'always';
+use XML::TreePP;
+use Fcntl ':flock';
+use Lingua::EN::Sentence qw( get_sentences add_acronyms set_EOS );
+use Text::Trim;
+
+use HTMLRenderer::LynxRenderer;
+
+my $mead_path="${FindBin::Bin}/../third-party/mead/bin/";
+
+# lock this script - mead doesn't currently support concurrent executions
+open(MEAD_LOCK, ">>$0.lock") or die "Can't open mead lock: $!";
+flock(MEAD_LOCK, LOCK_EX);
+seek(MEAD_LOCK, 0, 2);
+
+my $man = 0;
+my $help = 0;
+my $mode = 'default';
+my $debug = 0;
+my $max_sentences = 1;
+my $max_words = 0;
+my $id = "";
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'id=s' => \$id,
+	   'mode=s' => \$mode, 'debug|d' => \$debug, 'sentences|s=s' => \$max_sentences,
+	   'words|w=s' => \$max_words) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0) if $man;
+#pod2usage(-exitstatus => 0) if ( $#ARGV != 0 );
+
+if ( $debug ) {
+    print STDERR "debug mode on\n";
+}
+
+my $APPLICATION_NAME = $0;
+#my $input_file = $ARGV[0];
+
+# open INPUT_FILE, $input_file or die "Unable to open input file ($input_file): $!";
+# close INPUT_FILE;
+# collect sentences
+#my $input_file = $content_file;
+
+# for now we read input data from STDIN
+while( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+    my $content = shift @fields;
+    my $anchortext = shift @fields;
+
+    my $summary = "";
+
+    if ( $mode eq 'content' ) {
+   
+	if ( $content ) {
+
+	    my $rendered_content = HTMLRenderer::LynxRenderer->render( $content );
+	    if ( $rendered_content ) {
+		
+		my @raw_sentences = map { trim $_; } split /\n+|[[:cntrl:]]+/, $rendered_content;
+		
+		my @sentences;
+		foreach my $raw_sentence (@raw_sentences) {
+		    
+		    my $segmented_sentences = get_sentences($raw_sentence);
+		    if ( $segmented_sentences ) {
+			push @sentences, @{ $segmented_sentences };
+		    }
+		    
+		}
+		
+		my %urls;
+		$urls{ $url } = \@sentences;
+		
+		$summary = _mead_summarize_sentences( \%urls );
+		
+	    }
+	    
+	}
+	
+    }
+ 
+    print join("\t", $url, $summary, $id) . "\n";
+  
+}
+
+# release lock
+flock(MEAD_LOCK, LOCK_UN);
+
+exit;
+
+# mead summarize w/ sentences
+sub _mead_summarize_sentences {
+
+    my $urls = shift;
+
+# create destination file
+    my $dir = File::Temp->newdir(CLEANUP => 0);
+    my $cluster_dir = "$dir/temp/";
+    my $docsent_dir = "$cluster_dir/docsent/";
+    mkpath($docsent_dir);
+#if ( $debug ) {
+#    print STDERR "temp directory is: $dir\n";
+#}
+    
+# write out docsent files while creating cluster file
+    open CLUSTER_FILE, ">$cluster_dir/temp.cluster" or die "unable to create cluster file: $!";
+
+    print CLUSTER_FILE "<?xml version='1.0'?>\n";
+    print CLUSTER_FILE "<CLUSTER LANG='ENG'>\n";
+
+    my $url_count = 0;
+    foreach my $url (keys(%{ $urls })) {
+	
+#    if ( $debug ) {
+#	print STDERR "processing $url\n";
+#    }
+	
+	$url_count++;
+	
+	# create destination file
+	my $docsent_file = $docsent_dir . "/" . $url_count . ".docsent";
+	
+	# open file
+	open DOCSENT, ">$docsent_file" or die "unable to open file $docsent_file: $!";
+	binmode(DOCSENT, ':utf8');
+	
+	# output docsent data
+	print DOCSENT "<?xml version='1.0' encoding='UTF-8'?>\n";
+#    print DOCSENT '<!DOCTYPE DOCSENT SYSTEM "/clair/tools/MEAD3/dtd/docsent.dtd">' . "\n";
+	print DOCSENT "<DOCSENT DID='$url_count' DOCNO='$url_count' LANG='ENG' CORR-DOC='${url_count}.c'>\n";
+	print DOCSENT "<BODY>\n";
+	print DOCSENT "<TEXT>\n";
+	
+	my @sentences = @{$urls->{$url}};
+	my $count=0;
+	my $xml_generator = XML::Generator->new(escape => 'always,high-bit');
+	foreach my $sentence (@sentences) {
+	    $count++;
+	    print DOCSENT $xml_generator->S( { PAR => $count, RSNT => $count, SNO => $count }, 
+					     $sentence ) . "\n";
+	}
+	
+	print DOCSENT "</TEXT>\n";
+	print DOCSENT "</BODY>\n";
+	print DOCSENT "</DOCSENT>\n";
+	
+	if ( $debug ) {
+	    print STDERR "created docsent file for $url with $count sentences\n";
+	}
+	
+	# close file
+	close DOCSENT;
+	
+	# update cluster file
+	print CLUSTER_FILE "<D DID='$url_count' />\n";
+	
+    }
+    
+    print CLUSTER_FILE "</CLUSTER>\n";
+    
+    close CLUSTER_FILE;
+
+# now run MEAD
+    my $mead_options = "-s -absolute $max_sentences";
+    if ( $max_words > 0 ) {
+	$mead_options = "-w -a $max_words";
+    }
+
+    my $mead_output = `cd $dir && $mead_path/mead.pl -v $mead_options temp`;
+#2>/dev/null`;
+    
+# clean-up
+#$mead_output =~ s/^(!:\[\d+\]).*$//g; # remove info lines
+    $mead_output =~ s/^\[\d+\]\s+//g; # strip sentence numbers
+    $mead_output =~ s/\n/ /g; # remove newlines
+    $mead_output =~ s/\s+/ /g; # remove extraneous spaces
+
+    if ( $mead_output ) {
+	return $mead_output;
+    }
+    else {
+	return undef;
+    }
+    
+}
+
+__END__
+
+=pod
+
+=head1 NAME
+    
+    baseline-mead - Baseline context-based summarizer that uses MEAD
+    
+=head1 SYNOPSIS
+    
+    baseline-mead [options] CONTEXT_DATA
+
+    Options:
+       -help            brief help message
+       -man             full documentation
+       -mode            context extraction mode
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<-help>
+
+    Print a brief help message and exits.
+
+=item B<-man>
+
+    Prints the manual page and exits.
+
+=back
+
+=head1 DESCRIPTION
+
+    Uses MEAD as a multi-document summarizer, where the documents to be summarized are single sentences extracted from the context of the TARGET_URL and containing a link to the TARGET_URL.
+
+=cut

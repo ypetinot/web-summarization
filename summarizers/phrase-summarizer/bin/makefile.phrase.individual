@@ -1,0 +1,31 @@
+# Makefile defining a term based model
+# Generates model for individual terms
+# Per-term models allow the introduction of content-based features
+
+location = $(word $(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST))
+CURRENT_MAKEFILE := $(location)
+
+SUMMARIZER := phrase-individual-summarizer
+FEATURES:=content.rendered.ngrams.1/binary/decode_json/count_filter::2 content.rendered.ngrams.2/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.1/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.2/binary/decode_json/count_filter::2
+
+BINDIR := $(dir $(CURRENT_MAKEFILE))
+include $(BINDIR)/makefile.phrase
+
+INDIVIDUAL_MODELS_DIRECTORY := $(MODEL_DIRECTORY)/individual_models
+
+phrase-individual-train: phrase-data $(INDIVIDUAL_MODELS_DIRECTORY)
+	find $(INDIVIDUAL_MODELS_DIRECTORY)/ -type f -name "*.data" | sed 's/-training.data//' | xargs -i{} make -f $(CURRENT_MAKEFILE) {}.model
+
+phrase-individual-test: phrase-individual-train entries.model
+	@echo "Entries model has been generated !"
+
+$(INDIVIDUAL_MODELS_DIRECTORY): $(MODEL_TRAINING_DATA) $(MODEL_EXTRA) phrase-individual-clean
+	mkdir -p $@.temp
+	cat $(MODEL_EXTRA) | awk -F"\t" '{ print "\t"$$1"\t" }' | grep hosting > $@.filter
+	gunzip -c $(MODEL_TRAINING_DATA) | grep -f $@.filter | $(BINDIR_PHRASE)/field-mapper 2 "Digest::MD5::md5_hex" | awk -F"\t" -v target_dir=$@.temp '{ print $$0 >> ( target_dir "/" $$2 "-training.data" ) }'
+	mv $@.temp $@
+	rm -rf $@.filter
+
+phrase-individual-clean:
+	rm -rf *.temp
+	rm -rf $(INDIVIDUAL_MODELS_DIRECTORY)

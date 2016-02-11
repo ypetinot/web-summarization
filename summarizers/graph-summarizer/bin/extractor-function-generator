@@ -1,0 +1,144 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Folds;
+use Category::UrlData;
+use GistGraph::Node;
+use GistGraph::Node::Extractor::Function;
+use GistGraph::Node::Extractor::TFIDF;
+use Similarity;
+
+our $MODEL_DIR_EXTENSION = "model";
+
+while (<STDIN>) {
+
+    chomp;
+
+    my $line = $_;
+    my ( $category_data_path , $gist_graph_file , $node_json ) = split /\t/, $line;
+
+    # load category data
+    my $category_data = new Category::Data( $category_data_path );
+    if ( ! $category_data ) {
+	die "Unable to load category data ...";
+    }
+
+    # load url data
+    my $category_data_base_path = _category_base($category_data_path);
+    my $category_url_data = Category::UrlData->load_data( $category_data_base_path );
+
+    # select the fold to use (by default the complete data will be used)
+    my $folds = new Category::Folds( category_data => $category_data , url_data => $category_url_data , mode => 'leave-n-out' , n => 0 );
+    my $category_data_fold = $folds->get_fold( 0 );
+
+    # load node object
+    my $node = GistGraph::Node->thaw( $node_json );
+
+    # train extractor model - jackknife approach
+    my @chunk_ids = @{ $node->raw_chunks() };
+    my @gist_ids = map { $category_data_fold->get_appearances($_)->[0]; } @chunk_ids;
+
+    if ( scalar(@chunk_ids) != scalar(@gist_ids) ) {
+	print STDERR "[$0] Problem: number of gist appearances does not match the number of chunks in this cluster ... skipping ...\n";
+	next;
+    }
+
+    # prepare data
+    my @data = map { $category_data_fold->prepare_data(); $category_data_fold->get_data( $_ ); } @gist_ids;
+    my @values = map { $category_data_fold->get_node( $_ )->placeholder(); } @chunk_ids;
+
+    my $total_score_function = 0;
+    my $total_score_baseline = 0;
+
+    for (my $i=0; $i<scalar(@data); $i++) {
+  
+	# target chunk
+	my $target_chunk = $values[$i];
+
+	# create fold
+	my @fold_data  = @data; my $target_data = splice @fold_data, $i, 1;
+	my @fold_values = @values; my $target_value = splice @fold_values, $i, 1;
+
+	# reference extractor
+	my $extractor_tfidf = new GistGraph::Node::Extractor::TFIDF( id => $node->id() , url_data => \@fold_data );
+
+	# train extractor function for this fold
+	my $model_root = join( "/" , join(".", $category_data_base_path, $MODEL_DIR_EXTENSION) , $category_data_fold->id() );
+	my $extractor_function = new GistGraph::Node::Extractor::Function( id => $node->id() , model_path => $model_root , url_data => \@fold_data , targets => \@fold_values );
+
+	# test extractor function
+	my $extracted_value_function = $extractor_function->extract( $target_data );
+	my $extracted_value_baseline = $extractor_tfidf->extract( $target_data );
+
+	my $match_score_function = _extraction_function_match( $target_value , $extracted_value_function );
+	my $match_score_baseline = _extraction_function_match( $target_value , $extracted_value_baseline );
+
+	$total_score_function += $match_score_function;
+	$total_score_baseline += $match_score_baseline;
+
+    }
+
+    # average scores
+    my $average_score_function = $total_score_function / scalar(@gist_ids);
+    my $average_score_baseline = $total_score_baseline / scalar(@gist_ids);
+
+    # output score
+    print join("\t", $line, $average_score_function, $average_score_baseline) . "\n";
+
+}
+
+# *** helper functions ***
+sub _extraction_function_match {
+
+    my $string1 = shift;
+    my $string2 = shift; 
+
+    return Similarity::_compute_cosine_similarity( $string1 , $string2 );
+
+}
+
+sub _category_base {
+
+    my $path = shift;
+
+    my @path_elements = split /\//, $path;
+    
+    my $file_name = pop @path_elements;
+    $file_name =~ s/\..+$//s;
+
+    return join("/", @path_elements, $file_name);
+
+}
+
+=pod
+
+# map individual chunks to extractor functions (only for chunks that are target-specific) 
+map {
+
+    if ( $_->get_type() eq 'np' ) { 
+
+	my $np_indicator_function = undef;
+	my $np_extractor_function = undef;
+
+	# do we want to use a ratio-based threshold
+	if ( $_->has_label($Chunk::LABEL_UNIQUE_CLUSTER) ) {
+	    $np_extractor_function = _generate_extractor_function($_, \@chunk_tokenized_contents, $model_dir);
+	}
+	
+	$_->set_model( NPModel->new( 'id' => $_->get_id() , 'indicator_function' => $np_indicator_function , 'extractor_function' => $np_extractor_function ) );
+    
+    }
+
+} grep { _get_df_in_training_data( $summaries , $_ ) > 1; } @$clusters2;
+
+=cut
+
+1;
+

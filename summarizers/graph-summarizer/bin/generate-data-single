@@ -1,0 +1,107 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+# split input data in multiple "leave-one-out" training/testing sets
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Data;
+use Chunk;
+
+use File::Path qw/mkpath/;
+
+sub usage {
+    return "Usage: $0 <summary-file> <chunk-file> <content-file> <dest-dir>";
+}
+
+if ( scalar(@ARGV) != 4 ) {
+    die usage();
+}
+
+my $summary_file = $ARGV[0];
+if ( ! -f $summary_file ) {
+    die "Invalid summary file $summary_file ...";
+}
+
+my $chunks_file = $ARGV[1];
+if ( ! -f $chunks_file ) {
+    die "Invalid chunks file $chunks_file ...";
+}
+
+my $content_file = $ARGV[2];
+if ( ! -f $content_file ) {
+    die "Invalid content file $content_file ...";
+}
+
+my $destination_dir = $ARGV[3];
+#if ( ! -d $destination_dir ) {
+#    die "Invalid destination directory $destination_dir ...";
+#}
+
+my $summaries = _read_file($summary_file);
+my $chunks_data = Category::Data->read_in_data($chunks_file);
+my @chunks_summaries = map { join(" ", @{ $_ }) . "\n"; } @{ $chunks_data->{'summaries'} };
+my $contents  = _read_file($content_file);
+
+my $summary_count = scalar(@$summaries);
+my $chunks_summaries_count = scalar(@chunks_summaries);
+my $content_count = scalar(@$contents);
+
+my %all_files = ( "summary" => $summaries , "summary.chunks" => \@chunks_summaries , "content" => $contents );
+
+if ( $summary_count != $content_count ) {
+    die "Mismatch between summary and content files: $summary_count vs. $content_count";
+}
+
+if ( $summary_count != $chunks_summaries_count ) {
+    die "Mismatch between summary and chunk files: $summary_count vs. $chunks_summaries_count";
+}
+
+for (my $i=0; $i<$summary_count; $i++) {
+
+    my $target_dir = join("/", $destination_dir, $i);
+    mkpath($target_dir);
+    
+    foreach my $file (keys(%all_files)) {
+
+	# create training file
+	my $training_file = join("/", $target_dir, join(".", $file, "training"));
+	open TRAINING_FILE, ">$training_file" or die "Unable to create training file $training_file: $!"; 
+	for (my $j=0; $j<$summary_count; $j++) {
+	    if ( $j == $i ) {
+		next;
+	    } 
+	    print TRAINING_FILE  $all_files{$file}->[$j];
+	}
+	close TRAINING_FILE;
+	
+	# create testing file
+	my $testing_file = join("/", $target_dir, join(".", $file, "testing"));
+	open TESTING_FILE, ">$testing_file" or die "Unable to create testing file $testing_file: $!"; 
+	print TESTING_FILE $all_files{$file}->[$i];
+	close TESTING_FILE;
+
+    }
+
+}
+
+sub _read_file {
+
+    my $filename = shift;
+
+    my @content;
+
+    open FILE_STREAM, $filename or die "Unable to open file $filename: $!";
+    @content = <FILE_STREAM>;
+    close FILE_STREAM;
+
+    return \@content;
+
+} 
+
+1;

@@ -1,0 +1,88 @@
+if [ $# != 1 ]; then
+	echo "usage: $0 target_url";
+	echo "Generate a description for the target URL by randomly selecting an entry in the description cluster matching the target context";
+	exit 1;
+fi
+
+# get target_url and its encoded form
+TARGET_URL=$1;
+TARGET_URL_ENCODED=`perl -MURI::Escape -e 'print uri_escape("$ARGV[0]")' $TARGET_URL`
+echo "processing ${TARGET_URL}" 1>&2
+
+CURRENT_DIR=${PWD}
+
+TMP_DIR=${PWD}/tmp/
+mkdir -p ${TMP_DIR}
+
+TIME=`date +%s`
+TMP_FILE_ROOT=${TARGET_URL_ENCODED}-$$-${TIME}
+echo "tmp files will have the following root: $TMP_FILE_ROOT" 1>&2
+
+CONTEXT_OUTPUT=${TMP_DIR}/${TMP_FILE_ROOT}-context.tmp
+SIMILAR_OUTPUT=${TMP_DIR}/${TMP_FILE_ROOT}-similar.tmp
+SIMILAR_DESCRIPTIONS=${TMP_DIR}/${TMP_FILE_ROOT}-similar-descriptions.tmp
+SIMILAR_DESCRIPTIONS_CLUSTERS=${TMP_DIR}/${TMP_FILE_ROOT}-similar-descriptions-clusters.tmp
+
+CLUSTER_PREFIX=${TMP_DIR}/${TMP_FILE_ROOT}-similar-descriptions-cluster-
+CLUSTER_SUFFIX_FORMAT='%d.tmp'
+
+# identify the domain of the target URL
+# TODO: determine in-domain vs. out-domain for TARGET_URL
+# the rest of the pipeline focuses on out-of-domain summarization
+# in-domain summarization which will take into account the site structure, will
+# be achieved in a separate module.
+TARGET_URL_DOMAIN=`get-domain $TARGET_URL`
+
+# obtain cluster of duplicate URLs for TARGET_URL
+# TODO
+
+# step 1 - get context for the target URL
+# evaluation: no evaluation for now
+echo "[Stage 1] Acquiring context for $TARGET_URL ..." 1>&2
+get-context $TARGET_URL > ${CONTEXT_OUTPUT}
+
+# step 2 - identify similar URLs based on their descriptions
+# evaluation: measure relevance
+# score = 2 for similar URL
+# score = 1 for related but not similar URL
+# score = 0 for non-related URL
+echo "[Stage 2] Searching for related descriptions ..." 1>&2
+cat ${CONTEXT_OUTPUT} | find-best-matching-descriptions > ${SIMILAR_OUTPUT}
+
+# step 3 - cluster similar descriptions
+cat $SIMILAR_OUTPUT | awk -F"\t" '{print $3}' | sort -u > ${SIMILAR_DESCRIPTIONS}
+sentence-clustering ${SIMILAR_DESCRIPTIONS} ${SIMILAR_DESCRIPTIONS_CLUSTERS}
+csplit -z -q --prefix ${CLUSTER_PREFIX} --suffix-format ${CLUSTER_SUFFIX_FORMAT} ${SIMILAR_DESCRIPTIONS_CLUSTERS} '/^$/+1' '{*}'
+
+# step 4 - for each description cluster, abstract the descriptions of similar URLs to obtain patterns/skeletons
+# 3.0 --> identify centroid for each cluster
+# 3.1 --> mark entities
+# 3.2 --> mark remaining nps
+largest=0;
+for cluster in `ls ${CLUSTER_PREFIX}*`; do
+	echo "processing cluster: $cluster" 1>&2
+
+	# clean up cluster file - remove empty lines
+	sed -i -n -e '/[[:alpha:]]/ p' $cluster
+
+	cluster_size=`wc -l $cluster | awk '{print $1}'`
+	if [ $cluster_size -lt 2 ]; then
+		echo "ignoring cluster of size < 2: $cluster" 1>&2 
+	else
+	if [ $cluster_size -gt $largest ]; then
+		echo "current largest cluster has size: $cluster_size" 1>&2
+		largest_cluster=$cluster;
+		largest=$cluster_size;
+	fi
+	fi
+done;
+
+if [ "$largest" -gt 0 ]; then
+	# randomly select a description in this cluster
+	pick-random-line $largest_cluster
+else
+	echo "NO_DESCRIPTION"
+fi
+
+echo "[Done]" 1>&2
+

@@ -1,0 +1,33 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+MALLET_ROOT=${BINDIR}/../mallet/mallet-2.0.7/
+
+MODE=$1
+INPUT_FILE=$2
+MODEL_FILE=$3
+OUT_FILE=$4
+
+if [[ -z ${MODE} || -z ${INPUT_FILE} || -z "${MODEL_FILE}" ]]; then
+    echo "Usage: $0 <mode> <training-file|testing-file> <model-file>"
+    exit
+fi
+
+BINDIR=`dirname $0`;
+
+MALLET_CLASS=cc.mallet.fst.SimpleTagger 
+MALLET_OPTIONS="-cp ${MALLET_ROOT}/class:${MALLET_ROOT}/lib/mallet-deps.jar"
+
+function dump {
+    if [[ -z "${OUT_FILE}" ]]; then
+	cat - 
+    else
+	cat - | tee ${OUT_FILE}
+    fi
+}
+
+if [[ ${MODE} == "train" ]]; then
+    java ${MALLET_OPTIONS} ${MALLET_CLASS} --train true --model-file ${MODEL_FILE} ${INPUT_FILE} | dump
+else
+    java ${MALLET_OPTIONS} ${MALLET_CLASS} --model-file ${MODEL_FILE} ${INPUT_FILE} | dump
+fi

@@ -1,0 +1,39 @@
+# Makefile defining the graph-based web summarizer
+
+SUMMARIZER=graph-summarizer-4
+
+BINDIR_GRAPH4 := $(dir $(lastword $(MAKEFILE_LIST)))
+BINDIR_DIST := $(BINDIR_GRAPH4)/../../../bin/
+
+include $(BINDIR_DIST)/makefile.features
+
+$(warning $(LINE_HEADING) $(SUMMARIZER))
+
+MODEL_DIRECTORY := $(CATEGORY).models/$(SUMMARIZER)/
+
+MODEL_GRAPH := $(MODEL_DIRECTORY)/graph/
+MODEL_GRAPH_FEATURES_BASE := $(MODEL_DIRECTORY)/graph.features/
+MODEL_GRAPH_FEATURES_FILE := $(MODEL_GRAPH_FEATURES_BASE)/features
+
+MODALITIES=content.rendered title anchortext.basic anchortext.sentence
+
+FEATURES:=content.rendered.ngrams.1/binary/decode_json/count_filter::2 content.rendered.ngrams.2/binary/decode_json/count_filter::2 content.rendered.ngrams.3/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.1/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.2/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.3/binary/decode_json/count_filter::2 anchortext.basic.ngrams.1/binary/decode_json/count_filter::2 anchortext.basic.ngrams.2/binary/decode_json/count_filter::2 anchortext.basic.ngrams.3/binary/decode_json/count_filter::2 title.ngrams.1/binary/decode_json/count_filter::2 title.ngrams.2/binary/decode_json/count_filter::2 title.ngrams.3/binary/decode_json/count_filter::2 url.words.ngrams.1/binary/decode_json/count_filter::2 url.words.ngrams.2/binary/decode_json/count_filter::2 url.words.ngrams.3/binary/decode_json/count_filter::2
+
+GRAPH4_DATA_REQUIREMENTS=$(CATEGORY).summary.chunked.refined $(FEATURES_PREREQUISITES) $(CATEGORY).content.rendered.lm
+
+#.PRECIOUS:
+
+# TODO: do we evaluate this ? how ?
+run-reference-collection:
+	$(BINDIR_GRAPH4)/retrieve-references --fold-id=$(FOLD_ID) --configuration=$(CONFIGURATION_LOCATION) $(CATEGORY)
+
+###$(MODEL_GRAPH_FEATURES_BASE): $(FEATURES_PREREQUISITES) $(FEATURES_PREREQUISITES_MAPPING)
+###	cat -n $(FEATURES_PREREQUISITES_MAPPING) | sed 's/^\s\+//' | awk -F"\t" '{ print $$2 "\t" $$1 "\t" $$3 }' > $@/features.definition
+###	$(BINDIR_DIST)/join-multiple $(FEATURES_PREREQUISITES) | $(BINDIR_GRAPH4)/merge-features $@/features.definition > $@/features
+
+run-preparation: $(GRAPH4_DATA_REQUIREMENTS)
+#$(MODEL_GRAPH_FEATURES_BASE)
+
+# TODO: keep ?
+run-clean:
+	rm -rf ${MODEL_DIRECTORY}

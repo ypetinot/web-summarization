@@ -1,0 +1,48 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../../../src/perl/";
+use lib "$FindBin::Bin/../../../third-party/local/lib/";
+
+use Getopt::Long;
+use Pod::Usage;
+
+use Vocabulary;
+
+# this script is responsible for mapping vocabulary-encoded strings to the corresponding human-readable string
+
+my $help = 0;
+my $debug = 0;
+my $vocabulary_file = undef;
+my $oov_symbol = 'OOV';
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, 'vocabulary=s' => \$vocabulary_file,
+	   'debug|d' => \$debug) or pod2usage(2);
+
+pod2usage(2) if ( !defined($vocabulary_file) );
+
+# input is assumed to be utf-8 encoded
+binmode(STDIN, ":utf8");
+
+# instantiate vocabulary from file
+my $vocabulary = Vocabulary->load($vocabulary_file);
+my $null_token = "[NULL]";
+
+while (<STDIN>) {
+
+    chomp;
+
+    my $line = $_;
+
+    my @tokens = split /\s+/, $line;
+    my @original_tokens = grep { length($_); } map { if ( $_ == 0 ) { $null_token; } else { $vocabulary->get_word($_) } } @tokens;
+
+    print join(' ', @original_tokens) . "\n";
+
+}
+
+1;

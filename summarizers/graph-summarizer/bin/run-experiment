@@ -1,0 +1,21 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+# collect category list
+TEMP_CATEGORY_LIST=`mktemp`
+cat - > ${TEMP_CATEGORY_LIST}
+
+function list_category_folds {
+
+	 cat - | while read CATEGORY_BASE; do
+	     find ${CATEGORY_BASE}.models/ -type d -mindepth 1 -maxdepth 1 | while read FOLD; do
+		 echo -e "${CATEGORY_BASE}\t${FOLD}";
+		 # for now
+		 break;
+	     done;
+	 done
+
+}
+
+cat ${TEMP_CATEGORY_LIST} | list_category_folds | xargs -i{} -P 5 -n 1 sh -c "echo '{}' | ${BINDIR}/run-experiment-single"

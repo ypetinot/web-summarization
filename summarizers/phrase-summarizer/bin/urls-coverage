@@ -1,0 +1,244 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Data;
+
+use List::MoreUtils qw/uniq/;
+
+my $category_base = $ARGV[0];
+
+if ( ! defined( $category_base ) || ! -f $category_base ) {
+    die "Usage: $0 <category-base>";
+}
+
+# 1 - load data
+my $category_data = Category::Data->restore( $category_base );
+
+# 2 - collect category content
+my @url_data_all = @{ $category_data->url_data() };
+
+my %category_aggregates;
+sub _get_category_aggregate {
+
+    my $field = shift;
+    my $index = shift;
+
+    my $key = join("/", $field, $index);
+
+    if ( ! defined( $category_aggregates{ $key } ) ) {
+	$category_aggregates{ $key } = _compute_category_aggregate( $field , $index );
+    }
+
+    return $category_aggregates{ $key };
+
+}
+
+sub _compute_category_aggregate {
+
+    my $field = shift;
+    my $index = shift;
+
+    my %aggregate_data;
+
+    for (my $i=0; $i<scalar(@url_data_all); $i++) {
+
+	if ( $i == $index ) {
+	    next;
+	}
+
+	my $field_data = $url_data_all[ $i ]->get_field( $field );
+	my @field_tokens = _split_data( $field_data );
+	foreach my $field_token (@field_tokens) {
+	    $aggregate_data{ _normalize_token( $field_token ) }->{ $i }++;
+	}
+
+    }
+
+    return \%aggregate_data;
+
+}
+
+sub _normalize_token {
+
+    my $token = shift;
+
+    return lc( $token );
+
+}
+
+sub _appears_in_rest {
+
+    my $domain = shift;
+    my $token = shift;
+    my $index_current = shift;
+
+    my $entry_appearance = $domain->{ _normalized_token( $token ) };
+    if ( ! defined( $entry_appearance->{ $index_current } ) ) {
+	die "We have a big problem: $token does not appear in $index_current ...";
+    }
+
+    if ( scalar( keys( %{ $entry_appearance } ) ) > 1 ) {
+	return 1;
+    }
+
+    return 0;
+
+}
+
+my $reference_field = 'summary';
+#my $reference_field = 'summary.phrases';
+
+# 3 - loop over entries
+for (my $i=0; $i<scalar(@url_data_all); $i++) {
+
+    my $url_data = $url_data_all[ $i ];
+
+    {
+	# compute overlap data for complete summary
+	my ($overlap_data, $missing, $track) = _compute_overlap_data( $i , $reference_field );
+	my @extra = length( $missing ) ? ( $missing ) : ();
+	print join("\t", $url_data->url(), ( map { join(":", $_, $overlap_data->{ $_ } ) } sort { $a cmp $b } keys( %{ $overlap_data } ) ), @extra) . "\n";
+
+	print STDERR $url_data->url() . "\n";
+	foreach my $token ( _split_data( $url_data->get_field( 'summary' ) ) ) {
+	    print STDERR "$token --> " . join(" ", keys( %{ $track->{ $token } } )) . "\n";
+	}
+	print STDERR "\n";
+
+    }
+
+}
+
+sub _split_data {
+    
+    my $string = shift;
+
+    return map { lc( $_ ) } grep { length( $_ ) } split / |\p{Punct}/, $string;
+
+}
+
+sub _compute_overlap_data {
+
+    my $index = shift;
+    my $reference_field = shift;
+
+    my $url_data = $url_data_all[ $index ];
+    my $reference_data = $url_data->get_field( $reference_field );
+
+    my @reference_tokens = uniq _split_data( $reference_data );
+
+    my $overlap = {};
+    my $overlap_stats = {};
+    my $overlap_value = 0;
+    my $track = {};
+
+    # 1 - compute overlap w/ content
+    my @input_data = ( 
+	[ 'content.phrases'     , 0 , undef ] ,
+	[ 'anchortext.basic'    , 0 , undef ] ,
+	[ 'anchortext.sentence' , 0 , undef ] ,
+#	[ 'summary.phrases'     , 1 , undef ] ,
+	[ 'summary'             , 1 , undef ] ,
+	[ 'content.phrases'     , 1 , undef ] ,
+#	[ 'summary.phrases'     , 0 , undef ] 
+	);
+    for (my $i=0; $i<scalar(@input_data); $i++) {
+
+	my $input_datum = $input_data[ $i ];
+
+	my $field = $input_datum->[ 0 ];
+	my $is_category_level = $input_datum->[ 1 ];
+	my $field_process = $input_datum->[ 2 ];
+
+	my $field_data = undef;
+	my $label = undef;
+
+	if ( $is_category_level ) {
+	    $field_data = _get_category_aggregate( $field , $index );
+	    $label = join("/", $field, 'category');
+	}
+	else {
+	    $field_data = $url_data->get_field( $field , $field_process );
+	    $label = $field;
+	}
+
+	$overlap_value = _compute_overlap_field( \@reference_tokens , $field , $is_category_level , $field_data , $label , $overlap , $track );
+	$overlap_stats->{ join("/", $reference_field, $i, $field) } = $overlap_value;
+
+    }
+
+    # 3 - include coverage from parent category ?
+    # This will require adding a 3rd field 
+
+    my $missing = join(" ", grep { ! defined( $overlap->{ $_ } ) } @reference_tokens);
+
+    return ($overlap_stats, $missing, $track);
+
+}
+
+sub _compute_overlap_field {
+
+    my $reference_tokens = shift;
+    my $field = shift;
+    my $is_category_level = shift;
+    my $field_data = shift;
+    my $label = shift;
+    my $state = shift;
+    my $track = shift;
+
+    if ( ! defined( $state ) ) {
+	$state = {};
+    }
+    
+    if ( ! defined( $track ) ) {
+	$track = {};
+    }
+
+
+    foreach my $reference_token (@{ $reference_tokens }) {
+
+	    my $found = 0;
+	    if ( ref( $field_data ) ) {
+
+		if ( $field_data->{ $reference_token } ) {
+		    $found = 1;
+		}
+		else {
+		    $found = 0;
+		}
+
+	    }
+	    else {
+		
+		if ( $field_data =~ m/$reference_token/sig ) {
+		    $found = 1;
+		}
+
+	    }
+
+	    if ( $found ) {
+		$track->{ $reference_token }{ join("::", $field, $is_category_level) } = 1;
+		if ( ! defined( $state->{ $reference_token } ) ) {
+		    $state->{ $reference_token } = $label;
+		}
+	    }
+
+    }
+
+    # compute overlap value
+    my $n_reference_tokens = scalar( uniq @{ $reference_tokens } );
+    my $overlap_value = $n_reference_tokens ? scalar( keys( %{ $state } ) )/$n_reference_tokens : 1;
+
+
+    return $overlap_value;
+
+}
+
+1;

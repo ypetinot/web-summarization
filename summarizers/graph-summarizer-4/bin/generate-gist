@@ -1,0 +1,220 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Web::Summarizer::Graph2;
+use Web::Summarizer::Graph2::Definitions;
+use Web::Summarizer::Graph2::GistGraph;
+
+use Graph::Directed;
+use Graph::Undirected;
+use Graph::Reader::Dot;
+use Graph::Writer::Dot;
+use Graph::Reader::XML;
+use Graph::Writer::XML;
+
+use File::Slurp qw/read_file/;
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+
+my $DEBUG = 0;
+
+$| = 1;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+my $model_dir = undef;
+my $object_dir = undef;
+my $slot_features_file = undef;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions(
+    'model-dir=s' => \$model_dir,
+    'object-dir=s' => \$object_dir,
+    'slot-features=s' => \$slot_features_file,
+    'help|?' => \$help, man => \$man, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0) if ( !$model_dir );
+
+my $category = shift @ARGV;
+
+print STDERR "Generating testing data ...\n";
+my $output_directory_test = join("/", $output_directory, "test");
+foreach my $testing_entry (@{ $testing_entries }) {
+
+    my $target_url = $testing_entry->url();
+    my $output_directory_testing_entry = join("/", $output_directory_test, md5_hex( $target_url ));
+    make_path( $output_directory_testing_entry );
+
+    # specialize grap for the target URL
+    my $specialized_graph = _specialize_gist_graph( $final_gist_graph , $testing_entry );
+
+    # generate raw features for testing entries
+
+    # generate edge features
+    print STDERR "Generating raw edge features for test entries ...\n";
+    my %edge_features;
+    foreach my $edge ( $specialized_graph->edges() ) {
+
+	# compute features for the current wrt to the testing entry
+	# does this apply to edges involving slot locations ???
+	
+	# We apply each edge definition to the current edge for the current instance
+	foreach my $edge_feature_definition (@edge_feature_definitions) {
+	    my $current_edge_features = _generate_edge_features( $specialized_graph , $testing_entry , $edge , $edge_features );
+	    map { $edge_features{ $_ } = $current_edge_features->{ $_ }; } keys( %{ $current_edge_features } );
+	}
+
+    }
+
+    # Write out specialized graph
+    print STDERR "\tWriting out specialized gist graph for $target_url ...\n";
+    my $output_file = join("/", $output_directory_testing_entry, "graph.raw");
+    my $output_file_dot = join("/", $output_directory_testing_entry, "graph.raw.dot");
+    my $writer_dot = Graph::Writer::Dot->new();
+    my $writer = Graph::Writer::XML->new();
+    $writer->write_graph($specialized_graph, $output_file);
+    $writer_dot->write_graph($specialized_graph, $output_file_dot);
+
+    # Write out test data ?
+    # --> to be evaluted using text similarity measures (i.e. ROUGE) ... not necessary ?
+    my $test_edge_features_file = join("/", $output_directory_testing_entry, "features");
+    open TEST_EDGE_FEATURES, ">$test_edge_features_file" or die "Unable to create test edge features file ($test_edge_features_file";
+    print TEST_EDGE_FEATURES join("\t", $target_url, encode_json( \%edge_features )) . "\n";
+    close TEST_EDGE_FEATURES;
+   
+}
+
+# Load model params
+my $params_file = join("/", $model_dir, $Web::Summarizer::Graph2::Definitions::FILE_PARAMS);
+my $params = decode_json( read_file( $params_file ) );
+
+# make sure we disable early update if it is set
+$params->{'use_early_update'} = 0;
+
+# Load feature weights
+my $feature_weights_file = join("/", $model_dir, $Web::Summarizer::Graph2::Definitions::FILE_FEATURE_WEIGHTS);
+my $weights = decode_json( read_file( $feature_weights_file ) );
+
+# Load object features
+my $object_features_file = join("/", $object_dir, $Web::Summarizer::Graph2::Definitions::FILE_FEATURES);
+my $object_features = _load_url_map( $object_features_file , "object features map");
+
+# Load slot features
+my %url2fillers;
+if ( defined( $slot_features_file ) ) {
+    
+    open SLOT_FEATURES_FILE, $slot_features_file or die "Unable to open slot features file ($slot_features_file): $!";
+    while ( <SLOT_FEATURES_FILE> ) {
+	
+	chomp;
+	my @fields = split /\t/, $_;
+
+	if ( scalar(@fields) != 2 ) {
+	    next;
+	}
+
+	my $url = shift @fields;
+	my $fillers_json = shift @fields;
+
+	$url2fillers{ $url } = decode_json( $fillers_json );
+
+    }
+    close SLOT_FEATURES_FILE;
+
+}
+
+# Process each test entry independently
+foreach my $test_dir_entry (@ARGV) {
+
+    # Load graph
+    my $input_graph = join("/", $test_dir_entry, "graph.raw");
+    my $graph_reader = Graph::Reader::XML->new();
+    my $graph = $graph_reader->read_graph( $input_graph );
+
+    # Load features
+    my $features_file = join("/", $test_dir_entry, $Web::Summarizer::Graph2::Definitions::FILE_FEATURES);
+    my $urls2features = _load_url_map( $features_file , "features map");
+
+    foreach my $target_url (keys(%{ $urls2features })) {
+
+	my $target_features = $urls2features->{ $target_url };
+	my $features = { $Web::Summarizer::Graph2::Definitions::FEATURES_KEY_EDGE => $target_features ,
+			 $Web::Summarizer::Graph2::Definitions::FEATURES_KEY_OBJECT => $object_features->{ $target_url } };
+	my $fillers = $url2fillers{ $target_url };	
+
+	# Instantiate gist-graph for this instance
+	# TODO: should the fillers be provided here ?
+	my $graph_controller = new Web::Summarizer::Graph2( graph => $graph );
+
+	# 1 - run w/out slot filling
+	_generate( $graph_controller , $target_url , $features , {} , "graph2-basic" );
+
+	# 2 - run w/ slot filling
+	_generate( $graph_controller , $target_url , $features , $fillers , "graph2-slot-filling" );
+
+    }
+
+}
+
+sub _generate {
+
+    my $graph_controller = shift;
+    my $target_url = shift;
+    my $features = shift;
+    my $fillers = shift;
+    my $mode = shift;
+
+    my $gist_graph_specialized = $graph_controller->specialize( $target_url , $features , $fillers );
+    
+    if ( $DEBUG ) {
+	print STDERR "\tFeatures: " . encode_json( $features ) . "\n";
+    }
+    
+    # Find optimal path
+    my $optimal_path = $gist_graph_specialized->_optimal_path( $weights , $target_url , $params );
+    
+    # Verbalize optimal path
+    my $verbalized_path = _verbalize_path( $optimal_path );
+    
+    print join("\t", $target_url, $verbalized_path, $mode) . "\n";
+    
+}
+
+sub _verbalize_path {
+
+    my $sequence = shift || [];
+
+    return join(" ", map { $_ =~ s/\<[^>]+\>(\/\d+)?:://s; $_ =~ s/\/\d+$//s; $_ } grep { $_ ne '<bog>' && $_ ne '<eog>' } @{ $sequence });
+
+}
+
+sub _load_url_map {
+
+    my $filename = shift;
+    my $label = shift;
+
+    my $file_rows = read_file( $filename , array_ref => 1 , chomp => 1 , err_mode => 'carp' );
+    unless ( $file_rows ) {
+	die "Unable to load $label file ($filename): $!";
+    }
+
+    my %mapping;
+    map { my @fields = split /\t/, $_; my $key = shift @fields; my $value = shift @fields; $mapping{ $key } = decode_json( $value ); } @{ $file_rows };
+
+    return \%mapping;
+
+}
+
+1;

@@ -1,0 +1,121 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../graph-summarizer/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Category::Folds;
+
+use JSON;
+
+my %filler_candidates;
+
+binmode(STDIN, ':utf8');
+binmode(STDOUT, ':utf8');
+
+# 1 - read in all filler candidates
+while ( <STDIN> ) {
+    
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $filler_surface = shift @fields;
+    my $filler_type = shift @fields;
+
+    if ( ! defined( $filler_candidates{ $filler_type } ) ) {
+	$filler_candidates{ $filler_type } = [];
+    }
+
+    push @{ $filler_candidates{ $filler_type } } , $filler_surface;
+
+}
+
+my $category_base = shift @ARGV;
+my @category_other = @ARGV;
+
+# Load category data
+# TODO: note that I shouldn't even have to rely on folds here
+my $fold_id = 0;
+my $fold = Category::Folds->new( 'category_data_base' => $category_base )->load()->get_fold( $fold_id );
+my $category_data = $fold->category_data()->url_data();
+
+foreach my $url (keys %{ $category_data }) {
+    
+    my $url_data = $category_data->{ $url };
+    my $features = {};
+
+    print STDERR "Generating filler features for $url ...\n";
+
+    # 1 - process category content (raw)
+    my $content_modality = 'content';
+    my $url_content = $url_data->get_field( $content_modality );
+    _update_features_modality( \%filler_candidates , $features , $content_modality , $url_content , 1 );
+
+    # 2 - process other modalities
+    foreach my $modality (@category_other) {
+
+	my $modality_content = $url_data->get_field( $modality );
+	_update_features_modality( \%filler_candidates , $features , $modality , $modality_content );
+	
+    }
+
+    # Output features
+    print join("\t", $url, encode_json( $features )) . "\n";
+
+}
+
+sub _update_features_modality {
+
+    my $candidates = shift;
+    my $features = shift;
+    my $label = shift;
+    my $content = shift;
+    my $do_context = shift || 0;
+    my $do_context_html = shift || 0;
+
+    foreach my $filler_type ( keys( %{ $candidates } ) ) {
+	
+	my $filler_type_candidates = $candidates->{ $filler_type };
+	foreach my $filler_type_candidate (@{ $filler_type_candidates }) {
+
+	    my $appearance_count = 0;
+
+	    while ( $content =~ m/\W\Q$filler_type_candidate\E\W/sig ) {
+		$appearance_count++;
+	    }
+
+	    if ( $appearance_count ) {
+		
+		$features->{ $filler_type }->{ $filler_type_candidate }->{ "${label}::appearance" } = $appearance_count;
+
+		if ( $do_context ) {
+		    
+		    while ( $content =~ m/(\w+)\W\Q$filler_type_candidate\E\W(\w+)/sig ) {
+			
+			my $context_pre = lc( $1 || '' );
+			my $context_post = lc( $2 || '' );
+
+			$features->{ $filler_type }->{ $filler_type_candidate }->{ "${label}::context::${context_pre}::${context_post}" }++;
+			
+		    }
+
+		}
+
+		if ( $do_context_html ) {
+
+		}
+
+	    }
+
+	}
+
+    }
+
+}
+
+1;

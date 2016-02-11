@@ -1,0 +1,24 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+DIST_ROOTDIR=${BINDIR}/../../../
+DIST_BINDIR=${DIST_ROOTDIR}/bin/
+
+source ${DIST_ROOTDIR}/dist.rc
+source ${DIST_BINDIR}/parallel-job-resources
+
+SUMMARIZER_ROOTDIR=${BINDIR}/../
+
+# TODO : turn the summarizer call into a parameter , how ?
+SUMMARIZER_CLASS="Web::Summarizer::ReferenceTargetSummarizer"
+SUMMARIZER_LIB="${SUMMARIZER_ROOTDIR}/src/"
+SUMMARIZER_MAKEFILE=${BINDIR}/makefile.graph4
+
+# generation (will generate on the fly any construct that's missing)
+# TODO: if we provide the summarizer root dir, there is no need to also specify the base class / system configuration
+# TODO: add a training process that sits between data preparation and actual system execution
+SYSTEM_CONFIGURATION_REQUIRED=1 ${DIST_BINDIR}/run-summarizer ${SUMMARIZER_CLASS} --summarizer-root=${SUMMARIZER_ROOTDIR} --data-make ${SUMMARIZER_MAKEFILE} $@ -- --repository-base=${DMOZ_REPOSITORY_RSYNC}
+#--serialize-references --serialize-model
+
+# TODO : go over arguments list
+###perl $(BINDIR_GRAPH4)/generate-summary-graph --output-directory=$@ --reference-cluster=$(REFERENCE_URLS) --reference-ranking-mode="relevance-summary" --modalities="$(MODALITIES)" --modalities-ngrams="$(FEATURES)"

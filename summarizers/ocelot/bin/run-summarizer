@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# TODO : move most of this to the main run-summarizer
+
+BINDIR=`dirname $0`
+DIST_BINDIR=${BINDIR}/../../../bin/
+
+SUMMARIZER_ROOTDIR=${BINDIR}/../
+OCELOT_MODEL_ROOTDIR=${SUMMARIZER_ROOTDIR}/build/
+
+SUMMARIZER_CLASS="Web::Summarizer::OcelotSummarizer"
+SUMMARIZER_LIB=${SUMMARIZER_ROOTDIR}/src/
+
+# TODO : how can we get the ngram file name in a principled manner ? (i.e. using the same logic as in makefile.data)
+LM_FILE="${BINDIR}/../../../data/ngrams/summary/3/-no-sos+++-no-eos.model";
+
+# CURRENT : how/where is the language model server started ? add proper error handling/reporting.
+
+# TODO: if we provide the summarizer root dir, there is no need to also specify the base class / system configuration
+#${DIST_BINDIR}/run-summarizer ${SUMMARIZER_CLASS} --summarizer-root=${SUMMARIZER_ROOTDIR} --system-configuration="--ngram-model-file=${LM_FILE}" $@
+#${DIST_BINDIR}/run-summarizer ${SUMMARIZER_CLASS} --summarizer-root=${SUMMARIZER_ROOTDIR} --system-configuration='{"ngram_model_file":"${LM_FILE}","translation_model_base":"${OCELOT_MODEL_ROOTDIR}"}' $@
+${DIST_BINDIR}/run-summarizer ${SUMMARIZER_CLASS} --summarizer-root=${SUMMARIZER_ROOTDIR} --system-configuration="{\"ngram_model_file\":\"${LM_FILE}\",\"translation_model_base\":\"${OCELOT_MODEL_ROOTDIR}\"}" $@

@@ -1,0 +1,14 @@
+#!/usr/bin/env perl
+OA
+JSON-RPC
+
+ls /proj/fluke/resources/LMs/en.giga.noUN.5gram.lm.bin
+SRILM
+
+./srilm.py
+
+stm
+
+1 - clean sub-group
+2 - embeddings
+3 - analysis
