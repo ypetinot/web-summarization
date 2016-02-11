@@ -1,0 +1,98 @@
+# Current approach : allways call makefile from within a script that has exported all the necessary variables
+
+# Note : currently necessary to handle execution via suid ?
+# TODO : how can we fix this / do better ?
+HOME=/home/ypetinot/
+SHARED_DIRECTORY_BASE=/proj/fluke/users/ypetinot/
+
+export WEBCOMMONS_DATA_DIRECTORY=/local/nlp/ypetinot/data/web-data-commons/2014/
+export WEBCOMMONS_DATA_MAPPING_DB=${WEBCOMMONS_DATA_DIRECTORY}/mapping-db/
+
+export DMOZ_REPOSITORY_HOST=barracuda
+#export DMOZ_REPOSITORY_BASE=/local/nlp/ypetinot/data/dmoz-repository/
+export DMOZ_REPOSITORY_BASE=${SHARED_DIRECTORY_BASE}/data/dmoz-repository-summary/
+export LOCAL_BASE=/local/nlp/ypetinot/
+export LOCAL_BASE_DATA_COMMON=${LOCAL_BASE}/data/
+export LOCAL_BASE_DATA_PROD=${LOCAL_BASE}/data-prod/
+export LOCAL_BASE_DATA_DEV=${LOCAL_BASE}/data-dev/
+export DMOZ_REPOSITORY_PORT=10027
+export DMOZ_REPOSITORY_FULL=${DMOZ_REPOSITORY_HOST}:${DMOZ_REPOSITORY_BASE}
+export DMOZ_REPOSITORY_RSYNC=${DMOZ_REPOSITORY_HOST}::repository
+
+export MONGODB_USER_CONF=${HOME}/mongodb.user
+
+export SERVICE_HOST=barracuda.cs.columbia.edu
+#export SERVICE_HOST_DEPENDENCY_PARSING=lobster.cs.columbia.edu
+export SERVICES_BASE="http://${SERVICE_HOST}"
+export SERVICE_PORT_URLDATA=8990
+
+export SERVERS_LIST=${SHARED_DIRECTORY_BASE}/servers.list
+export INFRASTRUCTURE_BASE=${HOME}/research/infrastructure/
+export BINDIR_PARALLEL=${INFRASTRUCTURE_BASE}/parallel/bin/
+
+# http://stackoverflow.com/questions/59895/can-a-bash-script-tell-what-directory-its-stored-in
+export ROOTDIR_DIST="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+export BINDIR_DIST=${ROOTDIR_DIST}/bin/
+
+if [[ ${ROOTDIR_DIST} =~ "-working-copy" ]]; then
+   ENV="dev";
+   export MAX_CATEGORIES=10
+   export MAX_INSTANCES=50
+   export MAX_INSTANCES_BLOCK=10
+   export DATA_REPOSITORY=${LOCAL_BASE_DATA_DEV}
+else
+   ENV="prod";
+   export MAX_INSTANCES_BLOCK=1000
+   export DATA_REPOSITORY=${LOCAL_BASE_DATA_PROD}
+fi
+export ENV;
+
+export ROOTDIR_DATA=${ROOTDIR_DIST}/data/
+export BINDIR_DATA=${ROOTDIR_DATA}/bin/
+export CONFDIR_DATA=${ROOTDIR_DATA}/conf/
+
+# TODO : create separate resource file for all data-related resources ?
+export DATA_CATEGORY_LIST=${ROOTDIR_DATA}/categories.list
+
+# TODO : should /local/ be the real root ?
+export ROOTDIR_THIRD_PARTY=${ROOTDIR_DIST}/third-party/
+ROOTDIR_THIRD_PARTY_DIST=${ROOTDIR_THIRD_PARTY}/local/
+BINDIR_THIRD_PARTY=${ROOTDIR_THIRD_PARTY_DIST}/bin/
+LIBDIR_THIRD_PARTY=${ROOTDIR_THIRD_PARTY_DIST}/lib/
+export THIRD_PARTY_RESOURCES_JAVA=${ROOTDIR_THIRD_PARTY}/java/java.rc
+export THIRD_PARTY_RESOURCES_STANFORD=${ROOTDIR_THIRD_PARTY}/stanford/stanford.rc
+
+export ROOTDIR_EVALUATION=${ROOTDIR_DATA}/evaluation/
+export BINDIR_EVALUATION=${ROOTDIR_EVALUATION}/bin/
+
+###export PATH:=${CONTEXT_SUMMARIZATION_ROOT}/third-party/local/bin:${PATH}
+###export C_INCLUDE_PATH=${CONTEXT_SUMMARIZATION_ROOT}/third-party/local/include/
+###export CPLUS_INCLUDE_PATH=${CONTEXT_SUMMARIZATION_ROOT}/third-party/local/include/
+###export LIBRARY_PATH=${CONTEXT_SUMMARIZATION_ROOT}/third-party/local/lib/
+
+PARALLEL_JOB_RESOURCES=${BINDIR_DIST}/parallel-job-resources
+
+# TODO : create rc file in third-party and load that file instead
+WEKA_ROOT=${ROOTDIR_THIRD_PARTY}/weka/weka-3-7-11/
+###MEKA_ROOT=${BINDIR}/../weka/meka/
+###MULAN_ROOT=${BINDIR}/../weka/mulan-1.3.0/
+
+function _log() {
+
+    message=$@
+
+    # TODO : optimize ?
+    if [ ! -z "${LOG_DESTINATION}" ]; then
+        echo $@ >> ${LOG_DESTINATION}
+    else
+        echo $@ 1>&2
+    fi
+
+}
+
+alias perl="/usr/bin/perl -I${LIBDIR_THIRD_PARTY}"
+#alias java=${BINDIR_DIST}/custom-java
+#alias javac="${ROOTDIR_THIRD_PARTY}/java/bin/javac"
+
+# TODO : activate ? (never tried)
+##export PATH=${BINDIR_THIRDPARTY}/:${PATH}

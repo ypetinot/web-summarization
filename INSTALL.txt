@@ -1,0 +1,7 @@
+* Required generic modules
+
+* g++ ( seems fairly standard, but not always available )
+* libbz2-dev ( for TokyoCabinet )
+* libtool ( for Moses )
+* autoconf ( for Moses )
+* csh ( for SRILM )
