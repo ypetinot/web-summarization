@@ -1,0 +1,20 @@
+# TODO : can we do better ?
+ENERGY_MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include $(ENERGY_MAKEFILE_DIR)/../../bin/makefile.common
+include $(ENERGY_MAKEFILE_DIR)/../../bin/makefile.fold
+
+ENERGY_PERLLIB:=$(abspath $(ENERGY_MAKEFILE_DIR)/../src/)
+
+# TODO : define these files via a makefile.common in $(ROOTDIR_DATA)
+CATEGORY_LIST=$(ROOTDIR_DATA)/categories.list
+
+ENERGY_FEATURES:=energy.features
+default: $(CATEGORY_LIST)
+	#cat $(CATEGORY_LIST) | $(BINDIR_PARALLEL)/parallel --pipe -N 1000 --no-notice -j 1 --use-cpus-instead-of-cores --sshloginfile $(PARALLEL_SERVERS_LIST)
+	cat $(CATEGORY_LIST) | perl -I$(ENERGY_PERLLIB) $(BINDIR_DATA)/global-category-processor $(FOLD_ID) EnergyFeatureGenerator > $(ENERGY_FEATURES)
+
+#$(SELF_FEATURES): $(CATEGORY_LIST)
+#	cat $(CATEGORY_LIST) | 
+
+#ConditionalProcessor --fields=$(FIELDS_CONDITIONAL) --ngram_orders=$(N_GRAM_ORDERS) --ngram_count_threshold=$(N_GRAM_THRESHOLD) --joint_count_threshold=3 --summary_reference=dmoz.summary.ngrams --global_data_directory=$(CU#RDIR) --stdout_only=1
+#| sort -T /tmp/ -t'    ' -k1,3 | perl $(BINDIR)/merge-counts | perl $(BINDIR)/generate-conditional-features --joint-counts-threshold=$(JOINT_COUNTS_THRESHOLD) $(CURDIR) | awk -F"\t" '{ pr#int $$0 > "dmoz." $$2 ".conditional/" $$2 ".features" }'
