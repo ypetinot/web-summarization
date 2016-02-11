@@ -1,0 +1,5 @@
+# no category to id mapping: to make things simple we keep the category paths as category ids. 
+
+# remove 'Regional' subtree ? it is extremely large and not organized in a semantic fashion, but based on geographic/alphabetical criteria
+
+# ultimate experiment: start with a large sample of the web (including web-graph (or not), but no hierarchical information), infer hierarchy (i.e. replacement for DMOZ) and generate summary for all the pages in the set.
