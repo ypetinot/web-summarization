@@ -1,0 +1,31 @@
+package DataManagers::ContextExtractor;
+
+use base ("DataManager");
+use Carp;
+
+# type of data produced by this data manager
+sub data_type {
+    return "full-context.xml";
+}
+
+# aqcuire the context of a URL
+sub run {
+    my $this = shift;
+    my $url = shift;
+    
+    my $context_urls = $url->get_file('context');
+    my $project_env = $ENV{CONTEXT_SUMMARIZATION_ROOT} . "/setenv";
+    my $common_env = $ENV{CONTEXT_SUMMARIZATION_COMMON_ROOT} . "/setenv";
+
+    my $url_name = $url->url(); #TODO: overload scalar context please !
+
+    my $cache_location = $url->get_file('context-cache');
+
+    #my $context = `export CONTEXT_SUMMARIZATION_ROOT=$ENV{CONTEXT_SUMMARIZATION_ROOT} && export CONTEXT_SUMMARIZATION_COMMON_ROOT=$ENV{CONTEXT_SUMMARIZATION_COMMON_ROOT} && . $project_env > /dev/null && . $common_env > /dev/null && get-context-anchortext --mode full --output xml '$url_name' $cache_location`;
+
+    my $context = extract($url_name, $cache_location, 'full', 'xml');
+
+    return $context;
+}
+
+sub extract {
