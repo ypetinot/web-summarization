@@ -1,0 +1,120 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Digest::MD5 qw(md5 md5_hex md5_base64);
+use Text::Trim;
+use XML::TreePP;
+
+use Getopt::Long;
+use HTML::LinkExtor;
+use JSON;
+use Pod::Usage;
+use XML::TreePP;
+
+my $man = 0;
+my $help = 0;
+my $output_mode = undef;
+my $sleep_time = 30;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'output-mode=s' => \$output_mode, 'sleep-time' => \$sleep_time, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+if ( $#ARGV >= 0 ) {
+    get_url_tags($ARGV[0]);
+} 
+else {
+    while ( <STDIN> ) {
+	chomp;
+	my $url = $_;
+	get_url_tags($url);
+    }
+}
+
+sub get_url_tags {
+
+    my $url = shift;
+    print $url;
+
+    my $normalized_url = normalize_delicious($url);
+    my $url_hash = md5_hex($normalized_url);
+    my $count = 100;
+    
+    # turn this into a library call
+    my $delicious_url = "http://feeds.delicious.com/v2/rss/url/$url_hash?count=$count";
+    print STDERR "sending request to delicious ... $url ($normalized_url) ... $delicious_url\n";
+    my $data = `wget --user-agent=Firefox/1.5.0.12 -q -O - '$delicious_url'`;
+
+    # create XML parser
+    my $tpp = XML::TreePP->new();
+
+    # parse response
+    my $tree = $tpp->parse($data);
+    
+    my @tags_all;
+
+    my $n_results = 0;
+    if ( !$tree || !defined($tree->{'rss'}) || !defined($tree->{'rss'}->{'channel'}) || !defined($tree->{'rss'}->{'channel'}->{'item'}) ) {
+	# nothing
+    }
+    elsif ( ref($tree->{'rss'}->{'channel'}->{'item'}) eq 'ARRAY' ) {
+
+	foreach my $result (@{$tree->{'rss'}->{'channel'}->{'item'}}) {
+	    
+	    my $title = $result->{'title'};
+	    
+	    # Clean up title (can we avoid having to do this ?)
+	    $title =~ s/^\[from [^\]]+\] //sg;
+	    $title =~ s/\s+/ /sg;
+	    $title = trim($title);
+
+	    if ( $output_mode eq 'line' ) {
+		push @tags_all, [ $title ];
+	    }
+	    else {
+		print "\t";
+		print $title;
+	    }	    
+
+	    $n_results++;
+	}
+	
+    }
+
+    if ( $output_mode eq 'line' ) {
+	my $json_string = encode_json(\@tags_all);
+	print "\t";
+	print $json_string;
+    }
+
+    print "\n";
+    sleep($sleep_time);
+
+}
+
+
+sub normalize_delicious {
+
+    my $string = shift;
+
+    my $slash_count = 0;
+    while ( $string =~ m/\//sg ) {
+	$slash_count++;
+    }
+
+    if ( $slash_count < 3 ) {
+	# this is the landing page of the site and we're definitely missing a trailing slash by Delicious's rules
+	$string .= "/";
+    }
+
+    return $string;
+
+}

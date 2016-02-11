@@ -1,0 +1,52 @@
+#!/usr/bin/env perl
+
+# TODO : is this script still needed ? the folds file could be created automatically when first requested ...
+
+# Create folds for category-based corpus
+# How the folds are constructed will typically depend on the experiment
+
+# have multiple modes ?
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../summarizers/graph-summarizer/src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use Category::Data;
+use Category::Folds;
+use GistGraph;
+
+binmode(STDIN,':utf8');
+binmode(STDOUT,':utf8');
+
+sub usage() {
+    return "Usage: $0 <mode> <raw-category-data> <param>";
+}
+
+if ( scalar(@ARGV) != 3 ) {
+    die usage();
+}
+
+my $mode = $ARGV[0];
+my $category_data_base_path = $ARGV[1];
+my $param = $ARGV[2];
+
+if ( ! -f $category_data_base_path ) {
+    die "Category data base path does not exist: $category_data_base_path";
+}
+
+# generate all possible folds
+###my $global_data = new DMOZ::GlobalData( data_directory => $global_data_base );
+###my $category_repository = new DMOZ::CategoryRepository( global_data => $global_data , repository_root => $repository_base );
+###my $category_data = new Category::Data( category_data_base => $category_data_base_path , repository => $category_repository );
+###my $folds = $category_data->folds();
+my $folds = new Category::Folds( category_data_base => $category_data_base_path );
+
+# create (serialize) all folds
+$folds->create( $mode , $param );
+$folds->serialize_folds();
+
+1;

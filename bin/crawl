@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# locates all '*.url' files under the specified root and perform crawl
+
+REPOSITORY_ROOT=$1
+
+# script location
+BINDIR=`dirname $0`;
+REAL_BINDIR=`cd ${BINDIR} && pwd`;
+#find ${REPOSITORY_ROOT} -type d -name '*.url'
+
+cat - | grep '.url$' | xargs -i{} --max-args=1 --max-procs=4  sh -c "export PATH=${PATH}:${REAL_BINDIR} && make -f ${REAL_BINDIR}/Makefile.url -C {}"
+

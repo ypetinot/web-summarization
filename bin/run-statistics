@@ -1,0 +1,62 @@
+#!/usr/bin/env perl
+
+# return stats for the target url
+# all stats should be extracted or inferred from the context data
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Path;
+use XML::TreePP;
+
+my $include_header = 0;
+my $man = 0;
+my $help = 0;
+my $mode = 'default';
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'mode=s' => \$mode, 'debug|d' => \$debug, 'header' => \$include_header) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0) if $man;
+
+if ( $include_header ) {
+    print "TARGET_URL\tCONTEXT_SIZE\n";
+}
+
+pod2usage(-exitstatus => 0) if ( $#ARGV != 0 );
+
+my $APPLICATION_NAME = $0;
+my $context_file = $ARGV[0];
+
+# parse context file
+my $tpp = XML::TreePP->new();
+my $tree = $tpp->parsefile("/home/ypetinot/disk1/" . $context_file);
+if ( !defined($tree) || !defined($tree->{Context}) ) {
+    # need proper error reporting
+}
+elsif ( !defined($tree->{Context}->{'-target'}) ) {
+    # should be just a warning since target isn't technically needed
+}
+
+# get target url
+my $target_url = $tree->{Context}->{'-target'};
+
+# get context size
+my $context_size = 0;
+my $elements = $tree->{Context}->{ContextElement};
+if ( defined($elements) ) {
+    
+    if ( ref($elements) eq 'ARRAY' ) {
+	$context_size = scalar(@{$elements});
+    }
+    else {
+	$context_size = 1;
+    }
+
+}
+
+# output stats in tab separated format
+print "$target_url\t$context_size\n";
+
+1;

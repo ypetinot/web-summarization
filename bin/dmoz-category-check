@@ -1,0 +1,52 @@
+#!/usr/bin/env perl
+
+# checks for the existence of the requested category files
+
+use strict;
+use warnings;
+
+# autoflush
+$| = 1;
+
+my @requested = @ARGV;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $category_base = $_;
+
+    my $has_all=1;
+
+    foreach my $field_entry (@requested) {
+
+	my @field_attributes = split /:/, $field_entry;
+	my $field_name = shift @field_attributes;
+	my $field_min_length = shift @field_attributes || 0;
+	my $field_ratio = shift @field_attributes || 0;
+
+	my $field_file="${category_base}.${field_name}";
+	if (! -f "${field_file}" || ! open FIELD_FILE, $field_file ) {
+	    $has_all=0;
+	    last;
+	}
+	else {
+
+	    my $count = 0;
+	    my @incompatible = grep { length($_) < $field_min_length } map { chomp; $count++; $_; } <FIELD_FILE>;
+	    
+	    if ( !$count || ( 1 - ( scalar(@incompatible) / $count ) ) <  $field_ratio ) {
+		$has_all = 0;
+		last;
+	    }
+
+	}
+    }
+
+    if ( $has_all ) {
+	print "$category_base\n";
+    }
+
+}
+
+1;

@@ -1,0 +1,9 @@
+# Abort on first error
+# Excellent reference: http://www.davidpashley.com/articles/writing-robust-shell-scripts/#id2382181
+set -e
+set -o pipefail
+set -o errexit
+
+# Fix sort-related issues
+# http://unix.stackexchange.com/questions/4422/is-gnu-coreutils-sort-broken
+export LC_COLLATE=C

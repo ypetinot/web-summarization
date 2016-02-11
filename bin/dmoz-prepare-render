@@ -1,0 +1,126 @@
+#!/usr/bin/env perl
+
+# cleans up, tokenizes and formats data
+
+use strict;
+use warnings;
+
+binmode(STDIN, ":encoding(utf8)");
+binmode(STDOUT, ":utf8");
+
+use FindBin;
+use lib "$FindBin::Bin/../src/perl/";
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use List::Util qw/max min/;
+use List::MoreUtils qw/pairwise/;
+
+use HTMLTokenizer;
+use String::Tokenizer;
+use Vocabulary;
+
+# set autoflush
+$| = 1;
+
+# This script handles the training of the OCELOT summarization model
+# Given an input file containing the (DMOZ) training data (2-column tab-separated file), outputs 3 files: source vocabulary file, output vocabulary file, and translation table.
+
+# TODO
+# do we want to make the tokenization/rendering algorithm configurable ?
+#if ( scalar(@ARGV) != 1 ) {
+#   die "Usage: $0 <vocabulary_base> <source_target_vocabulary_size> <output_target_vocabulary_size>";
+#}
+
+# category information
+my @category_info;
+
+sub _get_category_id {
+
+    my $category_path = shift;
+
+    my @path_components = split /\//, $category_path;
+    my @path_components_ids;
+    for (my $i=0; $i<scalar(@path_components); $i++) {
+
+	if ( $i >= scalar(@category_info) ) {
+	    push @category_info, {};
+	}
+
+	if ( ! defined($category_info[$i]->{$path_components[$i]}) ) {
+	    my $component_id = scalar(keys(%{$category_info[$i]}));
+	    $category_info[$i]->{$path_components[$i]} = $component_id;
+	}
+
+	push @path_components_ids, $category_info[$i]->{$path_components[$i]}; 
+
+    }
+
+    return join('.', @path_components_ids);
+
+}
+
+# 1 - generate source/output vocabularies and split input file
+my $title_tokenizer = new String::Tokenizer;
+my $source_tokenizer = new HTMLTokenizer( renderer => 'HTMLRenderer' );
+my $output_tokenizer = new String::Tokenizer;
+
+print STDERR "rendering/tokenizing dmoz content ...\n";
+
+my $line_count = 0;
+my $id = 0;
+
+while (<STDIN>) {
+    
+    chomp;
+    
+    my $line = $_;
+    $line_count++;
+
+    # can we abstract the parsing code into its own class ?
+    my @fields = split /\t/, $line;
+
+    if ( scalar(@fields) != 5 ) {
+        print STDERR "[$0] corrupted record at line $line_count, skipping ...\n";
+        next;
+    }
+
+    my ($url, $title, $description, $category, $content) = @fields;
+
+    print STDERR "[$0] processing record for $url ...\n";
+
+    my $processed_title = undef;
+    my $processed_description = undef;
+    my $processed_content = undef;
+
+    eval {
+
+	# tokenize title
+	my @tokens_title = @{ $title_tokenizer->tokenize($title) };
+	$processed_title = join(' ', @tokens_title);
+
+	# tokenize content
+	my @source_tokens_original = @{ $source_tokenizer->tokenize($content) };
+	$processed_content = join(' ', @source_tokens_original);
+
+	# tokenize description
+	my @output_tokens_original = @{ $output_tokenizer->tokenize($description) };
+	$processed_description = join(' ', @output_tokens_original);
+	
+    };
+
+    if ( @! ) {
+	print STDERR "parsing/tokenization exception: $url\n";
+	next;
+    }
+    
+    # next id
+    $id++;
+
+    # category id-ification
+    my $category_id = _get_category_id($category);
+
+    print join("\t", $id, $category_id, $url, $processed_title, $processed_description, $category, $processed_content) . "\n";
+
+}
+
+1;

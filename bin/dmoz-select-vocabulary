@@ -1,0 +1,38 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`;
+
+# no truncation
+#VOCAB_SIZE="-0"
+VOCAB_SIZE=0
+
+# no count threshold
+VOCAB_COUNT_THRESHOLD=0
+
+# no stop-word removal
+VOCAB_STOPWORDS_REMOVAL=0
+
+for i in $*
+do
+    case $i in
+    	--size=*)
+	    VOCAB_SIZE=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+	    ;;
+	--count-threshold=*)
+	    VOCAB_COUNT_THRESHOLD=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+	    ;;
+	--stopwords-removal=*)
+	    VOCAB_STOPWORDS_REMOVAL=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+	    ;;
+    	*)
+            # unknown option
+	    ;;
+    esac
+done
+
+# small hack to prevent the OOV symbol from getting filtered as a stop-word: make the OOV count negative so the symbol winds up being listed last then reinstate the correct count and resort before truncating
+# to the target vocabulary size.
+${BINDIR}/../third-party/local/bin/ngram-count -order 1 -sort -no-sos -no-eos -text - -write - | sort -k 2 -r -n | awk -F"\t" "BEGIN{ OOV_COUNT = 0; } { if ( \$2 >= ${VOCAB_COUNT_THRESHOLD} && ( NR <= ${VOCAB_SIZE} || ${VOCAB_SIZE} == 0 ) ) { print \$0 } else { OOV_COUNT++ } } END{ print \"OOV\" FS \"-\" OOV_COUNT }" | sort -k 2 -r -n | tail --lines=+${VOCAB_STOPWORDS_REMOVAL} | sed 's/^\(OOV\t\)-\([[:digit:]]\+\)$/\1\2/' | sort -k 2 -r -n | awk '{ print NR "\t" $0 }'
+
+#head --lines=${VOCAB_SIZE} | 
+

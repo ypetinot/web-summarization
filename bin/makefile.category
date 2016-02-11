@@ -1,0 +1,44 @@
+# Category Makefile
+# Handles the collection of "precious" data items
+
+#$(info $(LINE_HEADING) Loading makefile: $(MAKEFILE_LIST))
+
+BINDIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include $(BINDIR)/makefile.common
+include $(BINDIR)/makefile.category.download
+
+# Move this to a common makefile ?
+TOOLS_DIR_DIST:=$(dir $(lastword $(MAKEFILE_LIST)))
+###$(info TOOLS_DIR_DIST: $(TOOLS_DIR_DIST))
+
+DATA_ITEMS := content anchortext.urls tags
+
+ifndef CATEGORY
+$(error No category provided, cannot proceed ...)
+else
+###$(info CATEGORY: $(CATEGORY))
+endif
+
+CATEGORY_FILES := $(foreach item,$(DATA_ITEMS),$(CATEGORY).$(item))
+###$(info CATEGORY_FILES: $(CATEGORY_FILES))
+
+default: clean $(CATEGORY_FILES)
+
+#TODO: once again URLs should always go through STDIN, including for the final call to wget
+%.anchortext.urls:
+	$(warning Collecting anchortext URLs for $*)
+	cat $* | ssh -l ypetinot southpaw.cs.columbia.edu 'cat | while read URL CATEGORY; do ~/research/trunk/bin/get-context-urls-google --output-mode=line --service=google "$${URL}"; sleep 1; done;' 2>/dev/null > $@
+
+%.tags:
+	$(warning Collecting tags for $*)
+	cat $* | awk -F"\t" '{ print $$1 }' | ${TOOLS_DIR_DIST}/get-tags --output-mode=line > $@
+
+# TODO: move this to top-level makefile ?
+clean:
+	rm -rf *~
+	rm -rf $(CATEGORY)*.temp
+
+# TODO : can we do better ?
+category-clean-minimal: clean
+	find $(CURDIR)/ -mindepth 1 -maxdepth 1 -type f -name '$(notdir $(CATEGORY))*' -size 0 -delete
+	@echo "Done with minimal cleaning ..."

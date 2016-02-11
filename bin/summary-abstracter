@@ -1,0 +1,239 @@
+#!/usr/bin/env perl
+
+# The goal here is to *at least* get the chunks right, but not necessarily to abstracts gists right away.
+# Abstraction can be achiveved later on in a fairly soft manner by using a combination of priors (how likely is the term itself in the reference data) and "posteriors" (how likely is the term in the target data).
+
+use strict;
+use warnings;
+
+binmode(STDIN,':utf8');
+binmode(STDOUT,':utf8');
+
+my $SLOT_TYPE_NAMED_ENTITY = "SLOT_NE";
+
+my $do_abstraction = 1;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+    my $summary_chunked = shift @fields;
+
+    # 1 - generate phrases/chunks
+    my $chunks = _generate_gist_path( $summary_chunked );
+
+    # 2 - abstraction
+    my @chunks_abstracted = map { _abstract( $_ ); } @{ $chunks };
+
+    # 3 - merge / eliminitate neighboring slots
+    my @chunks_final;
+    my $prev_is_slot = 0;
+    my $prev_slot_type = undef;
+    my $propagate = 0;
+    for (my $i=0; $i<scalar(@chunks_abstracted); $i++) {
+
+	my $current_chunk = $chunks_abstracted[$i];
+	my $current_chunk_type = $current_chunk->[2];
+
+	my $keep = 1;
+	
+	if ( $current_chunk_type =~ m/SLOT/ ) {
+
+	    if ( $prev_is_slot ) {
+
+		if ( $prev_slot_type eq $SLOT_TYPE_NAMED_ENTITY ) {
+		    $propagate = 1;
+		    # we will just skip this slot
+		    $keep = 0;
+		}
+
+	    }
+
+	    if ( ! $propagate ) {
+		$prev_is_slot = 1;
+		$prev_slot_type = $current_chunk_type;
+	    }
+	    else {
+		$propagate = 0;
+	    }
+
+	}
+	else {
+
+	    $prev_is_slot = 0;
+
+	}
+
+	if ( $keep ) {
+	    push @chunks_final, $current_chunk;
+	}
+
+    }
+
+    # output abstracted chunks
+    print join("\t", $url, join( "\t" , map { join("/", @{ $_ }); } @chunks_final )) . "\n";
+    
+}
+
+my %token2type;
+
+# chunk abstraction
+sub _abstract {
+	
+    my $chunk = $_;
+
+    my $abstracted_chunk = $chunk;
+    
+    if ( $abstracted_chunk->[2] =~ m/ADVP/ ) {
+	push @{ $abstracted_chunk } , "SLOT_ADVERB";
+    }
+    elsif ( $abstracted_chunk->[1] eq 'JJ' ) {
+	push @{ $abstracted_chunk } , "SLOT_ADJECTIVE";
+    }
+
+=pod
+	
+		
+		my @updated_tokens;
+		my @original_tokens;
+		
+		if ( ! defined( $token2type{ $token } ) ) {
+		    
+		    my $wordnet_entries = $dict->match( $token , 'exact' , 'wn' );
+		    if ( ! scalar(@{ $wordnet_entries }) ) {
+			$wordnet_entries = $dict->match( $token , 'lev' , 'wn' );
+		    }
+		    
+		    # TODO : add caching
+		    my $type = undef;
+		  outer: foreach my $word_entry (@{ $wordnet_entries }) {
+		      
+		      my $definitions = $dict->define( $word_entry->[ 1 ] , $word_entry->[ 0 ] );
+		      foreach my $definition_entry (@{ $definitions }) {
+			  
+			  # TODO: use definitions to identify dependencies with the other terms in the gist ?
+			  my $definition_from = $definition_entry->[ 0 ];
+			  my $definition = $definition_entry->[ 1 ];
+			  my @definition_lines = split /\n/, $definition;
+			  
+			  foreach my $definition_line (@definition_lines) {
+			      
+			      if ( $definition_line =~ m/^\s*adj / ) {
+				  $type = $Web::Summarizer::Graph2::Definitions::POS_ADJECTIVE;
+			      }
+			      elsif ( $definition_line =~ m/^\s*adv / ) {
+				  $type = $Web::Summarizer::Graph2::Definitions::POS_ADVERB;
+			      }
+			      elsif ( $definition_line =~ m/^\s*v / ) {
+				  $type = $Web::Summarizer::Graph2::Definitions::POS_VERB;
+			      }
+			      
+			      if ( defined( $type ) ) {
+				  last outer;
+			      }
+			      
+			  }
+			  
+		      }
+		      
+		  }
+		    
+		    $token2type{ $token } = $type || $Web::Summarizer::Graph2::Definitions::POS_OTHER;
+		}
+		
+		
+	    }
+	    
+	}
+	
+=cut
+
+    return $abstracted_chunk;
+
+}
+
+# generate gist path, i.e. sequence of tokens
+# assumes chunked data
+sub _generate_gist_path {
+
+    my $data = shift;
+
+    # 1 - get raw elements
+    my @raw_elements = map { my @components = split /\//, $_; \@components; } split / /, $data; 
+    
+    # 2 - recover phrases that *should* be preserved
+    my @merged_elements;
+    for (my $i=0; $i<scalar(@raw_elements); $i++) {
+	
+	my $merged = 0;
+
+	# We only consider sequences that were marked as chunks
+	if ( $raw_elements[$i]->[2] =~ m/\-NP$/ && _first_letter_capitalized( $raw_elements[$i]->[0] ) ) {
+
+	    my $j = $i;
+	    my @current;
+	    
+	    my $punctuation_count = 0;
+	    my $intervening_punctuation = undef;
+	    
+	  inner: while ( 1 ) {
+
+	      if ( $raw_elements[$j]->[0] =~ m/^\p{Punct}+$/ ) {
+		  
+		  if ( $intervening_punctuation && ( $raw_elements[$j]->[0] ne $intervening_punctuation ) ) {
+		      last inner;
+		  }
+		  elsif ( ! $intervening_punctuation ) {
+		      $intervening_punctuation = $raw_elements[$j]->[0];
+		  }
+		  
+		  $punctuation_count++;
+		  
+	      }
+	      elsif ( ( scalar(@current) > 0 ) && ( !$intervening_punctuation ) ) {
+		  $intervening_punctuation = " ";
+	      }
+	      
+	      push @current, $j++;
+	  }
+	    continue { last inner unless 
+			   ( $raw_elements[$j]->[2] =~ m/\-NP$/ && (
+				 ( $raw_elements[$j]->[0] =~ m/^\p{Punct}+$/ ) || _first_letter_capitalized( $raw_elements[$j]->[0] )
+			     )); }	    
+	    
+	    $j--;
+
+	    if ( $punctuation_count && ( abs( $punctuation_count - scalar(@current) ) > 1 ) ) {
+		# nothing
+	    }
+	    elsif ( scalar(@current) > 1 ) {
+		push @merged_elements , [ join( " " , map{ $raw_elements[$_]->[0] } @current) , 'NNP' ,
+					  $raw_elements[ $current[ $#current ] ]->[2] , $SLOT_TYPE_NAMED_ENTITY ];
+		$i = $j;
+		$merged = 1;
+	    }
+	    
+	}
+
+	if ( ! $merged ) {
+	    push @merged_elements, $raw_elements[$i];
+	}
+	
+    }
+
+    return \@merged_elements;
+
+}
+
+# checks the initial letter of a token is capitalized
+sub _first_letter_capitalized {
+
+    my $token = shift;
+
+    return ( $token =~ m/^[A-Z]/ );
+
+}
+
+1;

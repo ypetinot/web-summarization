@@ -1,0 +1,20 @@
+#!/bin/bash -x
+
+COMMAND=$1
+SERVERS_LIST=$2
+
+SERVERS=( $( cat ${SERVERS_LIST} ) )
+N_SERVERS=${#SERVERS[@]}
+
+CWD=$PWD
+
+count=0
+n=0
+# the parameters are provided on stdin
+cat | while read PARAMS; do
+    count=$(( $count + 1 ))
+    n=$(( $count % ${N_SERVERS} ))    
+    TARGET_SERVER=${SERVERS[$n]}
+    OUTPUT_FILE=$( basename ${PARAMS} ).out
+    echo -e "${OUTPUT_FILE}\t${TARGET_SERVER}\t${PARAMS}"
+done | xargs -i{} -n 1 -P ${N_SERVERS} sh -x -c "set -- {}; cat \$3 | ssh \$2 \"cd ${CWD}; cat | ${COMMAND} > \$1\""

@@ -1,0 +1,84 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../src/perl/";
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+
+use DMOZ::CategoryRepository;
+
+Getopt::Long::Configure ("bundling");
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+my $overwrite = 0;
+my $field = undef;
+
+GetOptions('help|?' => \$help, man => \$man, 'field=s' => \$field, 'overwrite' => \$overwrite, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( $#ARGV != 0 );
+
+my $repository_root = shift @ARGV;
+my @fields = @ARGV;
+
+# load repository
+my $repository = new DMOZ::CategoryRepository($repository_root, 0);
+if ( ! $repository ) {
+    die "Unable to instantiate repository using root: $repository_root";
+}
+
+my $line_count = 0;
+while(<STDIN>) {
+
+    chomp;
+    
+    my $line = $_;
+    $line_count++;
+    
+    my @fields = split /\t/, $line;
+    if ( scalar(@fields) != 2 ) {
+	print STDERR "invalid line format at line $line_count, skipping ...\n";
+	next;
+    }
+    my ($url, $value) = @fields;
+
+    if ( ! defined( $field ) ) {
+
+	my $category = $value;
+
+	if ( !defined( $category ) || $category !~ m/^Top\// || $url !~ m/^http/ ) {
+	    print STDERR "invalid category name ($category) for url $url, skipping ...";
+	    next;
+	}
+	
+	# add url to category file
+	$repository->add_url($category,$url,$overwrite);
+
+    }
+    else {
+
+	# update field for target url
+	# TODO: add support for $overwrite
+	$repository->update_url($url,$field,$value);
+
+    }
+
+}
+
+# finalize repository
+$repository->finalize();
+
+__END__
+
+Usage: dmoz-repository-category-based --field field_name <repository-root>
+
+1;

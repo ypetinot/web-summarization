@@ -1,0 +1,50 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+#binmode(STDIN, ':encoding(utf8)');
+#binmode(STDOUT, ':utf8');
+
+my $MAX_CONTENT_SIZE = 500000;
+
+while(<STDIN>) {
+
+    chomp;
+
+    my $line = $_;
+
+    my @fields = split /\t/, $line;
+    my $url = shift @fields;
+
+    my $content = process_url($url);
+    if ( ! $content ) {
+        $content = \ "__FAIL__";
+    }
+
+    print join("\t", $line, $$content) . "\n";
+
+}
+
+sub process_url {
+
+    my $url = shift;
+
+    local $/ = undef;
+
+    #xargs --null --max-args=1 --max-procs=100 -i{} sh -c "wget -t 1 -T 5 -q '{}' -O - | perl ../line-remover '{}'"
+    # max-redirect: we do not follow redirections (30x) to avoid having to deal with domain takeovers
+    my $content = `wget -t 1 -T 5 -q '$url' --max-redirect=0 -O -`;
+
+    if ( length($content) > $MAX_CONTENT_SIZE ) {
+        $content = "__TOO_LARGE__";
+    }
+
+    $content =~ s/\n+/ /sg;
+    $content =~ s/\t+/ /sg;
+
+    return \$content;
+
+}
+
+1;

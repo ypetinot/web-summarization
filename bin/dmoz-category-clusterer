@@ -1,0 +1,89 @@
+#!/usr/bin/env perl
+
+# cluster categories based on summary similarity
+# => start by computing all pair-wise similarities (LCS)
+# => hierarchical clustering
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../data/src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use File::Slurp;
+use JSON;
+use List::Util qw/max/;
+
+my $category_pattern = $ARGV[ 0 ];
+my $done_with_input = 0;
+my $done_with_stdin = 0;
+
+my $current_category = undef;
+my @input_buffer;
+my @summaries_entries;
+while ( ! $done_with_input || scalar( @summaries_entries ) ) {
+
+    $done_with_input = ! _has_input();
+    my $_category = undef;
+
+    if ( ! $done_with_input ) {
+	$_category = $input_buffer[ 0 ]->[ 3 ];
+    }
+
+    if ( ( $done_with_input && scalar( @summaries_entries ) ) || ( defined( $current_category ) && ( $current_category ne $_category ) ) ) {
+	print join( "\t" , ( $category_pattern || $current_category ) , encode_json( \@summaries_entries ) ) . "\n";
+	@summaries_entries = ();
+    }
+
+    # TODO : add command line parameter to control whether the match should be extact or not
+    if ( defined( $_category ) && defined( $category_pattern ) && ( $_category ne $category_pattern ) ) {
+	next;
+    }
+
+    if ( ! $done_with_input ) {
+
+	$current_category = $_category;
+
+	my $url = $input_buffer[ 0 ]->[ 0 ];
+	my $title = $input_buffer[ 0 ]->[ 1 ];
+	my $summary = $input_buffer[ 0 ]->[ 2 ];
+
+	if ( defined( $summary ) ) {
+	    my @tokens = split /(?:\s|\p{PosixPunct})+/ , $summary;
+	    if ( $#tokens >= 0 ) {
+		my $entry = [ $url , \@tokens , $#tokens + 1 , $summary ];
+		push @summaries_entries , $entry;
+	    }
+	}
+
+	# TODO : can we do better ?
+	shift @input_buffer;
+	
+    }
+
+}
+
+sub _has_input {
+
+    if ( ! $done_with_stdin ) {
+
+	# attempt to read in next instance
+	my $line = <STDIN>;
+	if ( defined( $line ) ) {
+	    chomp $line;
+	    my @fields = split /\t/ , $line;
+	    push @input_buffer , \@fields;
+	}
+	else {
+	    $done_with_stdin = 1;
+	}
+
+    }
+
+    return scalar( @input_buffer );
+
+}
+    
+1;

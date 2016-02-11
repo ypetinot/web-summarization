@@ -1,0 +1,46 @@
+#!/bin/bash -x
+
+# Note : StrictHostKeyChecking does not seem to be supported by the current version of ssh-copy-id
+# http://serverfault.com/questions/422869/answer-yes-to-ssh-copy-id-first-time-run-by-script
+
+SERVERS_LIST=$1
+
+SSH_BASE=~/.ssh/
+KNOWN_HOSTS=${SSH_BASE}/known_hosts
+
+function _update_password_less() {
+
+    UPDATE_SERVER=$1;
+    UPDATE_KNOWN_HOSTS=$2;
+
+    # TODO : might be able to skip host / emit warning if the host is not reachable ? (use ping instead for that purpose ?)
+    UPDATE_SERVER_IP=`host ${UPDATE_SERVER} | grep 'has address' | awk '{ print $4 }'`
+
+    echo "Removing password-less connection to ${UPDATE_SERVER} ..." 1>&2 
+    ssh-keygen -R ${UPDATE_SERVER}
+    ssh-keygen -R ${UPDATE_SERVER_IP} 
+
+    echo "Updating password-less connection to ${UPDATE_SERVER} ..." 1>&2
+    ssh-keyscan ${UPDATE_SERVER} >> ${UPDATE_KNOWN_HOSTS}
+    ssh-copy-id ${UPDATE_SERVER}
+
+}
+
+#####KNOWN_HOSTS_COPY=`mktemp`
+
+TEMP_LIST=`mktemp`
+cat ${SERVERS_LIST} | grep -v '^#' > ${TEMP_LIST}
+#####cat ${KNOWN_HOSTS} | grep -f ${SERVERS_LIST} > ${KNOWN_HOSTS_COPY}
+
+# TODO : is there a way to make sure the password-less connection actually works ?
+cat ${TEMP_LIST} | while read SERVER; do
+#####    cat ~/.ssh/id_rsa.pub | awk -v server=${SERVER} '{ print $1 " " $2 " ypetinot@" server ".cs.columbia.edu" }' >> ${KNOWN_HOSTS_COPY}
+
+    _update_password_less ${SERVER} ${KNOWN_HOSTS}
+
+done;
+
+#####cat ${KNOWN_HOSTS_COPY} | sort -u > ${KNOWN_HOSTS}
+
+#####rm -f ${KNOWN_HOSTS_COPY}
+rm -f ${TEMP_LIST}

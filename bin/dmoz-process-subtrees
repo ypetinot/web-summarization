@@ -1,0 +1,10 @@
+#!/bin/bash -x
+
+# not yet a script but soon will be if the results prove to be valuable
+
+cat ../raw-data-2010-07-05/dmoz.all.data | awk -F"\t" '{ split($4, a, "/"); if ( length(a[2]) > 0 ) { print $0 >> a[2]; } }'
+
+for file in `find ./ -type f`; do FILENAME=`basename $file | tr '[:upper:]' '[:lower:]'`; echo "processing $FILENAME"; TARGET_DIRNAME="dmoz-corpus-$FILENAME"; mkdir -p $TARGET_DIRNAME; /proj/nlp/users/ypetinot/ocelot/svn-research/trunk/bin/dmoz-build-corpus $file $TARGET_DIRNAME; done;
+
+# to consider everything but the Regional subtree
+

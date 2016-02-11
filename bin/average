@@ -1,0 +1,34 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+my $from_field = $ARGV[ 0 ];
+
+if ( ! defined( $from_field ) ) {
+    die "Usage: $0 <from-field>";
+}
+
+my @aggregate_unnormalized;
+
+my $count = 0;
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+
+    $count++;
+
+    for ( my $i= ($from_field - 1 ) ; $i<=$#fields; $i++ ) {
+	$aggregate_unnormalized[ $i - ( $from_field - 1 ) ] += $fields[ $i ];
+    }
+
+}
+
+# average
+my @aggregate = map { $_ /= $count; } @aggregate_unnormalized;
+
+print join( " \& " , map { sprintf ( "%.4f" , $_ ) } @aggregate ) . "\\\\\\\\ \n";
+
+1;

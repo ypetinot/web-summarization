@@ -1,0 +1,58 @@
+#!/bin/bash -x
+
+# create vocabulary for supported data-fields and map them to their vocabulary space
+
+BINDIR=`dirname $0`
+
+SHORTOPTS="hr:";
+LONGOPTS="help,reference:"
+
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+        -r | --reference )
+            REFERENCE_DATA_DIR=$2; shift 2;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+TARGET_EXPLODED_DIRECTORY=$1
+
+if [[ -z "${TARGET_EXPLODED_DIRECTORY}" ]]; then
+    echo "Usage: $0 <target-directory>";
+    exit 1;
+fi
+
+SUPPORTED_FIELDS="content description"
+VOCABULARY_SIZE=65535
+VOCABULARY_THRESHOLD=2
+
+for field in ${SUPPORTED_FIELDS}; do
+
+    if [[ -z ${REFERENCE_DATA_DIR} ]]; then
+
+	echo "[dmoz-map] generating vocabulary for ${field} data"
+	FIELD_VOCABULARY=${TARGET_EXPLODED_DIRECTORY}/dmoz.mapped.${field}.vocabulary
+
+	echo "[dmoz-map] creating vocabulary file: ${FIELD_VOCABULARY}"
+	cat ${TARGET_EXPLODED_DIRECTORY}/dmoz.rendered.${field} | ${BINDIR}/dmoz-select-vocabulary > ${FIELD_VOCABULARY}
+
+	# No OOV-mapping (due to vocabulary size or frequency consideration) - this needs to be done at the model-level
+	#--size=${VOCABULARY_SIZE} --count-threshold=${VOCABULARY_THRESHOLD} 
+
+    else
+	FIELD_VOCABULARY=${REFERENCE_DATA_DIR}/dmoz.mapped.${field}.vocabulary
+    fi
+
+    echo "[dmoz-map] mapping ${field} data"
+    cat ${TARGET_EXPLODED_DIRECTORY}/dmoz.rendered.${field} | ${BINDIR}/dmoz-map-vocabulary --vocabulary=${FIELD_VOCABULARY} > ${TARGET_EXPLODED_DIRECTORY}/dmoz.mapped.${field}
+
+done
+

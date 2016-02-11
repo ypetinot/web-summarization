@@ -1,0 +1,8 @@
+#!/bin/bash -x
+
+OUTPUT_FILE=$1
+CALLER_ID=$2;
+
+BINDIR=`dirname $0`
+
+cat | xargs -i{} ${BINDIR}/get-context-urls --output-mode=line '{}' ${CALLER_ID} > ${OUTPUT_FILE}

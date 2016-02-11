@@ -1,0 +1,13 @@
+#!/bin/bash -x
+
+BINDIR=$(dirname $0)
+source ${BINDIR}/../dist.rc
+
+# TODO: turn this into a parameter so that only what's necessary is loaded
+# e.g. --stanford
+source ${THIRD_PARTY_RESOURCES_JAVA}
+source ${THIRD_PARTY_RESOURCES_STANFORD}
+
+PROJECT=$1
+
+make -C ${ROOTDIR_THIRD_PARTY}/${PROJECT}

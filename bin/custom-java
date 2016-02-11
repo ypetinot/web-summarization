@@ -1,0 +1,13 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../dist.rc
+
+# TODO : replace all this by an alias ?
+#JAVA_BINARY=java
+#JAVA_BINARY=/usr/lib/jvm/java-1.7.0-openjdk-amd64/bin/java
+#JAVA_BINARY=/usr/lib/jvm/java-7-openjdk-amd64/bin/java
+JAVA_BINARY=${ROOTDIR_THIRD_PARTY}/java/bin/java
+
+# http://bugs.java.com/view_bug.do?bug_id=6447182
+${JAVA_BINARY} -XX:+PerfDisableSharedMem $@

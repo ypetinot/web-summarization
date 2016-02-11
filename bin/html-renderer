@@ -1,0 +1,116 @@
+#!/usr/bin/env perl
+
+# cleans up, tokenizes and formats data
+
+use strict;
+use warnings;
+
+binmode(STDIN, ":encoding(utf8)");
+binmode(STDOUT, ":utf8");
+
+use FindBin;
+use lib "$FindBin::Bin/../src/perl/";
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Getopt::Long;
+use List::Util qw/max min/;
+use List::MoreUtils qw/pairwise/;
+use Pod::Usage;
+
+use HTMLTokenizer;
+use Tokenizer;
+use Vocabulary;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+my $extract = 0;
+my $field = undef;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('extract' => \$extract,
+	   'field=s' => \$field,
+	   'help|?' => \$help, man => \$man, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+
+# we're reading UTF-8 content
+binmode(STDIN, ":utf8");
+
+# we're outputting UTF-8 content
+binmode(STDOUT, ":utf8");
+
+# set autoflush
+$| = 1;
+
+# TODO
+# do we want to make the tokenization/rendering algorithm configurable ?
+#if ( scalar(@ARGV) != 1 ) {
+#   die "Usage: $0 <vocabulary_base> <source_target_vocabulary_size> <output_target_vocabulary_size>";
+#}
+
+# 1 - generate source/output vocabularies and split input file
+my $tokenizer = new HTMLTokenizer( renderer => 'HTMLRenderer::LynxRenderer' );
+
+my $line_count = 0;
+
+while (<STDIN>) {
+    
+    chomp;
+    
+    my $line = $_;
+    $line_count++;
+
+    # can we abstract the parsing code into its own class ?
+    my @fields = split /\t/, $line;
+
+    my $url = shift @fields;
+    my $content = shift @fields || '';
+
+    # TODO: move this to the data generation portion of the process
+    # cleanse content
+    while ( $content =~ s/[[:cntrl:]]+/ /sgo ) {}
+
+    print STDERR "[$0] processing record for $url ...\n";
+
+    my $source_content = '';
+
+    if ( ! $extract ) {
+		
+	$source_content = $content;
+
+    }
+    else {
+
+	if ( defined( $field ) ) {
+	    
+	    if ( $content =~ m|<$field>([^<]+)</$field>|si ) {
+		$source_content = $1;
+	    }
+
+	}
+
+    }
+    
+    my $processed_content = undef;
+
+    eval {
+	
+	# tokenize content
+	my @tokens_original = @{ $tokenizer->tokenize($source_content) };
+	$processed_content = join(' ', @tokens_original);
+	
+    };
+    
+    if ( @! ) {
+	print STDERR "parsing/tokenization exception: $url\n";
+	$processed_content = '__ERROR_DURING_RENDERING_STAGE__';
+    }
+
+    print join("\t", $url, $processed_content) . "\n";
+
+}
+
+exit(0);
+
+1;

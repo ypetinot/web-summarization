@@ -1,0 +1,37 @@
+LEVEL0=url
+LEVEL1=url.content
+LEVEL2=dmoz_summary
+LEVEL3=context.urls
+LEVEL4=context.full
+LEVEL5=raw-context.xml
+LEVEL6=filtered-context.xml
+
+URL=$(shell cat $(LEVEL0))
+
+default: $(LEVEL6)
+	@echo "Updating URL directory: $(CURDIR)"
+
+$(LEVEL6): $(LEVEL5)
+	   @echo "Filter Context Data for $(URL) ..."
+	   filter-context $(LEVEL5) $(LEVEL2) > $(LEVEL6)
+
+$(LEVEL5): $(LEVEL4)
+	   @echo "Generate Context Data for $(URL) ..."
+	   get-context-anchortext '$(URL)' --mode=full --output=xml $(LEVEL4) > $(LEVEL5)
+#	   generate-context $(LEVEL4) > $(LEVEL5)
+
+$(LEVEL4): $(LEVEL3)
+	@echo "Downloading content for all Context URLs of $(URL) ..."
+	get-url-content --list $(LEVEL3) --output-type=cache --output=$(LEVEL4)
+
+$(LEVEL3): $(LEVEL1)
+	@echo "Acquiring Context URLs of $(URL) ..."
+	get-context-urls '$(URL)' > $(LEVEL3)
+
+#$(LEVEL2): $(LEVEL1)
+#	@echo "Acquiring DMOZ data for $(URL) ..."
+#	get-dmoz-data '$(URL)' > $(LEVEL2)
+
+$(LEVEL1): $(LEVEL0)
+	@echo "Downloading content for $(URL) ..."
+	get-url-content '$(URL)' > $(LEVEL1)

@@ -1,0 +1,32 @@
+# http://stackoverflow.com/questions/25158583/exporting-the-full-environment-to-gnu-parallel
+env_parallel() {
+    export parallel_bash_environment='() {
+       '"$(echo "shopt -s expand_aliases 2>/dev/null"; alias;typeset -p | grep -vFf <(readonly; echo GROUPS; echo FUNCNAME; echo DIRSTACK; echo _; echo PIPESTATUS; echo USERNAME) | grep -v BASH_;typeset -f)"'
+       }'
+     # Run as: env_parallel ...
+     `which parallel` "$@"
+     unset parallel_bash_environment
+}
+
+
+# TODO : how do we make this work for both scripts and makefiles ?
+# Note : current this only works for makefiles
+# TODO : add nice option ?
+# TODO : adjust command based on ram requirements (e.g. all vs. at least 8)
+#--nice 10
+
+# TODO : is there a better solution than using --sshdelay ?
+# http://stackoverflow.com/questions/11576025/how-can-i-limit-the-rate-of-new-outgoing-ssh-connections-when-using-gnu-parallel
+# 0.1 => not good
+PARALLEL_SSH_OPTIMIZATION="--sshdelay 0.2"
+
+export PARALLEL_COMMAND_LOCAL="${BINDIR_PARALLEL}/parallel --env _ --no-notice --halt-on-error 2 -j50%"
+#export PARALLEL_COMMAND_LOCAL="env_parallel --no-notice --halt-on-error 2 -j50%"
+export PARALLEL_COMMAND="${PARALLEL_COMMAND_LOCAL} --filter-hosts --sshloginfile ${SERVERS_LIST} ${PARALLEL_SSH_OPTIMIZATION}"
+export PARALLEL_COMMAND_RESUME="${PARALLEL_COMMAND} --resume"
+
+# Note : slowing things down / getting the local machine to hang a little ?
+#-M
+
+# Note : way too slow
+#--noswap

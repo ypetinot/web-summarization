@@ -1,0 +1,24 @@
+#!/bin/bash -x
+
+COMMAND=$1
+SERVERS_LIST=$2
+
+SERVERS=( $( cat ${SERVERS_LIST} ) )
+N_SERVERS=${#SERVERS[@]}
+
+if [[ -z "${N_SERVERS}" ]]; then
+    echo "Please provide a list of servers ...";
+    exit 1;
+fi
+
+CWD=$PWD
+
+count=0
+n=0
+# the parameters are provided on stdin
+cat | while read PARAMS; do
+    count=$(( $count + 1 ))
+    n=$(( $count % ${N_SERVERS} ))    
+    TARGET_SERVER=${SERVERS[$n]}
+    echo -e "${TARGET_SERVER}\t${PARAMS}"
+done | xargs -i{} -n 1 -P ${N_SERVERS} sh -x -c "set -- {}; TARGET_SERVER=\$1; shift; ssh \$TARGET_SERVER \"cd ${CWD}; ${COMMAND} \$@\""

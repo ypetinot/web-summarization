@@ -1,0 +1,115 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use NGrams;
+
+use Digest::MD5 qw(md5 md5_hex md5_base64);
+use Encode;
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+use Text::Trim;
+
+my $domain = '';
+my $field_id = undef;
+my $order = undef;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('domain=s' => \$domain, 'field-id=i' => \$field_id, 'order=i' => \$order, 'help|?' => \$help, man => \$man, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if ( ! defined( $order ) );
+pod2usage(-exitstatus => 0) if ( $#ARGV != 0 );
+
+binmode( STDIN , ':utf8' );
+binmode( STDOUT , ':utf8' );
+binmode( STDERR , ':utf8' );
+
+my $mapping_file = $ARGV[0];
+open MAPPING_FILE, ">$mapping_file" or die "Unable to create feature mapping file ($mapping_file): $!";
+
+#my $feature_prefix = join("-", $domain, 'ngram', $order);
+my $feature_prefix = join("-", 'ngram', $order);
+
+my %ngram2count;
+my %ngram2id;
+my %ngram2surface;
+
+while( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/, $line;
+
+    my $current_field_data = $fields[ $field_id ];
+    $fields[ $field_id ] = _generate_n_grams( $current_field_data , $order );
+
+    print join("\t",@fields) . "\n";
+
+}
+
+foreach my $ngram_key (keys( %ngram2id )) {
+    
+    my $ngram_id = $ngram2id{ $ngram_key };
+    my $ngram_surface = $ngram2surface{ $ngram_id };
+    my $ngram_count = $ngram2count{ $ngram_id };
+    
+    print MAPPING_FILE join( "\t" , $ngram_id , $ngram_key , $ngram_surface , $ngram_count ) . "\n";
+
+}
+
+close MAPPING_FILE;
+
+sub _generate_n_grams {
+
+    my $string = shift;
+    my $order = shift;
+
+    my @tokens = map{ trim $_ } split /\s+/, $string || '';
+
+    my $ngrams = NGrams::generate_n_grams( $order , \@tokens );
+    
+    my %encoded_ngrams;
+    map {
+
+	my $ngram_id = _generate_ngram_id( $feature_prefix , $_ );
+	$encoded_ngrams{ $ngram_id }  = $ngrams->{ $_ };
+
+	# keep track of counts
+	$ngram2count{ $ngram_id } += $ngrams->{ $_ };
+
+    } keys( %{ $ngrams } );
+
+    return encode_json( \%encoded_ngrams );
+
+}
+
+# generate feature name
+sub _generate_ngram_id {
+
+    my $feature_prefix = shift;
+
+    my $ngram_surface = encode_utf8( join( "-" , @_ ) );
+    #my $ngram_key = join( "-" , $feature_prefix, md5_hex( $ngram_surface ) );
+    my $ngram_key = md5_hex( $ngram_surface ); 
+
+    if ( ! defined( $ngram2id{ $ngram_key } ) ) {
+	my $ngram_id = scalar( keys( %ngram2id ) ) + 1;
+	$ngram2id{ $ngram_key } = $ngram_id;
+	$ngram2surface{ $ngram_id } = $ngram_surface;
+    }
+    
+    return $ngram2id{ $ngram_key };
+
+}

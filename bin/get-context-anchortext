@@ -1,0 +1,73 @@
+#!/usr/bin/env perl
+
+use FindBin;
+use lib "$FindBin::Bin/../src/perl/";
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Carp;
+use Getopt::Long;
+use Pod::Usage;
+
+use DataManagers::ContextExtractor;
+
+binmode(STDOUT,":utf8");
+
+my $man = 0;
+my $help = 0;
+my $mode = 'full';
+my $output = 'plain';
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'mode=s' => \$mode, 'output=s' => \$output, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( $#ARGV != 1 );
+
+my $target_url = $ARGV[0];
+my $context_urls = $ARGV[1];
+
+# TODO : to be either removed or reimplemented using Category::UrlData
+print ...
+
+1;
+
+__END__
+
+=pod
+
+=head1 NAME
+    
+    sample - Using Getopt::Long and Pod::Usage
+    
+=head1 SYNOPSIS
+    
+    sample [options] TARGET_URL SOURCE_URL|SOURCE_URLS_FILE|SOURCE_URLS_CACHE
+
+    Options:
+       -help            brief help message
+       -man             full documentation
+       -mode            context extraction mode
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<-help>
+
+    Print a brief help message and exits.
+
+=item B<-man>
+
+    Prints the manual page and exits.
+
+=back
+
+=head1 DESCRIPTION
+
+    B<This program> will read the given input file(s) and do something
+    useful with the contents thereof.
+
+=cut
+

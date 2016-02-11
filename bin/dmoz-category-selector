@@ -1,0 +1,64 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../src/perl/";
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use File::Path;
+use Getopt::Long;
+use Pod::Usage;
+
+use DMOZ::CategoryRepository;
+
+my $man = 0;
+my $help = 0;
+my $categories = undef;
+
+GetOptions('help|?' => \$help, man => \$man, 'categories=s' => \$categories) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+my %target_categories;
+
+if ( defined($categories) ) {
+    if ( -f $categories ) {
+	open CATEGORIES_FILE, $categories or die "Unable to load categories from file $categories: $!";
+	while(<CATEGORIES_FILE>) {
+	    chomp;
+	    my $line = $_;
+	    my @fields = split /\t/, $line;
+	    if ( !length(@fields) ) {
+		next;
+	    }
+	    my $category = shift @fields;
+	    $target_categories{$category} = 1;
+	}
+	close CATEGORIES_FILE;
+    }
+    else {
+	$target_categories{$categories} = 1;
+    }
+}
+
+my $n_target_categories = scalar(keys(%target_categories));
+print STDERR "[dmoz-category-selector] loaded $n_target_categories target categories\n";
+
+while(<STDIN>) {
+
+    chomp;
+
+    my $line = $_;
+    
+    my @fields = split /\t/, $line;
+    if ( defined($categories) && !defined($target_categories{$fields[3]}) ) { 
+	next;
+    }
+
+    print "$line\n";
+
+}
+
+1;

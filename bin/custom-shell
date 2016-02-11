@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# TODO : will probably need some improvement
+# http://stackoverflow.com/questions/5998363/can-you-wrapper-each-command-in-gnus-make
+
+BINDIR=`dirname $0`
+
+# TODO: should parallel-job-resources take care of sourcing job-resources ?
+source ${BINDIR}/../dist.rc
+source ${BINDIR}/../environment.rc
+source ${BINDIR}/job-resources
+source ${BINDIR}/parallel-job-resources
+
+if [  "$1" == "-c" ] ; then
+    shift
+fi
+
+eval $@

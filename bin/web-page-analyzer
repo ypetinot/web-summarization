@@ -1,0 +1,72 @@
+#!/usr/bin/env perl
+
+# CURRENT : could this script also act as a tool to generate the "alignment" between two pages ?
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../data/src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use Getopt::Long;
+use Pod::Usage;
+
+use Category::UrlData;
+use WordGraph::TargetAdapter::ConfusionNetworkTargetAdapter;
+
+my $debug = 0;
+my $help  = 0;
+my $man   = 0;
+
+my $ranker_class = undef;
+my $reference_url = undef;
+
+#Getopt::Long::Configure("bundling pass_through");
+GetOptions('help|?' => \$help, man => \$man,
+	   'reference-url=s' => \$reference_url,
+	   'ranker=s' => \$ranker_class,
+	   'debug|d' => \$debug
+    ) or pod2usage(2);
+
+my $target_url = $ARGV[ 0 ];
+if ( ! defined( $target_url ) ) {
+    pod2usage(2);
+    exit;
+}
+
+my $target_url_data = Category::UrlData->load_url_data( $target_url );
+
+if( defined( $ranker_class ) ) {
+    
+    # TODO
+    
+    # 2 - get page (content) modality
+    my $page_modality = $target_url_data->page_modality;
+    
+    # 3 - get list of utterances in page modality
+    my $page_utterances = $page_modality->utterances;
+    
+
+}
+elsif ( defined( $reference_url ) ) {
+
+    my $reference_url_data = Category::UrlData->load_url_data( $reference_url );
+
+    # 1 - generate "alignment" between target and reference URLs
+    # TODO : maybe we need to extract the corresponding portion of the code from TargetAdapter ?
+    my $target_adapter = new WordGraph::TargetAdapter::ConfusionNetworkTargetAdapter (
+	sentence_builder => 'Web::Summarizer::SentenceBuilder',
+	target => $target_url_data,
+	reference => $reference_url_data
+	);
+
+    my $reference_adapted = $target_adapter->adapt;
+
+}
+else {
+    die "No action requested ...";
+}
+
+1;

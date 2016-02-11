@@ -1,0 +1,95 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../data/src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use Clusterer::Hierarchical;
+use Similarity;
+
+use File::Slurp;
+use JSON;
+use List::Util qw/max/;
+
+my $homogeneity_threshold = $ARGV[ 0 ];
+if ( ! defined( $homogeneity_threshold ) ) {
+    die "Usage: $0 <homogeneity-threshold>";
+}
+
+my $print_header = 1;
+while ( <STDIN> ) {
+
+    chomp;
+    
+    my @fields = split /\t/ , $_;
+    my $category = $fields[ 0 ];
+    my $summaries_entries_json = $fields[ 1 ];
+
+    my @summaries_entries = @{ decode_json( $summaries_entries_json ) };
+    
+    # 2 - compare all pairs of summaries
+    my @similarity;
+    for ( my $i=0; $i<=$#summaries_entries; $i++ ) {
+	
+	my $summary_entry_i = $summaries_entries[ $i ];
+	my $summary_url_i = $summary_entry_i->[ 0 ];
+	my $summary_seq_i = $summary_entry_i->[ 1 ];
+	my $summary_length_i = $summary_entry_i->[ 2 ];
+	my $summary_i = $summary_entry_i->[ 3 ];
+	
+	# just to make the similarity matrix look clean
+	$similarity[ $i ][ $i ] = 1;
+	
+	for ( my $j=$i+1; $j<=$#summaries_entries; $j++ ) {
+	    
+	    my $summary_entry_j = $summaries_entries[ $j ];
+	    my $summary_url_j = $summary_entry_j->[ 0 ];
+	    my $summary_seq_j = $summary_entry_j->[ 1 ];
+	    my $summary_length_j = $summary_entry_j->[ 2 ];
+	    my $summary_j = $summary_entry_j->[ 3 ];
+	    
+	    # compute lcs between summary_i and summary_j
+	    # TODO : use new lcs similarity function in Similarity ?
+	    my $overlap = Similarity->lcs_similarity( $summary_seq_i , $summary_seq_j );
+	    #print join( "\t" , $summary_url_i , $summary_url_j , $overlap , $summary_i , $summary_j ) . "\n";
+	    $similarity[ $i ][ $j ] = $similarity[ $j ][ $i ] = $overlap;
+	    
+	}
+	
+    }
+    
+    my $category_similarity = sub {
+	my $index_1 = shift;
+	my $index_2 = shift;
+	return $similarity[ $index_1 ][ $index_2 ];
+    };
+    
+    # 3 - perform hierarchical clustering at the expected level of similarity
+    my $clusterer = new Clusterer::Hierarchical( 
+	#mode => $Clusterer::Hierarchical::MODE_AVERAGE_LINK ,
+	mode => 'single-link' ,
+	similarity_threshold => $homogeneity_threshold ,
+	similarity_measure => $category_similarity );
+    my ( $clusters , $stats ) = $clusterer->cluster( [ 0 .. $#summaries_entries ] );
+    
+    # compute proportion of category that is clusterable
+    my $summary_count = scalar( @summaries_entries );
+    my $cluster_count = scalar( @{ $clusters } );
+    my $clusterable_ratio = ( $summary_count == $cluster_count ) ? 0 : 1 - ( ( $cluster_count - 1 ) / $summary_count );
+    my @cluster_sizes = map { scalar( @{ $_ } ) } @{ $clusters };
+    my $largest_cluster_size = max( @cluster_sizes );
+    my $largest_cluster_ratio = $largest_cluster_size / $summary_count;
+    
+    if ( $print_header ) {
+	print join( "\t" , 'category' , 'entry_count' , join ( '@' , 'cluster_count' , $homogeneity_threshold ) , 'cluster_ratio' , 'cluster_size' ) . "\n";
+	$print_header = 0;
+    }
+    print join( "\t" , $category , $summary_count , $cluster_count , $clusterable_ratio , encode_json( \@cluster_sizes ) , $largest_cluster_size , $largest_cluster_ratio ) . "\n";
+
+}
+
+1;

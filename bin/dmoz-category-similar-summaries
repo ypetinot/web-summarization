@@ -1,0 +1,76 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../data/src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use Algorithm::Diff qw(
+        LCS LCS_length LCSidx
+        diff sdiff compact_diff
+        traverse_sequences traverse_balanced );
+use File::Slurp;
+use JSON;
+use List::Util qw/max/;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $category_base = $_;
+
+    # 1 - read in summaries
+    my @entries = read_file( $category_base , chomp => 1 );
+    my @summaries_entries = grep { defined( $_ ) } map {
+	my @fields = split /\t/ , $_;
+	my $url = $fields[ 0 ];
+	my $summary = $fields[ 1 ];
+	my $entry = undef;
+	if ( defined( $summary ) ) {
+	    my @tokens = split /(?:\s|\p{Punct})+/ , $summary;
+	    if ( $#tokens >= 0 ) {
+		$entry = [ $url , \@tokens , $#tokens + 1 , $summary ];
+	    }
+	}
+	$entry;
+    } @entries;
+
+    # 2 - compare all pairs of summaries
+    for ( my $i=0; $i<=$#summaries_entries; $i++ ) {
+
+	my $summary_entry_i = $summaries_entries[ $i ];
+	my $summary_url_i = $summary_entry_i->[ 0 ];
+	my $summary_seq_i = $summary_entry_i->[ 1 ];
+	my $summary_length_i = $summary_entry_i->[ 2 ];
+	my $summary_i = $summary_entry_i->[ 3 ];
+
+	# Note : we are intentionally looking at pairs in both direction since adaptation goes both ways => does it make sense for training ? => I think so
+	for ( my $j=$i+1; $j<=$#summaries_entries; $j++ ) {
+	    	    
+	    my $summary_entry_j = $summaries_entries[ $j ];
+	    my $summary_url_j = $summary_entry_j->[ 0 ];
+	    my $summary_seq_j = $summary_entry_j->[ 1 ];
+	    my $summary_length_j = $summary_entry_j->[ 2 ];
+	    my $summary_j = $summary_entry_j->[ 3 ];
+
+	    # TODO : can we do better ?
+	    if ( $summary_url_i eq $summary_url_j ) {
+		next;
+	    }
+	    
+	    # compute lcs between summary_i and summary_j
+	    # TODO : use new lcs similarity function in Similarity ?
+	    my @lcs = LCS( $summary_seq_i , $summary_seq_j );
+	    my $overlap = scalar( @lcs ) / max( $summary_length_i , $summary_length_j );
+	    print join( "\t" , $summary_url_i , $summary_url_j , $overlap , $summary_i , $summary_j , encode_json( \@lcs ) ) . "\n";
+
+	}
+
+    }
+
+}
+
+1;

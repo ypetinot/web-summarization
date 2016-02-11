@@ -1,0 +1,105 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../src/perl/";
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Getopt::Long;
+use Pod::Usage;
+
+use Vocabulary;
+
+# this script is responsible for mapping raw strings to vocabulary-encoded strings
+
+my $help = 0;
+my $debug = 0;
+my $reverse = 0;
+my $vocabulary_file = undef;
+my $oov_symbol = 'OOV';
+my $fields = undef;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, 'vocabulary=s' => \$vocabulary_file,
+	   'fields=s' => \$fields,
+	   'reverse' => \$reverse,
+	   'debug|d' => \$debug) or pod2usage(2);
+
+pod2usage(2) if ( !defined($vocabulary_file) );
+
+my %map_field;
+if ( defined($fields) ) {
+    map { $map_field{$_} = 1; } split(/\,/, $fields);
+}
+
+# input is assumed to be utf-8 encoded
+binmode(STDIN, ":utf8");
+
+# turn auto-flush on
+local $| = 1;
+
+# instantiate vocabulary from file
+my $vocabulary = Vocabulary->load($vocabulary_file);
+my $oov_index =  $vocabulary->word_index($oov_symbol);
+
+while (<STDIN>) {
+
+    chomp;
+
+    my $line = $_;
+
+    my @line_fields;
+    if ( defined($fields) ) {
+	push @line_fields, split /\t/, $line;
+    }
+    else {
+	push @line_fields, $line;
+    }
+
+    my @mapped_line_fields;;
+
+    my $index = 0;
+    foreach my $line_field (@line_fields) {
+
+	if ( !defined($fields) || defined( $map_field{++$index} ) ) {	
+	    my @tokens = split /(?:\s|\p{Punct})+/, $line_field;
+	    my $tokens_output = $reverse ? to_word( \@tokens ) : to_ids( \@tokens );
+	    push @mapped_line_fields, join(" ", @{ $tokens_output });
+	}	
+	else {
+	    push @mapped_line_fields, $line_field;
+	}
+
+    }
+
+    print join("\t", @mapped_line_fields) . "\n";
+
+}
+
+sub to_ids {
+    my $token_words = shift;
+    my @output = map { $vocabulary->word_index( normalize($_) ) || $oov_index } @{ $token_words };
+    return \@output;
+}
+
+sub to_word {
+    my $token_ids = shift;
+    my @output = map { $vocabulary->get_word( $_ ) } @{ $token_ids };
+    return \@output;
+}
+
+# should this go somewhere else ?
+sub normalize {
+
+    my $word = shift;
+
+    # convert to lowercase
+    $word = lc($word);
+
+    return $word;
+
+}
+
+1;

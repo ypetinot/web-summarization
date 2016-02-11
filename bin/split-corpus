@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# split input corpus (single file) into train/test/evaluation sets
+# split proportions are specified on the command line
+
+EXPECTED_ARGS=4
+E_BADARGS=65
+E_BADPROPORTIONS=66
+E_BADSIZES=67
+
+if [ $# -lt $EXPECTED_ARGS ]
+then
+  echo "Usage: `basename $0` <data_file> <training_proportion> <testing_proportion> <evaluation_proportion>"
+  exit $E_BADARGS
+fi
+
+DATA_FILE=$1
+TRAINING_PROPORTION=$2
+TESTING_PROPORTION=$3
+EVALUATION_PROPORTION=$4
+PREFIX=$5
+
+# make sure that the requested proportions sum up to 100
+if [ $(( $TRAINING_PROPORTION + $TESTING_PROPORTION + $EVALUATION_PROPORTION )) -ne 100 ]
+then
+	echo "Split proportions do not sum up to 100"
+	exit $E_BADPROPORTIONS
+fi
+
+if [ -z "${PREFIX}" ]; then
+    PREFIX=${DATA_FILE}
+fi
+
+# compute number of lines in the input file
+NUMBER_OF_SAMPLES=`wc -l $DATA_FILE | awk '{ print \$1 }'`
+
+NUMBER_OF_TRAINING_SAMPLES_TARGET=$(( $NUMBER_OF_SAMPLES * $TRAINING_PROPORTION / 100 ))
+NUMBER_OF_TRAINING_SAMPLES_MAX=$(( $NUMBER_OF_SAMPLES - 2 ))
+NUMBER_OF_TRAINING_SAMPLES=$(( $NUMBER_OF_TRAINING_SAMPLES_TARGET > $NUMBER_OF_TRAINING_SAMPLES_MAX ? $NUMBER_OF_TRAINING_SAMPLES_MAX : $NUMBER_OF_TRAINING_SAMPLES_TARGET ))
+NUMBER_OF_TESTING_SAMPLES=$(( ( $NUMBER_OF_SAMPLES - $NUMBER_OF_TRAINING_SAMPLES ) * $TESTING_PROPORTION / ( $TESTING_PROPORTION + $EVALUATION_PROPORTION ) ))
+NUMBER_OF_EVALUATION_SAMPLES=$(( $NUMBER_OF_SAMPLES - $NUMBER_OF_TRAINING_SAMPLES - $NUMBER_OF_TESTING_SAMPLES ))
+
+# make sure the corresponding number of samples do sum up to the total number of samples
+if [ $(( $NUMBER_OF_TRAINING_SAMPLES + $NUMBER_OF_TESTING_SAMPLES + $NUMBER_OF_EVALUATION_SAMPLES )) -ne $NUMBER_OF_SAMPLES ]
+then
+	echo "Split sizes do not sum up to the total number of available samples"
+	exit $E_BADSIZES
+fi
+
+# generate training set
+tail -n +$(( $NUMBER_OF_TESTING_SAMPLES + $NUMBER_OF_EVALUATION_SAMPLES + 1 )) < ${DATA_FILE} > ${PREFIX}.training
+
+# generate testing set => first NUMBER_OF_TESTING_SAMPLES
+head -n ${NUMBER_OF_TESTING_SAMPLES} < ${DATA_FILE} > ${PREFIX}.testing
+
+# generate dev set => NUMBER_OF_EVALUATION_SAMPLES after NUMBER_OF_TESTING_SAMPLES
+tail -n +$(( $NUMBER_OF_TESTING_SAMPLES + 1 )) < ${DATA_FILE} | head -n $NUMBER_OF_EVALUATION_SAMPLES > ${PREFIX}.dev

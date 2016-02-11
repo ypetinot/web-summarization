@@ -1,0 +1,5 @@
+#!/bin/sh
+
+# keeps only DMOZ entries that do not belong to the Top/World/ subtree
+
+cat | awk -F'\t' '{if ( NF == 4 && $4 !~ /^\/?Top\/World\//) print;}'

@@ -1,0 +1,7 @@
+#!/bin/bash -x
+
+CATEGORY_BASE=$1
+TARGET_DEPTH=$2
+
+# Determine target directory
+cat ${CATEGORY_BASE} | head -n1 | awk -F"\t" '{ print $2 }' | perl -e 'my @elems = split "

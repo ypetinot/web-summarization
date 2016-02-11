@@ -1,0 +1,215 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Getopt::Long;
+use HTML::LinkExtor;
+use Pod::Usage;
+use URI::Escape;
+use XML::TreePP;
+
+my $man = 0;
+my $help = 0;
+my $output_mode = '';
+my $service = "bing";
+my $debug = 0;
+my $max_results = undef;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'output-mode=s' => \$output_mode, 'service=s' => \$service, 'max=i' => \$max_results, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( $#ARGV < 0 );
+
+if ( $#ARGV < 0 ) {
+    die "usage: $0 <query>";
+}
+
+my $query = uri_escape( $ARGV[0] );
+my $APPLICATION_NAME = $0;
+
+# create XML parser
+my $tpp = XML::TreePP->new();
+
+my $hasmore = 1;
+my $state = undef;
+
+while ( $hasmore ) {
+    
+    my $urls;
+    my $titles;
+    my $descriptions;
+
+    ($hasmore, $state, $urls, $titles, $descriptions) = send_request($state);
+
+    for (my $i=0; $i<scalar(@{$urls}); $i++) {
+	
+	my $url = $urls->[ $i ];
+	my $title = $titles->[ $i ];
+	my $description = $descriptions->[ $i ];
+
+	if ( $output_mode eq 'line' ) {
+	    print " ";
+	}
+	print join("\t",$url,$title,$description);
+	if ( $output_mode ne 'line' ) {
+	    print "\n";
+	}
+    
+    }
+
+    sleep( $state->{'sleep_time'} );
+    
+}
+
+sub get_parsed_content {
+
+    my $url = shift;
+
+    print STDERR "requesting: $url\n";
+
+    my $data = `wget --user-agent=Firefox/1.5.0.12 -q -O - '$url'`;
+    my $tree = $tpp->parse($data);
+
+    return $tree;
+
+}
+
+sub send_request {
+
+    if ( !defined($state) ) {
+	$state = {
+	    'offset' => 0,
+	    'n_requested' => 20,
+	    'sleep_time' => 1.5
+	}
+    }
+
+    my $offset = $state->{'offset'};
+    my $n_requested = $state->{'n_requested'};
+
+    my $method = "send_request_" . $service;
+    no strict;
+    return &{$method}( $state , $offset , $n_requested );
+
+}
+
+sub send_request_bing {
+
+    my $state = shift;
+    my $offset = shift;
+    my $n_requested = shift;
+
+    my $bing_url = "http://api.search.live.net/xml.aspx?Appid=49E0BC62060A2798DD888178F2B514D0751627A1&query=$query&sources=web&offet=$offset";
+    my $tree = get_parsed_content($bing_url);
+
+    my @urls;
+    my @titles;
+    my @descriptions;
+
+    if ( $tree ) {
+	
+	if ( defined( $tree->{'SearchResponse'}->{'web:Web'}->{'web:Results'}->{'web:WebResult'} ) ) {
+	    
+	    if ( ref($tree->{'SearchResponse'}->{'web:Web'}->{'web:Results'}->{'web:WebResult'}) eq 'ARRAY' ) {
+		
+		foreach my $result (@{$tree->{'SearchResponse'}->{'web:Web'}->{'web:Results'}->{'web:WebResult'}}) {
+		    
+		    push @urls, $result->{'web:Url'};
+		    push @titles, $result->{'web:Title'};
+		    push @descriptions, $result->{'web:Description'};
+
+		    $state->{offset}++;
+		    
+		}
+		
+	    }
+	    else {
+		
+		push @urls, $tree->{'SearchResponse'}->{'web:Web'}->{'web:Results'}->{'web:WebResult'}->{'web:Url'};
+		push @titles, $tree->{'SearchResponse'}->{'web:Web'}->{'web:Results'}->{'web:WebResult'}->{'web:Title'};
+		push @descriptions, $tree->{'SearchResponse'}->{'web:Web'}->{'web:Results'}->{'web:WebResult'}->{'web:Description'};
+
+		$state->{offset}++;
+		
+	    }
+	    
+	}
+	
+    }
+    
+    my $hasmore = 0;
+    if ( scalar(@urls) == $state->{'n_requested'} ) {
+	$hasmore = 1;
+    }
+    else {
+	print STDERR "will stop here: " . join("/", scalar(@urls), $state->{'offset'}) . "\n";
+    }
+    
+    return ($hasmore, $state, \@urls, \@titles, \@descriptions);
+    
+}
+
+sub send_request_google {
+
+    my $state = shift;
+    my $offset = shift;
+    my $n_requested = shift;
+
+    my $google_url = "https://research.google.com/university/search/service?clid=websummarization-cs.columbia.edu&start=$offset&rsz=large&q=$query";
+    my $tree = get_parsed_content($google_url);
+
+    my @urls;
+    my $maximum_index = 0;
+
+    if ( $tree ) {
+
+	$maximum_index = $tree->{'GSP'}->{'RES'}->{'M'};
+	
+	if ( defined( $tree->{'GSP'}->{'RES'}->{'R'} ) ) {
+	    
+	    if ( ref($tree->{'GSP'}->{'RES'}->{'R'}) eq 'ARRAY' ) {
+		
+		foreach my $result (@{$tree->{'GSP'}->{'RES'}->{'R'}}) {
+		    
+		    push @urls, $result->{'U'};
+		    
+		    $state->{offset}++;
+		    
+		}
+		
+	    }
+	    else {
+		
+		push @urls, $tree->{'GSP'}->{'RES'}->{'R'}->{'U'};
+		
+		$state->{offset}++;
+		
+	    }
+	    
+	}
+	
+    }
+
+    my $hasmore = 0;
+    if ( scalar(@urls) == $state->{'n_requested'} ) {
+	$hasmore = 1;
+    }
+    else {
+	print STDERR "will stop here: " . join("/", scalar(@urls), $maximum_index || 0, $state->{'offset'}) . "\n";
+    }
+
+    return ($hasmore, $state, \@urls);
+
+}
+
+if ( $output_mode eq 'line' ) {
+    print "\n";
+}
+
+1;

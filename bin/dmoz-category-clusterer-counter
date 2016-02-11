@@ -1,0 +1,69 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../data/src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use JSON;
+
+my $total_categories = 0;
+my $total_count = 0;
+my $total_clusters = 0;
+my $total_cluster_instances = 0;
+my $total_main_cluster_instances = 0;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+    my $category = shift @fields;
+    my $category_count = shift @fields;
+    my $cluster_count = shift @fields;
+    my $clusterability = shift @fields;
+    my $individual_cluster_counts_json = shift @fields;
+    my $largest_cluster_size = shift @fields;
+    my $largest_cluster_ratio = shift @fields;
+
+    my $individual_cluster_counts = decode_json( $individual_cluster_counts_json );
+
+=pod
+    my %cluster_counts_at;
+    foreach my $cluster_count_threshold (( 3 , 5 , 10 , 20 , 30 , 40 , 50 , 100 );
+    map {
+	if ( $_ >= 3 ) {
+	    $cluster_count
+	}
+    } ( 3 , 5 , 10 , 20 , 30 , 40 , 50 , 100 );
+=cut
+
+    # update categories stats
+    $total_categories++;
+    $total_count += $category_count;
+
+    # main clusters stats
+    $total_main_cluster_instances += $largest_cluster_size;
+
+    map {
+	$total_clusters++;
+	$total_cluster_instances += $_;
+    }
+    grep { $_ >= 2 }
+    @{ $individual_cluster_counts };
+
+}
+
+# category count
+print join( "\t" , 'categories' , $total_categories , $total_count ) . "\n";
+
+# main cluster count
+print join( "\t" , 'main-clusters' , $total_categories , $total_main_cluster_instances ) . "\n";
+
+# sub-clusters count
+print join( "\t" , 'clusters' , $total_clusters , $total_cluster_instances ) . "\n"; 
+
+1;

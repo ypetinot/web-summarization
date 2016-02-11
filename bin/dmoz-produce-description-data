@@ -1,0 +1,70 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Text::Trim;
+use XML::TreePP;
+
+binmode(STDIN, ":utf8");
+binmode(STDOUT, ":utf8");
+
+sub add_document {
+
+    my %args = @_;
+
+    my $url = $args{url};
+    my $title= $args{title} || '';
+    my $description = $args{description};
+    my $topic = $args{topic} || '';
+
+    if ( !$url || !$description ) {
+	return;
+    } 
+
+    print "$url\t$title\t$description\t$topic\n";
+
+}
+
+# create XML parser
+my $tpp = XML::TreePP->new();
+
+my $document_count = 0;
+
+while(<STDIN>) {
+
+    chomp;
+    my $line = trim($_);
+
+    if ( $line =~ m/^<ExternalPage /o ) {
+	# accumulate record
+        my $record = "$line";
+        while ( <STDIN> ) {
+            chomp;
+            my $line = trim($_);
+
+            $record .= $line;
+
+            if ( $line =~ m/^<\/ExternalPage>/o ) {
+                last;
+            }
+        }
+
+	my $tree = $tpp->parse($record);
+	my $url = $tree->{'ExternalPage'}->{'-about'};
+	my $title = $tree->{'ExternalPage'}->{'d:Title'};
+	my $description = $tree->{'ExternalPage'}->{'d:Description'};
+	my $topic = $tree->{'ExternalPage'}->{'topic'};
+
+	add_document(url => $url, title => $title, description => $description, topic => $topic);
+	$document_count++;
+
+	if ( $document_count % 1000 == 0 ) {
+	    print STDERR "$document_count ...\n";
+	}
+    }
+
+}

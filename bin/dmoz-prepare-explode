@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# This scripts takes rendered DMOZ data on STDIN and "explodes" it into individual files containing each separate field from the original file.
+# The exploded files are guaranteed to all have the same number of lines
+
+TARGET_DIRECTORY=$1
+mkdir -p ${TARGET_DIRECTORY}
+
+CWD=${PWD}
+cd ${TARGET_DIRECTORY}
+
+INFO_FILE_PREFIX=dmoz.rendered
+
+INFO_FILE_HIERARCHY=${INFO_FILE_PREFIX}.hierarchy
+INFO_FILE_TITLE=${INFO_FILE_PREFIX}.title
+INFO_FILE_CATEGORY=${INFO_FILE_PREFIX}.category
+INFO_FILE_DESCRIPTION=${INFO_FILE_PREFIX}.description
+INFO_FILE_CONTENT=${INFO_FILE_PREFIX}.content
+INFO_FILE_URL=${INFO_FILE_PREFIX}.url
+
+cat | awk -F"\t" -v fn_info_file_hierarchy="${INFO_FILE_HIERARCHY}" -v fn_info_file_title="${INFO_FILE_TITLE}" -v fn_info_file_category="${INFO_FILE_CATEGORY}" -v fn_info_file_description="${INFO_FILE_DESCRIPTION}" -v fn_info_file_content="${INFO_FILE_CONTENT}" -v fn_info_file_url="${INFO_FILE_URL}" '{ print $2 > fn_info_file_hierarchy; print $3 > fn_info_file_url; print $4 > fn_info_file_title; print $5 > fn_info_file_description; print $6 > fn_info_file_category; print $7 > fn_info_file_content; }'
+
+cd ${CwD}

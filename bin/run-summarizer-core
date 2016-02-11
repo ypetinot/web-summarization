@@ -1,0 +1,136 @@
+#!/bin/bash -x
+
+# TODO : to be removed (partially started)
+
+# Check arguments
+if [[ -z "${CATEGORY_BASE}" || -z "${RUN_ID}" ]]; then
+    echo "Usage: $0 <category-base> --id <run-id>";
+    echo "Got: $@";
+    exit 1;
+fi
+
+CATEGORY_BASE_DIRECTORY=`dirname ${CATEGORY_BASE}`
+CATEGORY_BASE_NAME=`basename ${CATEGORY_BASE}`
+
+if [ -z "${SYSTEMS}" ]; then
+    echo "No summarization system requested ...";
+    exit 2;
+fi
+
+if [[ -z "${GENERATION_DIR}" ]]; then
+    echo "No generation output directory provided ...";
+    exit 3;
+fi
+
+# Mead Summarization base
+MEAD_SUMMARIZER_BASE="${SUMMARIZERS_ROOT}/mead-summarizer/";
+MEAD_SUMMARIZER_BIN="${MEAD_SUMMARIZER_BASE}/bin/";
+
+# Mead Summarization base
+# TODO: remove need for these variables
+DELORT_SUMMARIZER_BASE="${SUMMARIZERS_ROOT}/delort-summarizer/";
+DELORT_SUMMARIZER_BIN="${DELORT_SUMMARIZER_BASE}/bin/";
+
+# Graph Summarization base
+GRAPH_SUMMARIZER_BASE="${SUMMARIZERS_ROOT}/graph-summarizer/";
+GRAPH_SUMMARIZER_BIN="${GRAPH_SUMMARIZER_BASE}/bin/";
+
+# Title Summarization base
+TITLE_SUMMARIZER_BASE="${SUMMARIZERS_ROOT}/title-summarizer/";
+TITLE_SUMMARIZER_BIN="${TITLE_SUMMARIZER_BASE}/bin/";
+
+# Folds file
+FOLDS_FILE=${CATEGORY_BASE}.folds
+  
+# List folds
+# TODO ?
+FOLDS=0
+
+# Generate folds if needed
+if [[ ! -f ${FOLDS_FILE} ]]; then
+    ${BINDIR}/dmoz-create-folds 'leave-p-out' ${CATEGORY_BASE} 10;
+fi
+
+# Process each fold individually
+for FOLD in ${FOLDS}; do
+
+    #RUN=`echo ${FOLD} | sed "s/.folds/.runs.${RUN_ID}/"`;
+    RUN=${GENERATION_DIR}/${FOLD}/${CATEGORY_BASE_NAME}
+
+    #echo "Processing fold: ${FOLD} / ${MODEL}";
+    rm -rf ${RUN} && mkdir -p ${RUN}
+
+    # process each model type independently
+    for system_type in ${SYSTEMS}; do
+    
+	GENERATION_OUTPUT_FILE=`mktemp -p ${RUN} gists.XXXXXXXX`;
+	GENERATION_ERROR_FILE="${GENERATION_OUTPUT_FILE}.err";
+
+	TEMP_FOLD_ANCHORTEXT_EXTENDED=`mktemp`;
+	${BINDIR}/dmoz-category-fold --test ${FOLD} ${CATEGORY_BASE} --fields="content anchortext" > ${TEMP_FOLD_ANCHORTEXT_EXTENDED} 2>> ${GENERATION_ERROR_FILE}
+	
+	TEMP_FOLD_TITLE=`mktemp`;
+	${BINDIR}/dmoz-category-fold --test ${FOLD} ${CATEGORY_BASE} --fields="title" > ${TEMP_FOLD_TITLE} 2>> ${GENERATION_ERROR_FILE}
+
+        # Run requested summarization system ...
+	case ${system_type} in
+
+	    # TODO: broken
+	    mead)
+		${MEAD_SUMMARIZER_BIN}/run-summarizer "content" ${TEMP_FOLD_ANCHORTEXT_EXTENDED} > ${GENERATION_OUTPUT_FILE} 2>> ${GENERATION_ERROR_FILE}
+		;;
+
+	    delort)
+		cat ${TEMP_FOLD_ANCHORTEXT_EXTENDED} | ${DELORT_SUMMARIZER_BIN}/run-summarizer --mode=mixed > ${GENERATION_OUTPUT_FILE} 2>> ${GENERATION_ERROR_FILE}
+		cat ${TEMP_FOLD_ANCHORTEXT_EXTENDED} | ${DELORT_SUMMARIZER_BIN}/run-summarizer --mode=context >> ${GENERATION_OUTPUT_FILE} 2>> ${GENERATION_ERROR_FILE}
+		;;
+	    
+	    ocelot)
+		${OCELOT_SUMMARIZER_BIN}/apply-ocelot ${FOLD} > ${GENERATION_OUTPUT_FILE} 2>> ${GENERATION_ERROR_FILE}
+		;;
+	    
+	    graph)
+		MODEL=`echo ${FOLD} | sed 's/.folds/.models/'`;
+		mkdir -p ${MODEL}
+		# When no error is reported in the logs
+		#${GRAPH_SUMMARIZER_BIN}/run-summarizer ${CATEGORY_BASE} ${FOLD} ${MODEL} --fix --train --test --config=${GRAPH_CONFIGURATION} > ${GENERATION_OUTPUT_FILE} 2>> ${GENERATION_ERROR_FILE}
+		# When an error is reported, regenerate all ...
+		${GRAPH_SUMMARIZER_BIN}/run-summarizer ${CATEGORY_BASE} ${FOLD} ${MODEL} --cluster --train --test --config=${GRAPH_CONFIGURATION} > ${GENERATION_OUTPUT_FILE} 2>> ${GENERATION_ERROR_FILE}
+		;;
+
+	    # Version as of IJCNLP-2013
+	    graph2)
+		${SUMMARIZERS_ROOT}/graph-summarizer-2/bin/run-summarizer "${SUMMARIZERS_ROOT}/graph-summarizer-2/bin/makefile.graph2" "category-clean-minimal graph2-clean graph2-test" ${CATEGORY_BASE_DIRECTORY} ${FOLD} ${CATEGORY_BASE_NAME} > ${GENERATION_OUTPUT_FILE} 2>> ${GENERATION_ERROR_FILE}
+		;;
+
+	    # Dev
+	    graph4)
+		# ... should we create an overgenerator component in the system ? (also usable during training ?)+
+		${SUMMARIZERS_ROOT}/graph-summarizer-4/bin/run-summarizer "${SUMMARIZERS_ROOT}/graph-summarizer-4/bin/makefile.graph4" "graph4-clean" "graph4-test" ${REPOSITORY_BASE_DIRECTORY} ${CATEGORY_BASE_DIRECTORY} ${FOLD} ${CATEGORY_BASE_NAME} "${GRAPH_CONFIGURATION}" > ${GENERATION_OUTPUT_FILE} 2>> ${GENERATION_ERROR_FILE}
+		;;
+
+	    title)
+		cat ${TEMP_FOLD_TITLE} | ${TITLE_SUMMARIZER_BIN}/run-summarizer > ${GENERATION_OUTPUT_FILE} 2>> ${GENERATION_ERROR_FILE}
+		;;
+
+	    *)
+		echo "System type ${system_type} is not supported ..."
+		exit 1;
+		
+	esac
+
+	rm -rf ${TEMP_FOLD_ANCHORTEXT_EXTENDED} ${TEMP_FOLD_TITLE};
+
+	# dump important errors
+	cat ${GENERATION_ERROR_FILE} | grep -i error 1>&2
+    
+        #TODO: can we output something more informative than the system type ?
+	echo -e "${CATEGORY_BASE}\t${FOLD}\t${system_type}\t${GENERATION_OUTPUT_FILE}\t${MODEL}"
+	
+    done
+
+    # no cross-validation for now ...
+    break;
+
+# we move on to the next category
+done;

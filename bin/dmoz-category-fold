@@ -1,0 +1,191 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../summarizers/graph-summarizer/src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use Getopt::Long;
+use Pod::Usage;
+use Text::Trim;
+
+use DMOZ::CategoryRepository;
+use DMOZ::GlobalData;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+my @requested_fields;
+my $mode_test = 0;
+my $mode_train = 0;
+my $no_url = 0;
+my $require_field = undef;
+my $global_data_base = undef;
+my $repository_base = undef;
+
+#Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, man => \$man, 'debug|d' => \$debug, 'fields=s{1,}' => \@requested_fields,
+	   'require-field=s' => \$require_field, 'no-url' => \$no_url, 'test' => \$mode_test , 'train' => \$mode_train,
+	   'global-data-base=s' => \$global_data_base , 'repository-base=s' => \$repository_base) or pod2usage(2);
+
+# fold id
+my $category_data_fold_id = shift @ARGV;
+
+# category base (optional)
+my $has_category_data_base = ( scalar( @ARGV ) > 0 );
+
+if ( ! defined( $category_data_fold_id ) ) {
+    die "Please specify a fold id ...";
+}
+
+# Note : ok ?
+if ( !$mode_train && !$mode_test ) {
+    $mode_train = $mode_test = 1;
+}
+
+pod2usage(-exitstatus => 255 , -verbose => 2) if ( $help || ! $global_data_base || ! $repository_base || ! defined( $category_data_fold_id ) );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+binmode(STDIN,':utf8');
+binmode(STDOUT,':utf8');
+
+sub usage() {
+    return "Usage: $0 <fold-id> [<category-base>] --mode={test|train} --repository-base=<repository-base>[--fields=<field1>[,<field2>,<fieldN>]]"
+}
+
+# Special fields
+my $FIELD_SPECIAL_BASE = '_base';
+my $FIELD_SPECIAL_FOLD = '_fold';
+my $FIELD_SPECIAL_CATEGORY = '_category';
+my $FIELD_SPECIAL_CATEGORY_PATH = '_category_path';
+my $FIELD_SPECIAL_URL = '_url';
+
+# load data resources (needed at least for evaluation purposes)
+my $global_data = new DMOZ::GlobalData( data_directory => $global_data_base );
+my $category_repository = new DMOZ::CategoryRepository( global_data => $global_data , repository_root => $repository_base );
+
+my @to_process;
+if ( $has_category_data_base ) {
+    push @to_process, @ARGV;
+}
+
+# Note : by default include URL as first field
+if ( ! $no_url ) {
+    unshift @requested_fields, $FIELD_SPECIAL_URL;
+}
+
+while ( 1 ) {
+
+    my $current_category_base = ( shift @to_process ) || ( $has_category_data_base ? undef : _stdin_next() );
+    if ( ! $current_category_base ) {
+	last;
+    }
+  
+    # category base
+    if ( ! -f $current_category_base ) {
+	die "Category base does not exist: $current_category_base";
+    }
+  
+    # instantiate category data fold
+    # TODO : does it make sense to require the category repository ?
+    my @data;
+    eval {
+
+	my $category_data_fold = Category::Data->new( repository => $category_repository , 'category_data_base' => $current_category_base )->folds->get_fold( $category_data_fold_id );
+	
+	# skip categories for which folds are not defined
+	if ( ! defined( $category_data_fold ) ) {
+	    print STDERR ">> Unable to load fold for category ($current_category_base), skipping ...\n";
+	    next;
+	}
+	
+	if ( $mode_train ) {
+	    push @data, @{ $category_data_fold->fold_data };
+	}
+	
+	if ( $mode_test ) { 
+	    push @data , @{ $category_data_fold->test_data };
+	}
+
+    };
+    
+    if ( ! scalar( @data ) || $@ ) {
+	print STDERR ">> Unable to load data category ($current_category_base / $mode_train / $mode_test) ...";
+	next;
+    }
+    
+    for (my $i = 0; $i<scalar(@data); $i++) {
+	
+	my $entry = $data[ $i ];
+	my $url = $entry->url;
+	my $url_data = $entry->get_data;
+	
+    # Why is this making requested_field filled with undef refs after the first iteration ???
+    #    my @mapped_data = map { $test_entry->get_field( $_ ) || '' } @requested_fields;
+    #    my @mapped_data = @requested_fields;
+	
+	if ( defined( $require_field ) ) {
+	    if ( ! length ( $url_data->get_field( $require_field ) ) ) {
+		print STDERR "Skipping URL (missing field data: $require_field): $url\n";
+		next;
+	    }
+	}
+
+	my @mapped_data;
+
+	foreach my $requested_field ( @requested_fields ) {
+
+	    if ( $requested_field eq $FIELD_SPECIAL_BASE ) {
+		push @mapped_data, $current_category_base;
+	    }
+	    elsif ( $requested_field eq $FIELD_SPECIAL_FOLD ) {
+		push @mapped_data, $category_data_fold_id;
+	    }
+	    elsif ( $requested_field eq $FIELD_SPECIAL_CATEGORY ) {
+		# TODO : clean this up ?
+		push @mapped_data , $entry->category_data->url_category( $url );
+	    }
+	    elsif ( $requested_field eq $FIELD_SPECIAL_CATEGORY_PATH ) {
+		push @mapped_data, _category_path( $current_category_base );
+	    }
+	    elsif ( $requested_field eq $FIELD_SPECIAL_URL ) {
+		push @mapped_data , $url_data->{'url'};
+	    }
+	    elsif ( $entry->has_field( $requested_field ) ) {
+		push @mapped_data, $entry->get_field( $requested_field );
+	    }
+	}
+	
+	print join( "\t" , @mapped_data ) . "\n";
+	
+    }
+    
+}
+
+sub _category_path {
+
+    my $category_base = shift;
+
+    my $category_path = $category_base;
+    $category_path =~ s/^(.*)Top/Top/si;
+    
+    return $category_path;
+
+}
+
+sub _stdin_next {
+
+    my $next = <STDIN>;
+
+    if ( defined( $next ) ) {
+	chomp $next;
+    }
+
+    return $next;
+    
+}
+    
+1;

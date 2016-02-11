@@ -1,0 +1,29 @@
+# Provides support for feature-based summarizers
+
+BINDIR := $(dir $(lastword $(MAKEFILE_LIST)))
+
+default:
+
+include $(BINDIR)/makefile.category.preprocessing
+
+# TODO : turn this into a function ?
+#FEATURES:=content.rendered.ngrams.1/binary/decode_json/count_filter::2 content.rendered.ngrams.2/binary/decode_json/count_filter::2 content.rendered.ngrams.3/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.1/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.2/binary/decode_json/count_filter::2 anchortext.sentence.ngrams.3/binary/decode_json/count_filter::2 anchortext.basic.ngrams.1/binary/decode_json/count_filter::2 anchortext.basic.ngrams.2/binary/decode_json/count_filter::2 anchortext.basic.ngrams.3/binary/decode_json/count_filter::2 title.ngrams.1/binary/decode_json/count_filter::2 title.ngrams.2/binary/decode_json/count_filter::2 title.ngrams.3/binary/decode_json/count_filter::2 url.words.ngrams.1/binary/decode_json/count_filter::2 url.words.ngrams.2/binary/decode_json/count_filter::2 url.words.ngrams.3/binary/decode_json/count_filter::2
+
+FEATURES:=content.rendered.ngrams.1/binary/decode_json/count_filter::2 content.rendered.ngrams.2/binary/decode_json/count_filter::2 content.rendered.ngrams.3/binary/decode_json/count_filter::2 title.ngrams.1/binary/decode_json/count_filter::2 title.ngrams.2/binary/decode_json/count_filter::2 title.ngrams.3/binary/decode_json/count_filter::2 url.words.ngrams.1/binary/decode_json/count_filter::2 url.words.ngrams.2/binary/decode_json/count_filter::2 url.words.ngrams.3/binary/decode_json/count_filter::2
+
+ifndef FEATURES
+$(error $(LINE_HEADING) No features definition provided, cannot proceed ...)
+else
+###$(warning $(LINE_HEADING) Features: $(FEATURES))
+endif
+
+FEATURES_NO_SPEC=$(strip $(foreach feature, $(FEATURES), $(shell echo "$(feature)" | sed 's/\/.*//' )) )
+FEATURES_PREREQUISITES=$(patsubst %, $(CATEGORY).%, $(FEATURES_NO_SPEC))
+FEATURES_PREREQUISITES_MAPPING=$(patsubst %, %.mapping, $(FEATURES_PREREQUISITES))
+
+.DELETE_ON_ERROR:
+
+# TODO : this is probably not what the pre-requisites should be (?)
+#%.features: $(FEATURES_PREREQUISITES)
+%.features: $(foreach feature_no_spec, $(FEATURES_NO_SPEC), %.$(feature_no_spec))
+	cat $* | awk -F"\t" '{ print "$*/" NR FS $$1 FS $$2 FS "$*" }' | perl $(BINDIR_DATA)/generate-features --global-data=$(ROOTDIR_DATA) --repository-base=$(DMOZ_REPOSITORY_BASE) --features="$(FEATURES)" > $@

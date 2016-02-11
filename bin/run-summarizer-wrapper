@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# TODO: turn this into a perl script to further optimize execution speed (especially to void having to reload category data multiple times) 
+
+# Generates a single file with all experiment data/paths
+# (this file can later be used by evaluation scripts)
+
+# Input parameters:
+# * base category data path
+
+# Experiment description:
+# * run generation for all folds (10 fold) and all available model/generation algorithms
+
+BINDIR=`dirname $0`;
+SYSTEM=$1
+URL=$2
+SUMMARIZER_CONFIGURATION=$3
+
+if [[ -z "${SYSTEM}" || -z "${URL}" ]]; then
+    echo "Usage: $0 <system> <url|instance-file>";
+    echo "Systems available: graph4-base-ranking";
+    exit 1;
+fi
+
+source ${BINDIR}/../dist.rc
+
+# TODO : --summarizer-root should not be necessary
+SUMMARIZER_BASE=${BINDIR}/../summarizers/graph-summarizer-4/
+
+if [ -z "${SUMMARIZER_CONFIGURATION}" ]; then
+    SUMMARIZER_CONFIGURATION=${SUMMARIZER_BASE}/conf/configuration.json
+fi
+
+function _input_stream() {
+    if [ -f ${URL} ]; then
+	cat ${URL}
+    else
+	echo "${URL}"
+    fi
+}
+
+# TODO : add a commandline option for debug
+_input_stream | ${SUMMARIZER_BASE}/bin/run-summarizer --system="${SYSTEM}" --fold-id=0 --system-configuration="${SUMMARIZER_CONFIGURATION}" 0 --run-analysis --debug

@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# CURRENT : if this is not running on the data repository host, need to connect through the rsync server ...
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../dist.rc
+
+SHORTOPTS="hdm:"
+LONGOPTS="help,debug,max:"
+
+ARGS_COPY=$@
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+function usage() {
+    echo "Usage: $0 [<fold-id> [<app> <app-args-pre> <app-args-post>]]"
+}
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+	-d | --debug )
+	    DEBUG=1; shift 1;;
+	-m | --max )
+	    MAX_CATEGORIES=$2; shift 2;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+FOLD_ID=$1
+APP=$2
+APP_ARGS_PRE=$3
+APP_ARGS_POST=$4
+
+# category counter
+n=0
+
+# Note : this used to be necessary => $(BINDIR_DIST)/dmoz-category-check folds $(FIELDS_REQUIRED_EXPANDED)
+
+# CURRENT: how do deal with a repository root on a remote host ?
+# ssh ${DMOZ_REPOSITORY_HOST} find
+# ${FIND}
+ssh ${DMOZ_REPOSITORY_HOST} find ${DMOZ_REPOSITORY_BASE}/ -maxdepth 5 -type f -name '*.summary' | sed 's/.summary$//' | while read CATEGORY_BASE; do
+
+    n=$(( ${n} + 1 ))
+
+    if [[ ! -z "${FOLD_ID}" ]]; then 
+	
+        # 1 - make sure the fold data exists
+	${BINDIR}/run-make ${BINDIR}/makefile.category ${CATEGORY_BASE}.folds ${CATEGORY_BASE} ${FOLD_ID}
+	
+        # 2 - run target app
+	if [[ ! -z "${APP}" ]]; then
+	    echo ${APP} ${APP_ARGS_PRE} ${CATEGORY_BASE} ${APP_ARGS_POST}
+	fi
+
+    else
+
+	# by default we simply print out the category base
+	echo ${CATEGORY_BASE}
+
+    fi
+
+    if [[ ! -z "${MAX_CATEGORIES}" ]]; then
+	if [[ ${n} -ge ${MAX_CATEGORIES} ]]; then
+	# this is a normal end
+	    exit 0
+	fi
+    fi
+
+done;

@@ -1,0 +1,64 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use IO::File;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $main_entry = $_;
+    my @main_entry_fields = split /\t/, $main_entry;
+
+    my $category_base = shift @main_entry_fields;
+    my $fold = shift @main_entry_fields;
+    my $system_type = shift @main_entry_fields;
+    my $generation_output_file = shift @main_entry_fields;
+    my $model = shift @main_entry_fields || '';
+
+    my %system2file;
+    my %system2fh;
+
+    open GENERATION_OUTPUT_FILE, $generation_output_file or die "Unable to open generation output file ($generation_output_file): $!";
+    while ( <GENERATION_OUTPUT_FILE> ) {
+	
+	chomp;
+	
+	my $output_entry = $_;
+	my @output_fields = split /\t/, $output_entry;
+
+	my $url = shift @output_fields;
+	my $generated_gist = shift @output_fields;
+	my $summarizer_id = shift @output_fields;
+	my $serialized_gist_data = shift @output_fields;
+	my $serialized_model_state = shift @output_fields;
+
+	if ( ! defined( $system2fh{ $summarizer_id } ) ) {
+	    my $filename = join(".", $generation_output_file, $summarizer_id);
+	    my $fh = IO::File->new("> $filename");
+	    $system2fh{ $summarizer_id } = $fh;
+	    $system2file{ $summarizer_id } = $filename;
+	}
+
+	my $fh = $system2fh{ $summarizer_id };
+	print $fh "$output_entry\n";
+
+    }
+    close GENERATION_OUTPUT_FILE;
+   
+    # close individual files
+    foreach my $system ( keys( %system2file ) ) {
+
+	my $filename = $system2file{ $system };
+	my $fh = $system2fh{ $system };
+
+	print join("\t", $category_base, $fold, $system, $filename, $model) . "\n";
+	$fh->close();
+
+    }
+
+}
+
+1;

@@ -1,0 +1,64 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../src/perl/";
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use File::Path;
+use Getopt::Long;
+use Pod::Usage;
+
+use DMOZ::CategoryRepository;
+
+my $man = 0;
+my $help = 0;
+my $field = undef;
+my $category_file = 0;
+
+GetOptions(
+    'help|?' => \$help,
+    man => \$man,
+    'field=s' => \$field,
+    'category-file' => \$category_file,
+    ) or pod2usage(2);
+pod2usage(1) if $help || (scalar(@ARGV) != 1);
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+my $repository_root = shift @ARGV;
+
+if ( ! -d $repository_root ) {
+    die "Invalid repository root: $repository_root";
+}
+
+# load repository
+my $repository = new DMOZ::CategoryRepository($repository_root);
+if ( ! $repository ) {
+    die "Unable to instantiate repository using root: $repository_root";
+}
+
+
+while (<STDIN>) {
+
+    chomp;
+    my $category_name = $_;
+
+    my $result = undef;
+    
+    if ( $category_file ) {
+	$result = $repository->get_category_filename($category_name);
+    }
+    elsif ( $field ) {
+	$result = $repository->get_category_field_filename($category_name, $field);
+    }
+    else {
+	die "Invalid parameters ...";
+    }
+
+    print "$result\n";
+
+}
+
+1;

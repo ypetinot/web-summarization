@@ -1,0 +1,118 @@
+#!/usr/bin/env perl
+
+# generates various statistics based on the content of HTML page
+
+use strict;
+use warnings;
+
+binmode(STDIN, ":encoding(utf8)");
+binmode(STDOUT, ":utf8");
+
+use FindBin;
+use lib "$FindBin::Bin/../src/perl/";
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use HTML::HeadParser;
+use HTML::LinkExtor;
+use HTML::Parser;
+use JSON qw/from_json to_json/;
+use List::Util qw/max min/;
+use List::MoreUtils qw/pairwise/;
+use WWW::Mechanize;
+
+use HTMLTokenizer;
+use Tokenizer;
+use Vocabulary;
+
+# set autoflush
+$| = 1;
+
+# TODO
+# do we want to make the tokenization/rendering algorithm configurable ?
+#if ( scalar(@ARGV) != 1 ) {
+#   die "Usage: $0 <vocabulary_base> <source_target_vocabulary_size> <output_target_vocabulary_size>";
+#}
+
+my $line_count = 0;
+
+while (<STDIN>) {
+    
+    chomp;
+    
+    my $line = $_;
+    $line_count++;
+
+    # can we abstract the parsing code into its own class ?
+    my @fields = split /\t/, $line;
+
+    my $url = shift @fields;
+    my $content = shift @fields;
+
+    print STDERR "[$0] processing record for $url ...\n";
+
+    my $header_frequencies = {};
+    my $body_frequencies = {};
+    my $link_frequencies = {};
+
+    my $processed_content = undef;
+
+    # tokenizers
+    my $text_tokenizer = new Tokenizer();
+    my $html_tokenizer = new HTMLTokenizer( renderer => 'HTMLRenderer' );
+
+    eval {
+
+	# parse header only
+	my $header_parser = HTML::HeadParser->new;
+	$header_parser->parse($content);
+	$header_frequencies = _generate_frequencies( $text_tokenizer , $header_parser->header('Title') );
+
+	# parse entire document
+	$body_frequencies = _generate_frequencies( $html_tokenizer , $content );
+	
+	# update body frequencies based on header frequencies
+	# map { $body_frequencies->{$_} = max(0,$body_frequencies->{$_}-$header_frequencies->{$_}); } keys(%$header_frequencies);
+
+	# parse-out links
+	my $mech = new WWW::Mechanize();
+	$mech->update_html($content);
+	my @links = $mech->links();
+	foreach my $link (@links) {
+	    my $link_text = $link->text();
+	    my $single_link_frequencies = _generate_frequencies( $text_tokenizer , $link_text );
+	    map { $link_frequencies->{$_}++ } keys(%$single_link_frequencies);
+	}
+	
+    };
+
+    # generate output
+    $processed_content = to_json( { 'header' => $header_frequencies , 'body' => $body_frequencies , 'link' => $link_frequencies } );
+
+    if ( @! ) {
+	print STDERR "parsing/tokenization exception: $url\n";
+	$processed_content = '__ERROR_DURING_RENDERING_STAGE__';
+    }
+
+    print join("\t", $url, $processed_content) . "\n";
+
+}
+
+sub _generate_frequencies {
+
+    my $tokenizer = shift;
+    my $content = shift;
+    
+    # tokenize content
+    my @tokens = @{ $tokenizer->tokenize($content) };
+
+    # generate frequencies
+    my %token2frequency;
+    map { $token2frequency{$_}++; } @tokens;
+
+    return \%token2frequency;
+
+}
+
+exit(0);
+
+1;

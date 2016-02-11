@@ -1,0 +1,127 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Cache::FileCache;
+use Getopt::Long;
+use LWP;
+use Pod::Usage;
+
+#use WWW::Mechanize;
+
+my $man = 0;
+my $help = 0;
+my $list = undef;
+my $mode = 'full';
+my $output_type = 'plain';
+my $output = undef;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, man => \$man, 'list=s' => \$list, 'output-type=s' => \$output_type, 'output=s' => \$output, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( $#ARGV != 0 && !$list);
+pod2usage(-exitstatus => 0) if ( ($output_type eq "cache") && !$output );
+
+# create user agent
+#my $mech = WWW::Mechanize->new();
+#$mech->timeout(5);
+#$mech->agent_alias( 'Linux Mozilla' );
+my $ua = LWP::UserAgent->new;
+$ua->agent("Linux Mozilla");
+
+# die "Usage: $0 --list <URL_LIST> [--output xml] | <URL>";
+
+my $target_url = $ARGV[0];
+
+my @urls;
+
+if ( $list ) {
+    open URLS_FILE, $list || die "unable to open list of urls: $list";
+    @urls = map { chomp; $_; } <URLS_FILE>;
+    close URLS_FILE;
+}
+else {
+    push @urls, $target_url;
+}
+
+my $cache = undef;
+if ( $output_type eq 'xml' ) {
+
+    # TODO
+
+}
+else {
+
+    $cache = new Cache::FileCache( { 'namespace' => $target_url, 
+				     'default_expires_in' => ${Cache::EXPIRES_NEVER},
+				     'cache_root' => $output } );
+
+}
+
+# download each URL
+foreach my $url (@urls) {
+
+    my $url_content = _get_url_content($url);
+
+    if ( !$url_content ) {
+	next;
+    }
+
+    if ( $output_type eq 'xml' ) {
+	# TODO
+    }
+    else {
+	$cache->set($url, $url_content);
+    }
+
+}
+
+# actual download content
+sub _get_url_content {
+
+    my $url = shift;
+
+    my $content = undef;
+
+    #my $response = undef;
+    #eval {
+    #    $response = $mech->get( $url );
+    #};
+    #if ( !$mech->success() ) {
+    #    if ( $debug ) {
+    #        print STDERR "failed to download $url\n";
+    #    }
+    #}
+    #else {
+    #	$content = $mech->content();
+    #}
+    
+    # Create a request
+    my $req = HTTP::Request->new(GET => $url);
+
+    # Pass request to the user agent and get a response back
+    my $res = $ua->request($req);
+
+    # Check the outcome of the response
+    if ($res->is_success) {
+	$content = $res->content;
+    }
+    else {
+	print STDERR "failed to download $url: " . $res->status_line . "\n";
+    }
+
+    # clean-up --> tidy ?
+    # $cleaned_up_context = $response->decoded_content();
+    # my $cleaned_up_content = $content;
+    
+    return $content;
+
+}
+
+exit 0;

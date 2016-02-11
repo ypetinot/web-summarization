@@ -1,0 +1,48 @@
+# TODO: is there an alternative to fully qualified (with built-in namespace) variable names ?
+# Move this to a common makefile ?
+###COMMON_MAKEFILE_DIR:=$(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+###ROOTDIR_DIST?=$(abspath $(COMMON_MAKEFILE_DIR)/../)
+
+# default line heading
+LINE_HEADING?=>>
+
+ifndef ROOTDIR_DIST
+$(error $(LINE_HEADING) ROOTDIR_DIST is missing, cannot proceed ...)
+else
+$(warning $(LINE_HEADING) Rootdir dist : $(ROOTDIR_DIST))
+endif
+
+SHELL:=$(BINDIR_DIST)/custom-shell
+
+ROOTDIR_DATA:=$(ROOTDIR_DIST)/data/
+BINDIR_DATA:=$(ROOTDIR_DATA)/bin/
+
+ROOTDIR_EVALUATION:=$(ROOTDIR_DIST)/evaluation/
+BINDIR_EVALUATION:=$(ROOTDIR_EVALUATION)/bin/
+
+BINDIR_THIRD_PARTY:=$(BINDIR_DIST)/../third-party/local/bin/
+#$(info BINDIR_THIRD_PARTY: $(BINDIR_THIRD_PARTY))
+
+#$(info BINDIR_PARALLEL: $(BINDIR_PARALLEL))
+PARALLEL_SERVERS_LIST:=/proj/nlp/users/ypetinot/servers.list
+PARALLEL_SERVERS_LIST_8:=/proj/nlp/users/ypetinot/servers-8.list
+
+ROOTDIR_EXPERIMENTAL:=$(ROOTDIR_DIST)/experimental/
+
+# TODO : implement the log functionality using Guile ? What other alternatives are there ?
+###$(warning $(.FEATURES))
+notification=$(shell echo $1 $2)
+
+# Note : seems like a reasonable default across the board
+# Note : isn't this supposed to be the default for gnu make ?
+# TODO : look for potential overrides / failures (e.g. doesn't seem to work in makefile.data.model.abstractive)
+.DELETE_ON_ERROR:
+
+run-servers-setup: $(SERVERS_LIST)
+	@$(BINDIR_DIST)/run-servers-setup $<
+
+# Note : is this ever useful ?
+%.gz: %
+	gzip -f $<
+
+folder_dependency=$(filter-out $(wildcard $(1)),$(1))

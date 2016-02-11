@@ -1,0 +1,75 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+
+my $subtype = undef;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'subtype=s' => \$subtype, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( ! defined( $subtype ) );
+
+my @fields;
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $input_file = $_;
+
+    my ( $system_id ) = map { chomp; $_; } `basename $input_file`;
+    $system_id =~ s/\.macro//;
+    
+    my %system_data;
+    my @output_entry = ();
+    my @local_fields = ();
+
+    open SYSTEM_DATA, $input_file or die "Unable to open input file ($input_file): $!";
+    while ( <SYSTEM_DATA> ) {
+	
+	chomp;
+	my $entry = $_;
+	my @entry_fields = split /\s+/, $entry;
+
+	if ( scalar(@entry_fields) < 4 ) {
+	    next;
+	}
+
+	my $annotation = shift @entry_fields;
+	my $score_type = shift @entry_fields;
+	my $score_subtype = shift @entry_fields;
+	my $score = shift @entry_fields;
+
+	$system_data{ $score_type }{ $score_subtype } = $score;
+
+	if ( $score_subtype =~ m/$subtype/ ) {
+	    if ( ! scalar( @fields ) ) {
+		push @local_fields, $score_type;
+	    }
+	    push @output_entry, $score;
+	}
+
+    }
+    close SYSTEM_DATA;
+
+    push @output_entry, $system_id;
+
+    if ( !scalar( @fields ) ) {
+	push @local_fields, 'System';
+	@fields = @local_fields;
+	print join("\t", @fields) . "\n";
+    }
+
+    print join("\t", @output_entry) . "\n";
+
+}
+
+1;

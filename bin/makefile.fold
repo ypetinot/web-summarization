@@ -1,0 +1,12 @@
+# TODO: is there an alternative to fully qualified (with built-in namespace) variable names ?
+# Move this to a common makefile ?
+FOLD_MAKEFILE_DIR:=$(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+
+# TODO : how to deal with multiple inclusions of the same makefile ? as of right now seems easier to adopt a top down inclusion pattern and to include makefiles when undefined variables are detected
+#include $(FOLD_MAKEFILE_DIR)/makefile.common
+
+ifndef FOLD_ID
+$(error $(LINE_HEADING) No fold id provided, cannot proceed ...)
+else
+$(warning $(LINE_HEADING) Fold id: $(FOLD_ID))
+endif

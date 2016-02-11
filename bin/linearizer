@@ -1,0 +1,26 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Text::Trim;
+
+while(<STDIN>) {
+	       
+    chomp;
+    
+    my $line = $_;
+    $line = trim($line);
+
+    my @fields = split / |\t/, $line;
+
+    foreach my $field (@fields) {
+	print $field . "\n";
+    }
+
+}
+
+1;

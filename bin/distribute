@@ -1,0 +1,18 @@
+#!/bin/bash -x
+
+COMMAND=$1
+SERVERS_LIST=$2
+
+SERVERS=( $( cat ${SERVERS_LIST} ) )
+N_SERVERS=${#SERVERS[@]}
+
+CWD=$PWD
+
+n=0
+# the parameters are provided on stdin
+cat | while read INPUT OUTPUT; do
+    n=$(( ($n + 1) % ${N_SERVERS} ))    
+    TARGET_SERVER=${SERVERS[$n]}
+    ID=web-${RANDOM}
+    echo -e "${TARGET_SERVER}\t${ID}\t${INPUT}\t${OUTPUT}"
+done | xargs -i{} -n 1 -P ${N_SERVERS} sh -x -c "set -- {}; cat \$3 | ssh \$1 \"cd ${CWD}; cat | ${COMMAND} \$4 \$2\""

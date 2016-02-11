@@ -1,0 +1,78 @@
+#!/bin/bash -x
+
+# splits raw dmoz data and prepare each part
+
+BINDIR=`dirname $0`
+
+TRAINING_SET_FRACTION=98
+TESTING_SET_FRACTION=1
+EVALUATION_SET_FRACTION=1
+
+SHORTOPTS="hn:t:u:v:"
+LONGOPTS="help,number-of-documents:,training-set-fraction:,testing-set-fraction:,evaluation-set-fraction:,"
+
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+        -n | --number-of-documents )
+            NUMBER_OF_DOCUMENTS=$2; shift 2;;
+        -t | --training-set-fraction )
+            TRAINING_SET_FRACTION=$2; shift 2;;
+        -u | --testing-set-fraction )
+            TESTING_SET_FRACTION=$2; shift 2;;
+	-v | --evaluation-set-fraction )
+	    EVALUATION_SET_FRACTION=$2; shift 2;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+TARGET_DIRECTORY=$1
+
+if [[ -z "${TARGET_DIRECTORY}" ]]; then
+    echo "Usage: cat <dmoz-raw-data> | $0 <target-directory>";
+    exit 1;
+fi
+
+# make sure the target directory exists
+mkdir -p ${TARGET_DIRECTORY}
+
+DMOZ_RAW_DATA_COPY=${TARGET_DIRECTORY}/dmoz.raw
+
+echo "[dmoz-build-corpus] filtering raw data ..."
+cat - | ${BINDIR}/dmoz-filter 2> /dev/null > ${DMOZ_RAW_DATA_COPY}
+
+NUMBER_OF_DOCUMENTS=`wc -l ${DMOZ_RAW_DATA_COPY} | awk '{ print $1 }'`;
+echo "[dmoz-build-corpus] total number of documents: ${NUMBER_OF_DOCUMENTS}"
+
+echo "[dmoz-build-corpus] splitting corpus into training / testing / evaluation set"
+${BINDIR}/split-corpus ${DMOZ_RAW_DATA_COPY} ${TRAINING_SET_FRACTION} ${TESTING_SET_FRACTION} ${EVALUATION_SET_FRACTION}
+
+DMOZ_RAW_TRAINING_SET=${DMOZ_RAW_DATA_COPY}.training;
+DMOZ_RAW_TESTING_SET=${DMOZ_RAW_DATA_COPY}.testing;
+DMOZ_RAW_EVALUATION_SET=${DMOZ_RAW_DATA_COPY}.evaluation;
+
+TRAINING_DATA_DIRECTORY=${TARGET_DIRECTORY}/training/
+TESTING_DATA_DIRECTORY=${TARGET_DIRECTORY}/testing/
+EVALUATION_DATA_DIRECTORY=${TARGET_DIRECTORY}/evaluation/
+
+echo "[dmoz-build-corpus] prepare training data"
+${BINDIR}/dmoz-prepare ${DMOZ_RAW_TRAINING_SET} ${TRAINING_DATA_DIRECTORY}
+${BINDIR}/dmoz-map ${TRAINING_DATA_DIRECTORY}
+
+echo "[dmoz-build-corpus] prepare testing data"
+${BINDIR}/dmoz-prepare ${DMOZ_RAW_TESTING_SET} ${TESTING_DATA_DIRECTORY}
+${BINDIR}/dmoz-map --reference=${TRAINING_DATA_DIRECTORY}/ ${TESTING_DATA_DIRECTORY}
+
+echo "[dmoz-build-corpus] prepare evaluation data"
+${BINDIR}/dmoz-prepare ${DMOZ_RAW_EVALUATION_SET} ${EVALUATION_DATA_DIRECTORY}
+${BINDIR}/dmoz-map --reference=${TRAINING_DATA_DIRECTORY}/ ${EVALUATION_DATA_DIRECTORY}
+
+echo "[dmoz-build-corpus] cleaning up"
+rm -rf ${DMOZ_RAW_DATA_COPY} ${DMOZ_RAW_TRAINING_SET} ${DMOZ_RAW_TESTING_SET} ${DMOZ_RAW_EVALUATION_SET}

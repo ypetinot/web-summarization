@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# do not barf on undeclared options so that they can be passed to underlying system
+# TODO : is this a good idea ?
+#POSIXLY_CORRECT=1
+
+SHORTOPTS="hdi:t:g:jk:dmotc:f:wo::pr:b:"
+LONGOPTS="help,debug,id:,target-dir:,summarizer-root:,cross-validation:,fold-id:,global-data-base:,generation-dir:,workers:,output-directory:,preparation,preparation-fields:repository-base-dir:,run-analysis,run-category-preprocessing,summarizer-class:,system-configuration:,system:,input-base:,data-dependencies:,data-make:"
+
+ARGS_COPY=$@
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+#TODO: create distribution level env var definitions (I already had that at some point)
+GLOBAL_DATA_BASE=${ROOTDIR_DATA}
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+	-d | --debug )
+	    DEBUG=1; shift 1;;
+	--data-dependencies )
+	    DATA_DEPENDENCIES=$2; shift 2;;
+	--data-make )
+	    DATA_MAKE=$2; shift 2;;
+	-i | --id )
+	    RUN_ID=$2; shift 2;;
+	-t | --target-dir )
+	    TARGET_DIR=$2; shift 2;;
+	--summarizer-root )
+	    SUMMARIZER_ROOTDIR=$2; shift 2;;
+	-b | --input-base )
+	    INPUT_BASE=$2; shift 2;;
+	-c | --cross-validation )
+	    CROSS_VALIDATION_PERCENTAGE=$2; shift 2;;
+	-f | --fold-id )
+	    FOLD_ID=$2; shift 2;;
+	--global-data-base )
+	    GLOBAL_DATA_BASE=$2; shift 2;;
+	-g | --generation-dir )
+	    GENERATION_DIR=$2; shift 2;;
+	-w | --workers )
+	    WORKERS=$2; shift 2;;
+	-o | --output-directory )
+	    OUTPUT_DIRECTORY=$2; shift 2;;
+	-p | --preparation )
+	    PREPARATION=1; shift;;
+	--preparation-fields )
+	    PREPARATION_FIELDS=$2; shift 2;;
+	-r | --repository-base-dir )
+	    REPOSITORY_BASE_DIRECTORY=$2; shift 2;;
+	--run-analysis )
+	    RUN_ANALYSIS=1; shift 1;;
+	--run-category-preprocessing )
+	    RUN_CATEGORY_PREPROCESSING=1; shift 1;;
+	--summarizer-class )
+	    SUMMARIZER_CLASS=$2; shift 2;;
+	--system-configuration )
+	    SYSTEM_CONFIGURATION=$2; shift 2;;
+	--system )
+	    SYSTEM=$2; shift 2;;
+        --)
+            shift; break;;
+    esac
+
+done

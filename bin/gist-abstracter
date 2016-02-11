@@ -1,0 +1,78 @@
+#!/usr/bin/env perl
+
+# Abstract all gists in a given category --> problem, abstraction has to do with the notion of frequency, i.e. if a word appears in every gist within a category, it shouldn't be abstracted, even if it is an adject, adverb, etc ...
+# No early abstraction --> abstraction is part of the word graph construction !
+
+# Index at chunk-element level --> each chunk element is indexed based on features from the target object (unigrams, bigrams, etc.)
+# Optimize selection of reference summaries based on matching chunks ... --> ILP problem ?
+# Indexing system should have support for sub-part indexing and provide support for a function to combine ... --> facets ?
+
+# Abstract out adjectives
+# Abstract out numbers
+# Abstract out adverbs
+# Abstract out named-entities
+# --> everything else should be kept (no frequency-based filtering ?)
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../summarizers/graph-summarizer/src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+# Load category data
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+    my $category = shift @fields;
+    my $chunked_summary = shift @fields;
+
+    # 1 - tokenize gist
+    # Raw --> POS-ed --> Chunked
+    my @chunks = split /\s+/, $chunked_summary;
+    my @grouped_chunks = @{ _group_chunks( \@chunks ) };
+
+    # 2 - determine type of each token
+    my @chunk_types = map { _determine_type( $_ ) } @chunks;
+
+    # 3 - abstract tokens ?
+    
+}
+
+sub _group_chunks {
+
+    my $chunks = shift;
+
+    my @grouped_chunks;
+    my $in_group = 0;
+
+    for (my $i=0; $i<scalar(@{ $chunks }); $i++) {
+
+	my @chunk_fields = split /\//, $chunks->[ $i ];
+	if ( scalar( @chunk_fields ) == 3 ) {
+	    push @grouped_chunks;
+	    if ( $chunk_fields =~ m/^I\-/s ) {
+		$in_group = 1;
+
+	    }
+	    else {
+		$in_group = 0;
+	    }
+	}
+	else {
+	    push @grouped_chunks, $chunk_fields[ 0 ];
+	    $in_group = 0;
+	}
+
+    }
+
+    return \@grouped_chunks;
+
+}
+
+1;

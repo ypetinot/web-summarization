@@ -1,0 +1,83 @@
+#!/usr/bin/env perl
+
+# filters raw DMOZ data based on general filtering rules (nothing application/summarizer specific)
+# before any actual/expensive processing is performed
+
+use strict;
+use warnings;
+
+use PerlIO;
+
+use Encode qw(:fallbacks);
+local $PerlIO::encoding::fallback = ' ';
+
+binmode(STDIN, ":encoding(utf8)");
+binmode(STDOUT, ":utf8");
+
+my $stats_total_number_pairs = 0;
+my $stats_total_corrupted = 0;
+my $stats_total_invalid_url = 0;
+my $stats_total_incomplete_data = 0;
+my $stats_total_too_short = 0;
+my $stats_total_too_long = 0;
+
+my $line_count = 0;
+
+while(<STDIN>) {
+
+    chomp;
+    
+    my $line = $_;
+
+    my @fields = split /\t/, $line;
+
+    if ( scalar(@fields) != 5 ) {
+	print STDERR "[$0] corrupted record at line $line_count, skipping ...\n";
+	$stats_total_corrupted++;
+	next;
+    }
+    
+    my ($url, $title, $description, $category, $content) = @fields;
+
+    # discard URLs that are not http-based
+    # discard URLs that have query string parameters (as indicated by a '?' character)
+    # discard URLs that contain a space character (probably means the corresponding entry is corrupted)
+    if ( $url !~ m/^http/ || $url =~ m/\?/ || $url =~ m/\s+/ ) {
+	print STDERR "[$0] invalid URL at line $line_count, skipping ...\n";
+	$stats_total_invalid_url++;
+	next
+    }
+
+    if ( !$title || !$description || !$content ) {
+	print STDERR "[$0] incomplete data for URL $url, skipping ...\n";
+	$stats_total_incomplete_data++;
+	next;
+    }
+
+    # max length filtering ?
+    if ( length($content) > 500000 ) {
+	my $content_length = length($content);
+	print STDERR "[$0] source content is extremely long for URL $url $content_length ...\n";
+	$stats_total_too_long++;
+	next;
+    }
+
+    # filtering for dupe Web-pages ?
+    # TODO
+
+    # make sure the encoding is correct, etc.
+    # TODO
+
+    # output line to STDOUT
+    print STDOUT "$line\n";
+
+}
+
+print STDERR "number of corrupted records: $stats_total_corrupted\n";
+print STDERR "number of records with invalid URL: $stats_total_invalid_url\n";
+print STDERR "number of records with incomplete data: $stats_total_incomplete_data\n";
+print STDERR "number of records with overly short source/output: $stats_total_too_short\n";
+print STDERR "number of records with overly long source/output: $stats_total_too_long\n";
+print STDERR "number of valid records: $stats_total_number_pairs\n";
+
+1;

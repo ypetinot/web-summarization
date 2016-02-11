@@ -1,0 +1,48 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+DIST_ROOTDIR=${BINDIR}/../
+source ${DIST_ROOTDIR}/dist.rc
+source ${BINDIR}/parallel-job-resources
+
+# 1 - execute run-summarizer-common
+. ${BINDIR}/run-summarizer-common $@
+
+if [[ "${DEBUG}" == 1 ]]; then
+    DEBUG_FLAGS="-d"
+fi
+
+if [[
+# -z "${INPUT_BASE}" ||
+( "${SYSTEM_CONFIGURATION_REQUIRED}" == "1" && -z "${SYSTEM_CONFIGURATION}" ) ]]; then
+    echo "Usage: <test-urls> | $0 --fold-id=<id> [--system=<system-id>] [--repository-base-dir=<repository-base-dir>] [--system-configuration=<system-config|config-file>] --input-base=<input-base>"
+    exit 1;
+fi
+
+SUMMARIZER_CLASS=$1
+SUMMARIZER_LIB=${SUMMARIZER_ROOTDIR}/src/
+
+# already consumed parameters
+CONSUMED_ARGS="--fold-id=${FOLD_ID}"
+
+# additional parameters
+# TODO : to be re-enabled once Web::Summarizer::Sentence objects are serializable
+if [[ ! -z "${OUTPUT_DIRECTORY}" ]]; then
+    ADDITIONAL_ARGS="--output-directory=${OUTPUT_DIRECTORY}"
+fi
+
+# Note : forcing default since run-summarizer-harness currently expects this parameter
+# TODO : can we do better ?
+if [[ -z "${RUN_ANALYSIS}" ]]; then
+    RUN_ANALYSIS="0";
+fi
+
+# 2 - set location of ODP data repository
+if [[ ${HOSTNAME} == ${DMOZ_REPOSITORY_HOST} ]]; then
+    REPOSITORY_BASE_DIRECTORY=${DMOZ_REPOSITORY_BASE}
+else
+    REPOSITORY_BASE_DIRECTORY=${DMOZ_REPOSITORY_RSYNC}
+fi
+
+# 3 - execute run-summarizer-harness
+perl -I${SUMMARIZER_LIB} ${DEBUG_FLAGS} ${BINDIR}/run-summarizer-harness ${GLOBAL_DATA_BASE} ${REPOSITORY_BASE_DIRECTORY} ${SUMMARIZER_ROOTDIR} ${SUMMARIZER_CLASS} "${SYSTEM}" "${SYSTEM_CONFIGURATION}" ${RUN_ANALYSIS} $@ ${CONSUMED_ARGS} ${ADDITIONAL_ARGS}

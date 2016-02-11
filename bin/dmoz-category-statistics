@@ -1,0 +1,38 @@
+#!/usr/bin/env perl
+
+# collects aggregate information about the DMOZ categories (no content analysis)
+
+use strict;
+use warnings;
+
+# category to urls mapping
+my %category2urls;
+
+while(<STDIN>) {
+    
+    chomp;
+
+    my $line = $_;
+
+    my @fields = split /\t/, $line;
+    my $url = shift @fields;
+    my $category = shift @fields;
+
+    if ( !defined($category2urls{$category}) ) {
+	$category2urls{$category} = [];
+    }
+
+    push @{ $category2urls{$category} }, $url;
+
+}
+
+# output category-centric information
+foreach my $category (keys(%category2urls)) {
+
+    my @category_urls = @{ $category2urls{$category} };
+
+    print join("\t", $category, scalar(@category_urls), join(" ", @category_urls)) . "\n";
+
+}
+
+1;

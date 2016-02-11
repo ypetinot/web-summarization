@@ -1,0 +1,83 @@
+#!/usr/bin/env perl
+
+use FindBin;
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Getopt::Long;
+use HTML::LinkExtor;
+use Pod::Usage;
+use XML::TreePP;
+
+my $man = 0;
+my $help = 0;
+my $output_mode = undef;
+my $sleep_time = 30;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'output-mode=s' => \$output_mode, 'sleep-time' => \$sleep_time, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( $#ARGV < 0 );
+
+if ( $#ARGV < 0 ) {
+    die "usage: $0 TARGET_URL [id]";
+}
+
+my $url = $ARGV[0];
+my $yahoo_id = $ARGV[1] || "nlp4web";
+
+if ( $output_mode eq 'line' ) {
+    print "$url";
+}
+
+my $APPLICATION_NAME = $0;
+
+# create XML parser
+my $tpp = XML::TreePP->new();
+
+my $hasmore = 1;
+my $offset = 1;
+my $n_requested = 100;
+while ( $hasmore ) {
+    
+    my $yahooapi_url = "http://search.yahooapis.com/SiteExplorerService/V1/inlinkData?appid=${yahoo_id}&query=${url}&results=100&start=${offset}";
+    
+    print STDERR "sending request to yahooapi ... $url ... $offset ... $yahooapi_url\n";
+
+    my $data = `wget --user-agent=Firefox/1.5.0.12 -q -O - 'http://search.yahooapis.com/SiteExplorerService/V1/inlinkData?appid=${yahoo_id}&query=${url}&results=100&start=${offset}'`;
+    my $tree = $tpp->parse($data);
+    
+    my $n_results = 0;
+    if ( ref($tree->{'ResultSet'}->{'Result'}) eq 'ARRAY' ) {
+	# print $tree->{'ResultSet'}->{'-totalResultsAvailable'};
+	foreach my $result (@{$tree->{'ResultSet'}->{'Result'}}) {
+	    if ( $output_mode eq 'line' ) {
+		print "\t";
+	    }
+	    print $result->{'Url'};
+	    if ( $output_mode ne 'line' ) {
+		print "\n";
+	    }
+	    $n_results++;
+	    $offset++;
+	}
+    }
+    
+    if ( $n_results == $n_requested ) {
+	$hasmore = 1;
+    }
+    else {
+	$hasmore = 0;
+    }
+    
+    sleep($sleep_time);
+    
+}
+
+if ( $output_mode eq 'line' ) {
+    print "\n";
+}
+
+1;

@@ -1,0 +1,63 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../src/perl/";
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use File::Path;
+use URI::Normalizer;
+
+binmode(STDIN, ":utf8");
+binmode(STDOUT, ":utf8");
+
+if ( $#ARGV != 0 ) {
+    die "Usage: $0 <REPOSITORY_ROOT>";
+}
+
+my $repository_root = $ARGV[0];
+if ( ! -d $repository_root ) {
+    die "Not a valid directory: $repository_root";
+}
+
+while(<STDIN>) {
+
+    chomp;
+
+    my ($url, $title, $description, $category) = split /\t/, $_;
+
+    # determine target directory
+    my @sub_categories = split /\//, $category;
+    my $target_directory = join("/", ($repository_root, $category));
+
+    # create target directory if needed
+    if ( ! -f $target_directory ) {
+	mkpath($target_directory);
+    }
+
+    # normalize url
+    my $normalized_url = URI::Normalizer->normalize($url);
+
+    # create url entry (directory)
+    my $simplified_url = $normalized_url;
+    $simplified_url =~ s/[[:punct:]]/_/g;
+    $simplified_url = substr($simplified_url, 0, 250) . ".url";
+    my $url_directory = join("/", ($target_directory, $simplified_url));
+    mkpath($url_directory);
+
+    # create supporting files
+    my %fields = ( url => $url , dmoz_summary => $description , dmoz_category => $category );
+    foreach my $field (keys(%fields)) {
+
+	open FIELD_FILE, ">" . join("/", ($url_directory, $field)) || die "Unable to create $field file in $url_directory";
+	binmode(FIELD_FILE, ":utf8");
+	print FIELD_FILE $fields{$field} . "\n";
+	close FIELD_FILE;
+
+    }
+
+}
+
+1;

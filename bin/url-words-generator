@@ -1,0 +1,45 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+my $content_file = $ARGV[0];
+
+my $read_from_stdin = 0;
+if ( defined( $content_file ) && $content_file ne '-' ) {
+    open CONTENT_FILE, $content_file or die "Unable to open content file ($content_file): $!";
+    binmode( CONTENT_FILE , ':utf8' );
+}
+else {
+    $read_from_stdin = 1;
+}
+
+binmode( STDOUT , 'utf8' );
+
+my @urls;
+my @contents;
+
+while ( my $line = $read_from_stdin ? <STDIN> : <CONTENT_FILE> ) {
+
+    chomp $line;
+
+    my @fields = split /\t/, $line;
+    
+    push @urls, $fields[0];
+    push @contents, $fields[1];
+
+}
+
+if ( $read_from_stdin ) {
+    close CONTENT_FILE;
+}
+
+my $url_words = _generate_url_words( \@urls , \@contents );
+
+for (my $i=0; $i<scalar(@urls); $i++) {
+
+    print join("\t", $urls[$i], $url_words->[$i]) . "\n";
+
+}
+
+1;

@@ -1,0 +1,53 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../dist.rc
+
+# TODO : rename resource file ?
+source ${PARALLEL_JOB_RESOURCES}
+
+SHORTOPTS="h,s"
+LONGOPTS="help,sequential,silent"
+
+ARGS_COPY=$@
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+	-s | --sequential )
+	    SEQUENTIAL=1; shift 1;;
+	--silent )
+	    SILENT=1; shift 1;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+MAKEFILE=`readlink -f $1`
+MAKEFILE_TARGET=$2
+CATEGORY_BASE=`readlink -f $3`
+
+# TODO : to be removed
+FOLD_ID=0
+
+DIR_NAME=`dirname ${CATEGORY_BASE}`;
+CATEGORY_NAME=`basename ${CATEGORY_BASE}`;
+
+MAKE_OPTIONS="--no-print-directory --quiet --warn-undefined-variables"
+if [[ "${SILENT}" == "1" ]]; then
+    MAKE_OPTIONS+=" --silent --no-print-directory"
+fi
+
+# TODO : remove FOLD_ID as a (forced) parameter ?
+if [[ -z "${SEQUENTIAL}" ]]; then
+    make ${MAKE_OPTIONS} -C ${DIR_NAME} -f ${MAKEFILE} ${MAKEFILE_TARGET} CATEGORY=${CATEGORY_NAME} FOLD_ID=${FOLD_ID}
+else
+    for target in ${MAKEFILE_TARGET}; do
+	make ${MAKE_OPTIONS} -C ${DIR_NAME} -f ${MAKEFILE} ${target} CATEGORY=${CATEGORY_NAME} FOLD_ID=${FOLD_ID}
+    done
+fi

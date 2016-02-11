@@ -1,0 +1,49 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`;
+
+# TODO : define a better include ? Needed to make sure we exit at the first error
+source ${BINDIR}/../dist.rc
+source ${BINDIR}/parallel-job-resources
+
+ROOTDIR_CHUNKER=${ROOTDIR_THIRD_PARTY}/crf-chunker/CRFChunker/;
+ROOTDIR_STANFORD=${ROOTDIR_THIRD_PARTY}/stanford/;
+ROOTDIR_TAGGER=${ROOTDIR_THIRD_PARTY}/crf-chunker/CRFTagger/;
+ROOTDIR_OPENNLP=${ROOTDIR_THIRD_PARTY}/opennlp/
+
+INPUT_FILE=$1;
+
+# run POS tagger
+###OUTPUT_FILE_TAGGER="${TEMP_INPUT_FILE}.pos"
+###java -classpath ${ROOTDIR_TAGGER}/crftagger.jar crf.tagger.CRFTagger -modeldir ${ROOTDIR_TAGGER}/model -inputfile ${TEMP_INPUT_FILE} > /dev/null
+
+### # filter POS tags (this should not have been necessary)
+### OUTPUT_FILE_TAGGER_FILTERED="${OUTPUT_FILE_TAGGER}.filtered"
+### cat ${OUTPUT_FILE_TAGGER} | ${BINDIR}/filter-pos-tags > ${OUTPUT_FILE_TAGGER_FILTERED}
+
+# run Chunker
+# TODO: can we do this with Stanford's Parser as well ?
+#java -mx 512MB
+#OUTPUT_FILE_CHUNKER="${OUTPUT_FILE_TAGGER_FILTERED}.chk"
+OUTPUT_FILE_CHUNKER="${OUTPUT_FILE_TAGGER}.chk"
+
+### #java -classpath ${ROOTDIR_CHUNKER}/crfchunker.jar crf.chunker.CRFChunker -modeldir ${ROOTDIR_CHUNKER}/model -inputfile ${OUTPUT_FILE_TAGGER_FILTERED} > /dev/null
+
+# OpenNLP version
+###cat ${INPUT_FILE} | ${ROOTDIR_STANFORD}/bin/run-tokenizer | stdbuf -o0 grep -v '^$' | stdbuf -o0 tr '/' '_' | ${ROOTDIR_OPENNLP}/bin/opennlp ChunkerME ${ROOTDIR_OPENNLP}/models/en-chunker.bin 2>/dev/null | stdbuf -o0 tr '_' '/' | ${ROOTDIR_OPENNLP}/scripts/conll-chunk-adapter
+
+# Stanford-Thrift version (1)
+cat ${INPUT_FILE} | while read _LINE; do
+    PATH=${ROOTDIR_THIRD_PARTY}/java/bin/:${PATH} CLASSPATH=${ROOTDIR_THIRD_PARTY}/thrift/thrift-0.9.2/lib/java/build/lib/log4j-1.2.14.jar:${ROOTDIR_THIRD_PARTY}/thrift/thrift-0.9.2/lib/java/build/libthrift-0.9.2.jar:${ROOTDIR_THIRD_PARTY}/stanford/stanford-corenlp-full-2014-10-31/stanford-corenlp-3.5.0.jar:${ROOTDIR_THIRD_PARTY}/stanford/stanford-corenlp-full-2014-10-31/stanford-corenlp-3.5.0-models.jar:${ROOTDIR_THIRD_PARTY}/thrift/thrift-0.9.2/lib/java/build/lib/slf4j-api-1.5.8.jar:${ROOTDIR_THIRD_PARTY}/thrift/thrift-0.9.2/lib/java/build/lib/slf4j-log4j12-1.5.8.jar:${ROOTDIR_THIRD_PARTY}/stanford-thrift/stanford-thrift/stanford-corenlp-wrapper.jar ${ROOTDIR_THIRD_PARTY}/stanford-thrift/parse-java.modified.sh barracuda 8888 <( echo "$_LINE" )
+done;
+
+# Note : previously
+###%.summary.chunked.refined: %.summary.chunked
+###	cat $< | $(BINDIR)/summary-abstracter > $@
+
+# CRFChunker version
+###    cat ${INPUT_FILE} | ${ROOTDIR_STANFORD}/bin/run-tokenizer - | stdbuf -o0 grep -v '^$' | while read LINE; do
+###    echo "${LINE}" > ${OUTPUT_FILE_TAGGER};
+###    ${BINDIR}/custom-java -classpath ${ROOTDIR_CHUNKER}/crfchunker.jar crf.chunker.CRFChunker -modeldir ${ROOTDIR_CHUNKER}/model -inputfile ${OUTPUT_FILE_TAGGER} > /dev/null;
+###    cat ${OUTPUT_FILE_CHUNKER}
+###    done;

@@ -1,0 +1,79 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use Cache::MongoDB;
+
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+
+my $help = 0;
+my $man = 0;
+my $database = undef;
+my $collection = undef;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'database=s' => \$database, 'collection=s' => \$collection) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( ! defined($database) || ! defined($collection) );
+
+# cache
+our $cache = new Cache::MongoDB( database => $database , collection => $collection );
+
+my $current = undef;
+my @buffer;
+
+my $i = 0;
+
+while ( <STDIN> ) {
+    
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\s+/, $line;
+    
+    if ( scalar(@fields) != 2 ) {
+	next;
+    }
+    
+    my $entity = shift @fields;
+    my $category = shift @fields;
+
+    if ( ( $i++ ) % 10000 == 0 ) {
+	print STDERR ">> processing $i ...\n";
+    }
+
+    if ( !defined($current) || $current ne $entity ) {
+	if ( scalar(@buffer) ) {
+	    _store( $current , \@buffer );
+	}
+	@buffer = ();
+	$current = $entity;
+    }
+    
+    push @buffer, $category;
+    
+}
+
+if ( scalar(@buffer) ) {
+    _store( $current , \@buffer );
+}
+
+sub _store {
+
+    my $key = shift;
+    my $value = shift;
+
+    $cache->set( $key , $value );
+
+}
+
+1;

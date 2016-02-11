@@ -1,0 +1,75 @@
+#!/usr/bin/env perl
+
+# crawls the target site, identify all urls with reciprocal link to the target, and extract their links.
+
+use URI;
+
+use WWW::Mechanize;
+
+#use WWW::CheckSite::Spider;
+
+if ($#ARGV != 0) {
+	die "usage: $0 TARGET_URL";
+}
+
+my $target_url = new URI($ARGV[0]);
+my $mech = new WWW::Mechanize();
+
+# 1 - download content of target URL
+$mech->get($target_url);
+if ( ! $mech->success() ) {
+    die;
+}
+
+# 2 - process each link on the target
+my @links = map {$_->url_abs()} $mech->links();
+foreach my $link (@links) {
+
+    my $current_url = $link;
+
+    if ( $current_url->eq($target_url) ) {
+	next;
+    }
+
+    #print "checking: $current_url\n";
+
+    # download current url
+    $mech->get($current_url);
+    if ( ! $mech->success() ) {
+	next;
+    }
+
+    # check if current url links back to target url
+    my @back_links = map {$_->url_abs()} $mech->links();
+    foreach my $back_link (@back_links) {
+
+	
+
+
+	#print "\t$back_link\n";
+	if ( $back_link->eq($target_url) ) {
+	    print ">> " . $current_url->scheme() . ":" . $current_url->opaque() . "\n";
+	}
+    }
+
+}
+
+#my $sp = WWW::CheckSite::Spider->new(
+#				     uri      => $target_url->as_string(),
+#				     );
+
+my %seen;
+#while ( my $page = $sp->get_page ) {
+#    my $current_link = $sp->current_agent->uri();
+#    my @links = $sp->current_agent->links();
+#
+#    foreach my $link (@links) {
+#	if ( $link->URI()->eq($target_url) ) {
+#	    if ( ! defined($seen{$current_link}) ) {
+#		print "$current_link\n";
+#		$seen{$current_link} = 1; 
+#	    }
+#	}
+#    }
+#}
+

@@ -1,0 +1,16 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../dist.rc
+source ${BINDIR}/job-resources
+
+CATEGORIES=$1
+INSTANCES=$2
+SIMILARITY_THRESHOLD=$3
+
+if [[ -z "${CATEGORIES}" || ! -f "${CATEGORIES}" || -z "${INSTANCES}" || ! -f "${INSTANCES}" || -z "${SIMILARITY_THRESHOLD}" ]]; then
+    echo "Usage: $0 <categories> <instances> <similarity-threshold>"
+    exit 1;
+fi
+
+gunzip -c ${INSTANCES} | perl ${BINDIR}/dmoz-category-clusterer | ${PARALLEL_COMMAND} --progress --pipe "${BINDIR}/dmoz-category-clusterer-processor ${SIMILARITY_THRESHOLD}"

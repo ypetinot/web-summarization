@@ -1,0 +1,190 @@
+#!/usr/bin/env perl
+
+# remove any ContextElement that matches one of the DmozElement's
+
+use warnings;
+use strict;
+
+use FindBin;
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Getopt::Long;
+use Pod::Usage;
+use XML::TreePP;
+use Algorithm::Diff qw(LCS_length);
+use Lingua::EN::Sentence qw( get_sentences add_acronyms set_EOS );
+
+my $man = 0;
+my $help = 0;
+my $mode = 'default';
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'mode=s' => \$mode, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0) if $man;
+pod2usage(-exitstatus => 0) if ( $#ARGV != 1 );
+
+if ( $debug ) {
+    print STDERR "debug mode on\n";
+}
+
+my $APPLICATION_NAME = $0;
+my $context_file = $ARGV[0];
+my $dmoz_summary_file = $ARGV[1];
+
+# read content from dmoz summary file
+my $dmoz_summary = undef;
+if ( ! -f $dmoz_summary_file ) {
+    exit;
+}
+open DMOZ_SUMMARY_FILE, $dmoz_summary_file or die "unable to open DMOZ summary file: $dmoz_summary_file";
+{
+    local $/ = undef;
+    $dmoz_summary = <DMOZ_SUMMARY_FILE>;
+}
+close DMOZ_SUMMARY_FILE;
+if ( ! $dmoz_summary ) {
+    exit;
+}
+
+# parse context file
+my $tpp = XML::TreePP->new();
+$tpp->set( indent => 2 );
+my $tree = $tpp->parsefile($context_file);
+
+if ( !defined($tree) ) {
+    exit;
+}
+
+if ( 
+    !defined($tree) ||
+    !defined($tree->{Context}) ||
+#    !defined($tree->{Context}->{DmozContext}) ||
+    !defined($tree->{Context}->{ContextElement})
+    ) {
+    print $tpp->write($tree);
+    exit;
+}
+
+# get dmoz contexts
+my @dmoz_contexts;
+#if ( ref($tree->{Context}->{DmozContext}) eq 'ARRAY' ) {
+#    @dmoz_contexts = $tree->{Context}->{DmozContext};
+#}
+#else {
+#    push @dmoz_contexts, $tree->{Context}->{DmozContext};
+#}
+push @dmoz_contexts, { description => $dmoz_summary };
+
+# get list of all context elements
+my @context_elements;
+if ( ref($tree->{Context}->{ContextElement}) eq 'ARRAY' ) {
+    @context_elements = @{$tree->{Context}->{ContextElement}};
+}
+else {
+    push @context_elements, $tree->{Context}->{ContextElement};
+}
+
+my @to_remove;
+for (my $i=0; $i<=$#context_elements; $i++) {
+    
+    my $context_element = $context_elements[$i];
+
+    foreach my $dmoz_context (@dmoz_contexts) {
+	
+	if ( check_match($context_element->{sentence}, $dmoz_context->{description}) ||
+	     check_match($context_element->{basic}, $dmoz_context->{description}) ) {
+	    push @to_remove, $i;
+	}
+
+    }
+
+}
+
+# effectively remove matching ContextElement's
+while (scalar(@to_remove)) {
+
+    my $to_remove = pop @to_remove;
+
+    my $removed = undef;
+    if ( ref( $tree->{Context}->{ContextElement} ) eq 'ARRAY' ) {
+	$removed = $tree->{Context}->{ContextElement}[$to_remove];
+	splice @{$tree->{Context}->{ContextElement}}, $to_remove, 1;
+    }
+    else {
+	$removed = $tree->{Context}->{ContextElement};
+	delete $tree->{Context}->{ContextElement};
+    }
+
+    $removed = "[ " . join(" ", map { "$_  --> $removed->{$_}"; } keys(%$removed)) . " ]"; 
+    print STDERR "[$0] stripping out ContextElement #$to_remove: $removed ...\n";
+
+}
+
+print $tpp->write($tree);
+
+sub check_match {
+
+    my $text = shift;
+    my $reference_text = shift;
+
+    my @total_seq_text = split /\s+/, $text;
+    my @total_seq_reference_text = split /\s+/, $reference_text;
+
+    # split text into sentences
+    my $sentences = get_sentences($text);
+    if ( !defined($sentences) ) {
+	return 0;
+    }
+    my @text_sentences = @{$sentences};
+    
+    # split reference text into sentences
+    my @reference_text_sentences = @{get_sentences($reference_text)};
+
+    my $is_match = 0;
+
+    foreach my $reference_text_sentence (@reference_text_sentences) {
+	
+	# print STDERR "[$0] checking [$reference_text_sentence]\n";
+
+	my @seq_reference_text_sentence = split /\s+/, $reference_text_sentence;
+	
+	# only check pair of sentences for which the reference sentence is of significant length
+	# number of words > 0.25 * total_number_of_words
+	if ( (scalar(@seq_reference_text_sentence) < 0.25 * scalar(@total_seq_reference_text)) ) {
+	    next;
+	}
+	
+	foreach my $text_sentence (@text_sentences) {
+	    
+	    my @seq_text_sentence = split /\s+/, $text_sentence;
+	    
+	    # compute LCS
+	    my $lcs = LCS_length( \@seq_text_sentence, \@seq_reference_text_sentence );
+	    my $similarity = $lcs/scalar(@seq_reference_text_sentence);
+	    
+	    # print STDERR "[$0] similarity between [$text_sentence] and [$reference_text_sentence] is: $similarity\n";
+	
+	    if ($similarity > 0.9) {
+	      $is_match = 1;
+	      last;
+	    }
+
+	}
+
+    }
+
+    return $is_match;
+
+}
+
+1;
+
+__END__
+
+=pod
+Usage message goes here ...
+
+=cut

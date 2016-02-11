@@ -1,0 +1,138 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+use URI;
+
+my $type = undef;
+
+my $man = 0;
+my $help = 0;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'type=s' => \$type, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if ( $man || ! defined( $type ) );
+pod2usage(-exitstatus => 0) if ( $#ARGV != 0 );
+
+my $anchortext_file = $ARGV[0];
+
+open ANCHORTEXT_FILE, $anchortext_file or die "Unable to open anchortext file ($anchortext_file): $!";
+
+binmode( ANCHORTEXT_FILE , ':utf8' );
+binmode( STDOUT , ':utf8' );
+
+my @urls;
+my @anchortexts;
+
+# TODO: turn this into a library function w/ a callback parameter ?
+while ( <ANCHORTEXT_FILE> ) {
+
+    chomp;
+
+    my $line = $_;
+    
+    my @fields = split /\t/, $line;
+    
+    if ( scalar(@fields) != 2 ) {
+	print STDERR "Skipping invalid line: $line\n";
+    }
+
+    my $decoded_anchortext = [];
+    eval {
+	$decoded_anchortext = decode_json( $fields[1] );
+    };
+    if ( $@ ) {
+	print STDERR "An error occurred while attempting to decode anchortext data: $@\n";
+    }
+
+    push @urls, $fields[0];
+    push @anchortexts, $decoded_anchortext;
+
+}
+
+close ANCHORTEXT_FILE;
+
+my $anchortext_type = _get_anchortext_type( \@urls , \@anchortexts , $type );
+
+for (my $i=0; $i<scalar(@{ $anchortext_type }); $i++) {
+    print join("\t", $urls[$i], _linearize( $anchortext_type->[$i] )) . "\n";
+}
+
+# linearize
+sub _linearize {
+
+    my $data = shift;
+    my $document_separator = shift || " <EOD> ";
+
+    return join($document_separator,@{ $data });
+
+}
+
+# get anchortext type
+sub _get_anchortext_type {
+
+    my $urls = shift;
+    my $anchortext_raw = shift;
+    my $type = shift;
+    my $filter_dmoz = shift || 1;
+
+    my @anchortext_type;
+    for (my $i=0; $i<scalar(@{$anchortext_raw}); $i++) {
+
+	my $target_url = $urls->[ $i ];
+	my $target_host = ( new URI( $target_url ) )->host();
+      
+
+	my @anchortext_elements;
+	foreach my $anchortext_entry (@{$anchortext_raw->[$i]}) {
+
+	    my $source = $anchortext_entry->{ "-source" };
+	    
+	    # filter out anchortext that originates from the target domain
+	    # TODO: make this optional when considering within-site feature ?
+	    my $source_host = ( new URI( $source ) )->host();
+	    if ( $target_host && $source_host && (lc($target_host) eq lc($source_host)) ) {
+		print STDERR "[" . __PACKAGE__ . "] removing in-site anchortext for $source --> $target_url\n";
+		next;
+	    }
+
+	    # filter out anchortext that is copied from dmoz or other major web-directories
+	    # TODO: use dmoz hierarchy path as indicator ?
+	    if ( 
+		$filter_dmoz && ( 
+		    $source =~ m/dmoz/si ||
+		    $source =~ m/dir.yahoo.com/si
+		)
+		)
+	    {
+		print STDERR "[" . __PACKAGE__ . "] removing directory anchortext for $source --> $target_url\n";
+		next;
+	    }
+
+	    my $elements = $anchortext_entry->{ $type };
+
+	    if ( defined( $elements ) ) {
+		push @anchortext_elements, join(" ", @{$elements});
+	    }
+
+	}
+	push @anchortext_type, \@anchortext_elements;
+
+    }
+
+    return \@anchortext_type;
+
+}
+
+1;

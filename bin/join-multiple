@@ -1,0 +1,61 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Digest::MD5 qw/md5_hex/;
+
+my @files = @ARGV;
+my @file_readers = map { _file_reader( $_ ); } @files;
+
+my %filehandles;
+my $count = 0;
+
+sub _file_reader {
+
+    my $filename = shift;
+    my $index = $count;
+
+    open my $fh, $filename or die "Unable to open file ($filename): $!";
+    $filehandles{ $filename } = $fh;
+
+    my $reader = sub {
+
+	my $line = <$fh>;
+
+	if ( ! defined( $line ) ) {
+	    return;
+	}
+
+	chomp $line;
+	#print STDERR "got from $filename: $line\n";
+
+	my @fields = split /\t/, $line;
+
+	if ( $index ) {
+	    shift @fields;
+	}
+	
+	return join("\t", @fields);
+
+    };
+
+    $count++;
+
+    return $reader;
+
+}
+
+while ( 1 ) {
+
+    my @data = map { $_->() } @file_readers;
+
+    if ( ! defined( $data[ 0 ] ) ) {
+	last;
+    }
+
+    print join("\t", @data) . "\n";
+
+}
+
+1;

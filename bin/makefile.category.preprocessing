@@ -1,0 +1,81 @@
+BINDIR := $(dir $(lastword $(MAKEFILE_LIST)))
+
+include $(BINDIR)/makefile.category
+
+### # Will only be able to proceed using the core category files that are currently available
+### # i.e. if core category file not availabe, should not be makeable (but will not fail if requested)
+### CATEGORY_FILES_AVAILABLE := $(shell for FILE in $(CATEGORY_FILES); do if test -f $${FILE}; then echo $${FILE}; fi; done | tr '\n' ' ')
+### $(warning CATEGORY_FILES_AVAILABLE: $(CATEGORY_FILES_AVAILABLE))
+
+# Move this to a common makefile ?
+TOOLS_DIR_DIST:=$(dir $(lastword $(MAKEFILE_LIST)))
+
+STANFORD_DIR:=$(TOOLS_DIR_DIST)/../third-party/stanford/
+
+default:
+
+# Note: secondary seems more appropriate in cases where the generation dies at some point (and we cannot be sure whether the intermediate target was completely generated)
+.SECONDARY:
+#.PRECIOUS:
+.DELETE_ON_ERROR:
+
+%.summary.chunked: %.summary
+	echo "Marking summary chunks for $<"
+	cat $< | awk -F"\t" '{ print $$2 }' | ${BINDIR}/chunker-wrapper 2>/dev/null > $@.temp
+	cat $< | awk -F"\t" '{ print $$1 }' | paste -d'\t' - $@.temp > $@
+	rm -f $@.temp
+
+# need to update folds everytime we regenerate the set of chunks
+#%.models: %.opt.graph.summary.chunks
+#	${BINDIR}/generate-data-single $*.summary $*.opt.graph.summary.chunks $*.content $@
+
+%.folds:
+	$(warning Creating folds for $*)
+	${TOOLS_DIR_DIST}/dmoz-create-folds leave-p-out $* 10
+
+%.lm: %
+	cat $< | $(BINDIR_DATA)/build-ngram-model > $@
+
+%.rendered: %
+	$(warning Rendering $*)
+	cat "$<" | $(TOOLS_DIR_DIST)/html-renderer > "$@"
+
+# TODO: move iconv processing to content file generation ?
+%.title: %.content
+	cat "$<" | iconv -c -f utf8 -t utf8 | $(TOOLS_DIR_DIST)/html-renderer --extract --field=title > "$@.temp"
+	mv "$@.temp" "$@"
+	rm -rf "$@.temp"
+
+category-preprocessing-clean:
+	rm -rf $(CATEGORY).folds $(CATEGORY).*.ngrams.* $(CATEGORY).rendered $(CATEGORY).anchortext.basic $(CATEGORY).anchortext.sentence $(CATEGORY).title $(CATEGORY).url.words $(CATEGORY).parsed $(CATEGORY).models
+
+%.parsed: %
+	cat "$<" | awk -F"\t" '{ print $$1 }' > $@.temp.1
+	cat "$<" | awk -F"\t" '{ print $$2 }' | $(STANFORD_DIR)/bin/run-tokenizer - > $@.temp.2
+	paste -d'\t' "$@.temp.1" "$@.temp.2" > "$@.temp"
+	mv "$@.temp" "$@"
+	rm -f $@.temp*
+
+%.anchortext.basic: %.anchortext
+	$(TOOLS_DIR_DIST)/anchortext-type-extractor --type=basic $< > $@
+
+%.anchortext.sentence: %.anchortext
+	$(TOOLS_DIR_DIST)/anchortext-type-extractor --type=sentence $< > $@
+
+%.models: %.features
+	$(warning Creating models directory for $*)
+	@mkdir -p $@
+
+# This is model dependent - no need to do this here
+#%.summary.levels: %.summary.mapped
+#	$(warning Computing summary token levels for $*)
+
+#.SECONDEXPANSION:
+NGRAM_ORDERS:=1 2 3
+# variables: order / field
+define _field_ngram_rule
+%.ngrams.$1 %.ngrams.$1.mapping: %
+	cat "$$*" | $(TOOLS_DIR_DIST)/ngram-generator --order=$1 --field-id=1 "$$*.ngrams.$1.mapping" > "$$*.ngrams.$1"
+endef
+
+$(foreach order,$(NGRAM_ORDERS),$(eval $(call _field_ngram_rule,$(order))))

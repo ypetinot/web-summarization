@@ -1,0 +1,318 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+# TODO : activate this only in debug mode ?
+# http://www.perlmonks.org/?node_id=128283
+$DB::inhibit_exit = 0;
+
+# top level summarizer execution script
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../data/src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use Data::Dumper;
+use Digest::MD5 qw(md5 md5_hex md5_base64);
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+use File::Slurp qw/read_file/;
+use Log::Log4perl qw(:easy);
+use Moose::Util qw/with_traits apply_all_roles/;
+use Text::Trim;
+
+use DMOZ::CategoryRepository;
+use DMOZ::GlobalData;
+use Service::Web::UrlNormalizer;
+use Web::Summarizer::Configuration;
+use Web::Summarizer::SentenceAnalyzer;
+use Web::Summarizer::Utils;
+
+binmode(STDIN,':utf8');
+binmode(STDOUT, ':utf8');
+$| = 1;
+
+my $debug = 0;
+my $man = 0;
+my $help = 0;
+
+=pod
+Getopt::Long::Configure ("bundling pass_through");
+GetOptions('help|?' => \$help, man => \$man,
+	   'run-analysis' => \$run_analysis,
+	   'fold-id=i' => \$fold_id,
+	   'summarizer-class=s' => \$summarizer_class,
+	   'system=s' => \$system,
+	   'debug|d' => \$debug
+    ) or pod2usage(2);
+=cut
+
+Log::Log4perl->easy_init( $debug ? $DEBUG : $ERROR );
+my $logger = Log::Log4perl->get_logger('run-summarizer-harness');
+
+# 1 - the first argument must be the global data base (directory)
+my $global_data_base = shift @ARGV;
+
+# 2 - the second argument must the repository base (directory)
+my $repository_base = shift @ARGV;
+
+# 3 - the third argument must be the summarizer root (directory)
+my $summarizer_root = shift @ARGV;
+
+# 4 - the fourth argument must be the summarizer class name
+my $summarizer_class = shift @ARGV;
+
+# 5 - the fifth argument must be the summarizer class name
+###my $input_base= shift @ARGV;
+
+# 6 - the sixth argument must be the system id
+# Used both to locate the relevant configuration for the current job and also to identify the output produced by script
+my $system_id = shift @ARGV;
+
+# 7 - the seventh argument must be the summarizer configuration (whether a configuration file or an inlined configuration)
+# TODO: should this be passed as a flag instead to be able to better support systems that do no not need any configuration parameter (title) ?
+my $configuration_param = shift @ARGV;
+
+# 8 - run analysis
+# TODO : this should really be a command line parameter
+my $run_analysis = shift @ARGV || 0;
+
+# CURRENT : extend Category::Data to allow for remote loading of data
+# Note : repository_base no longer has to be local
+if ( ! -d $global_data_base || ! defined( $repository_base ) || ! -d $summarizer_root ) {
+    usage();
+}
+
+# load data resources (needed at least for evaluation purposes)
+# TODO : create Moose base class for DMOZ operators ==> handles creation of global_data / category_repository
+# TODO : ==> can be shared with (at least) global-category-processor
+# TODO : enable using DMOZ role ? => would have to turn this script into a package
+my $global_data = new DMOZ::GlobalData( data_directory => $global_data_base );
+my $category_repository = new DMOZ::CategoryRepository( global_data => $global_data , repository_root => $repository_base );
+
+# 5 - load base configuration
+# TODO : could this be cleaner ?
+# $configuration_param =~ m/^\// ) ? $configuration_param : 
+# TODO : start by resolving file name and checking for existence of file
+my $base_configuration = undef;
+
+if ( $configuration_param ) {
+
+    if ( -f $configuration_param ) {
+	my $configuration_manager = new Web::Summarizer::Configuration( file => $configuration_param );
+	$base_configuration = $configuration_manager->get_system_configuration( $system_id );
+    }
+    elsif ( -f ( my $resolved_filename = join( "/" , $summarizer_root , $configuration_param ) ) ) {
+	my $configuration_manager = new Web::Summarizer::Configuration( file => $resolved_filename );
+	$base_configuration = $configuration_manager->get_system_configuration( $system_id );
+    }
+    else {
+	$base_configuration = decode_json( $configuration_param );
+    }
+
+}
+else {
+
+    $base_configuration = {};
+
+}
+
+if ( ! defined( $base_configuration ) ) {
+    die "Invalid configuration/system requested ...";
+}
+
+$base_configuration->{ 'system' } = $system_id;
+
+# TODO : can we make these optional based on what is actually needed by the requested Summarizer class ?
+$base_configuration->{ 'global_data' } = $global_data;
+$base_configuration->{ 'category_repository' } = $category_repository;
+
+# 6 - determine whether this is a training request
+# TODO : this is only temporary
+my $run_training = defined( $base_configuration->{ 'learner_class' } );
+
+# 3 - build summarizer instance
+# CURRENT : can we specify requested role(s) at construction time ?
+=pod
+if ( $run_training ) {
+    Trainable->meta->apply( $summarizer_object );
+}
+=cut
+$logger->error( "Constructing summarizer using configuration : " . Dumper( $base_configuration ) );
+my @runtime_roles = map { $_ => $base_configuration->{ 'roles' }->{ $_ } } keys( %{ $base_configuration->{ 'roles' } } );
+if ( $run_training ) {
+    push @runtime_roles , 'Trainable' => { mapping_method => 'decode' };
+}
+
+if ( scalar( @runtime_roles ) ) {
+    apply_all_roles( $summarizer_class , @runtime_roles );
+}
+else {
+    # load summarizer class ourselves
+    Web::Summarizer::Utils::load_class( $summarizer_class );    
+}
+
+# 4 - sentence analyzer
+my $sentence_analyzer = new Web::Summarizer::SentenceAnalyzer;
+
+# 6 - URL normalizer
+my $url_normalizer = new Service::Web::UrlNormalizer( use_cache => 1 );
+
+# * - read input data from STDIN
+while( <STDIN> ) {
+
+    chomp;
+    
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+    my $url_normalized = ( shift @fields ) || $url_normalizer->normalize( $url );
+    my $summary_ground_truth = shift @fields;
+    my $category_ground_truth = shift @fields;
+
+    print STDERR "url: $url\n";
+    print STDERR "url normalized: $url_normalized\n";
+
+    # Summarizer construction - placed here until we have guarantees that the summarizer object can clean its state (or at least have a separate state object)
+    #my $summarizer_object = $summarizer_class->new_with_options( %{ $base_configuration } );
+    #my $summarizer_object = with_traits( $summarizer_class, @runtime_roles )->new_with_options( %{ $base_configuration } );
+    my $summarizer_object = with_traits( $summarizer_class )->new_with_options( %{ $base_configuration } );
+
+    # x - make summarize object immutable (should be faster ?)
+    # TODO : does it even have a meaning ?
+    $summarizer_object->meta->make_immutable;
+
+    # *****************************************************************************************************************************
+    # load (target url) data
+    # *****************************************************************************************************************************
+    # TODO : not perfect yet , should the URL lookup even be required ?
+    my $instance = Category::UrlData->load_url_data( $url_normalized );
+
+    # TODO : once the proper indexing process is in place, this should be removed
+    $instance->original_url( $url );
+    
+    if ( ! $instance ) {
+	die "Unable to load data for $url, aborting ...";
+    }
+
+    # TODO : is this the right thing to do ?
+    foreach my $field_entry ( [ 'summary' , $summary_ground_truth ] , [ 'category' , $category_ground_truth ] ) {
+
+	my $field_entry_key = $field_entry->[ 0 ];
+	my $field_entry_value = $field_entry->[ 1 ];
+
+	if ( defined( $field_entry_value ) ) {
+	
+	    if ( $instance->has_field( $field_entry_key , namespace => 'dmoz' ) && ( $instance->get_field( $field_entry_key , namespace => 'dmoz' ) ne $field_entry_value ) ) {
+		print STDERR "[run-summarizer-harness] Gold data mismatch for $url_normalized ($field_entry_key) => to be solved by fixing the import process ...\n";
+	    }
+	    else {
+		# CURRENT : is it absolutely necessary for this to happen at this point ?
+		# TODO : should we setting the ground truth permanently ? => no for evaluation purposes
+		$instance->set_field( $field_entry_key , $field_entry_value , namespace => 'dmoz' , store => 0 );
+	    }
+	    
+	}
+
+    }
+
+    # 4 - run summarizer
+    my $summarizer_id = $summarizer_object->summarizer_id;
+    if ( $summarizer_id ne $system_id ) {
+	die "System code/configuration mismatch : $summarizer_id / $system_id ...";
+    }
+
+    eval {
+
+	# TODO : can we do better ?
+	if ( $run_analysis ) {
+	    $summarizer_object->sentence_analyzer( $sentence_analyzer );
+	}
+
+	my $summary_object_final  = $summarizer_object->summarize( $instance );
+	my @summary_entries;
+
+	# append intermediate outputs if there are any
+	# TODO : have the summarizer directly return intermediate outputs instead => not state
+	if ( $summarizer_object->return_intermediate_summaries ) {
+	    push @summary_entries , map { [ join( "@" , $system_id , $_->[ 0 ] ) , $_->[ 1 ] ] } @{ $summarizer_object->intermediate_summaries };
+	}
+
+	# append main output
+	push @summary_entries , [ $system_id , $summary_object_final ];
+
+	# output header
+	my @result_header = ( 'url' , 'system' , 'summary' );
+	
+	my $is_first = 1;
+	foreach my $summary_entry (@summary_entries) {
+	    
+	    my $summary_entry_system_id = $summary_entry->[ 0 ];
+	    my $summary_object = $summary_entry->[ 1 ];
+	    my $summary = $summary_object->verbalize;
+
+	    # Note : we output the original - not the normalized - URL
+	    my @result_data = ( $url , $summary_entry_system_id , $summary );
+	    
+	    # 5 - run analysis
+	    if ( $run_analysis ) {
+
+		# TODO : check that the summary modality actually exist ?
+		my $reference_sentence_object = $instance->summary_modality->utterance;
+		if ( ! $reference_sentence_object ) {
+		    die "No gold summary available for $url, aborting ...";
+		}
+		
+		my $summary_analysis = $sentence_analyzer->analyze( $reference_sentence_object , $summary_object );
+		
+		if ( $is_first ) {
+		    push @result_header , 'reference';
+		    my @analysis_header = map { $_->[ 0 ] } @{ $summary_analysis };
+		    push @result_header , @analysis_header;
+
+		    # add stats headers
+		    # Note : this assumes the stats apply to all intermediary outputs
+		    push @result_header , 'summarizer_stats';
+
+		}
+
+		# append analysis data
+		push @result_data , $reference_sentence_object;
+		my @analysis_data = map { $_->[ 1 ] } @{ $summary_analysis };
+		push @result_data , @analysis_data;
+
+		# append summarizer stats
+		my $summarizer_stats = $summarizer_object->state->stats;
+		#my @stats_header = sort { $a cmp $b } keys( %{ $summarizer_stats } );
+		#push @result_data , map { $summarizer_stats->{ $_ } } @stats_header;
+		push @result_data , encode_json( $summarizer_stats );
+
+	    }
+	    
+	    # TODO : can we avoid testing again on is_first ?
+	    if ( $is_first ) {
+		print join( "\t" , @result_header ) . "\n";
+		$is_first = 0;
+	    }
+	    
+	    # 6 - output summary entry
+	    print join( "\t" , @result_data ) . "\n";
+	    	    
+	}
+	
+    };
+    if ( $@ ) { 
+	$logger->trace( " An error/exception occurred during the summarization process: " . Dumper( $@ ) );
+	die;
+    }
+
+}
+
+# TODO: can I use something more standard to return the usage information ?
+sub usage {
+    die "Usage: $0 <global-data-base> <repository-base> <system-id> [<system-configuration>]";
+}
+
+1;

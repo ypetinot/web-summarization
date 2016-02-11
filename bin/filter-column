@@ -1,0 +1,70 @@
+#!/usr/bin/env perl
+
+# TODO : is there a more command-line-friendly way of implementing this functionality concisely ?
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use File::Slurp;
+use Getopt::Long;
+use Text::Trim;
+
+my $debug = 0;
+my $help = 0;
+my $man = 0;
+
+my $column_index = 0;
+my $filters_file = undef;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, man => \$man,
+	   'column=i' => \$column_index,
+	   'filters=s' => \$filters_file,
+           'debug|d' => \$debug
+    ) or pod2usage(2);
+
+my $do_filtering = ( $column_index && $filters_file );
+
+# 1 - read filters
+my %filters;
+if ( $do_filtering ) {
+
+    map {
+	$filters{ trim( $_ ) } = 1;
+    } read_file( $filters_file , chomp => 1 );
+
+}
+
+my $count = 0;
+while ( <STDIN> ) {
+	
+    chomp;
+    my $line = $_;
+
+    # Note : we don't filter the header line
+    if ( ! $count++ ) {
+
+	# nothing
+
+    }
+    else {
+
+	my @fields = split /\t/ , $line;
+	
+	if ( $do_filtering ) {
+	    if ( ! defined( $filters{ $fields[ $column_index - 1 ] } ) ) {
+		next;
+	    }
+	}
+
+    }
+    
+    print "$line\n";
+    
+}
+
+1;

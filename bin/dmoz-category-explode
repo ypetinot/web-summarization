@@ -1,0 +1,57 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+FOLD_ID=$1
+OUTPUT_DIRECTORY=$2
+
+source ${BINDIR}/parallel-job-resources
+source ${BINDIR}/../dist.rc
+
+if [[ -z "${FOLD_ID}" || -z "${OUTPUT_DIRECTORY}" ]]; then
+    echo "Usage: $0 <fold-id> <output-directory>";
+    exit 1;
+fi
+
+cat - | while read CATEGORY_BASE; do
+    
+    TEST_ENTRIES_SORTED=`mktemp`
+    ${BINDIR}/dmoz-category-fold --global-data-base=${ROOTDIR_DATA} --repository-base=${DMOZ_REPOSITORY_BASE} --test ${FOLD_ID} ${CATEGORY_BASE} | sort -u -k 1 -t$'\t' > ${TEST_ENTRIES_SORTED}
+
+    CATEGORY_OUTPUT_DIRECTORY=${OUTPUT_DIRECTORY}/$(basename ${CATEGORY_BASE})
+    ENTRY_COUNT=`wc -l ${TEST_ENTRIES_SORTED} | awk '{ print $1 }'`
+    seq 1 ${ENTRY_COUNT} | while read ENTRY_ID; do
+
+	# entry directory
+	ENTRY_OUTPUT_DIRECTORY=${CATEGORY_OUTPUT_DIRECTORY}/${ENTRY_ID}
+	
+	# create entry directory
+	mkdir -p ${ENTRY_OUTPUT_DIRECTORY}
+
+        # special treatment for mapping files
+	cp -rf ${CATEGORY_BASE}.*.mapping ${ENTRY_OUTPUT_DIRECTORY}/ 
+
+	# store (at least temporarily) backpointer to original category
+	LOCAL_CATEGORY_POINTER=${ENTRY_OUTPUT_DIRECTORY}/category
+	echo ${CATEGORY_BASE} > ${LOCAL_CATEGORY_POINTER}
+
+	# 0 - keep track of fold id for later use
+	FOLD_FILE=${ENTRY_OUTPUT_DIRECTORY}/fold
+	echo ${FOLD_ID} > ${FOLD_FILE}
+
+    done;
+
+    # TODO: opt.graph.summary.chunks are no longer necessary, can remove them across the board
+    find ${CATEGORY_BASE}* -type f -maxdepth 0 -not -name '*.folds' -not -name '*.mapping' -not -name '*opt.graph.summary.chunks' -not -name '*.coverage' | while read CATEGORY_FILE; do
+
+	filename=`basename ${CATEGORY_FILE}`;
+
+	pushd ${CATEGORY_OUTPUT_DIRECTORY} > /dev/null;
+	echo "Processing ${CATEGORY_FILE} ..."
+	cat ${CATEGORY_FILE} | sort -u -k 1 -t$'\t' | join -j 1 -t$'\t' ${TEST_ENTRIES_SORTED} - | awk -F"\t" -v output_file=${filename} '{ print $0 > NR "/" output_file }'
+	popd > /dev/null
+	
+    done;
+    
+###    rm -f ${TEST_ENTRIES_SORTED}
+
+done

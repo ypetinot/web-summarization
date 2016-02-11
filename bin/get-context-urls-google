@@ -1,0 +1,207 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../third-party/local/lib/";
+
+use Getopt::Long;
+use HTML::LinkExtor;
+use Pod::Usage;
+use XML::TreePP;
+
+my $man = 0;
+my $help = 0;
+my $output_mode = '';
+my $service = "yahoo";
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'output-mode=s' => \$output_mode, 'service=s' => \$service, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( $#ARGV < 0 );
+
+if ( $#ARGV < 0 ) {
+    die "usage: $0 TARGET_URL [id]";
+}
+
+my $url = $ARGV[0];
+my $yahoo_id = $ARGV[1] || "nlp4web";
+
+if ( $output_mode eq 'line' ) {
+    print "$url\t";
+}
+
+my $APPLICATION_NAME = $0;
+
+# create XML parser
+my $tpp = XML::TreePP->new();
+
+my $hasmore = 1;
+my $state = undef;
+
+while ( $hasmore ) {
+    
+    my $urls;
+
+    if ( $service eq 'google' ) {
+	($hasmore, $state, $urls) = send_request_google($state);
+    }
+    else {
+	($hasmore, $state, $urls) = send_request_yahoo($state);
+    }
+
+    foreach my $url (@$urls) {
+
+	if ( $output_mode eq 'line' ) {
+	    print " ";
+	}
+	print $url;
+	if ( $output_mode ne 'line' ) {
+	    print "\n";
+	}
+    
+    }
+
+    sleep( $state->{'sleep_time'} );
+    
+}
+
+sub get_parsed_content {
+
+    my $url = shift;
+
+    print STDERR "requesting: $url\n";
+
+    my $data = `wget --user-agent=Firefox/1.5.0.12 -q -O - '$url'`;
+    my $tree = $tpp->parse($data);
+
+    return $tree;
+
+}
+
+sub send_request_yahoo {
+
+    my $state = shift;
+
+    if ( !defined($state) ) {
+	$state = {
+	    'offset' => 1,
+	    'n_requested' => 100,
+	    'sleep_time' => 5
+	}
+    }
+
+    my $offset = $state->{'offset'};
+    my $n_requested = $state->{'n_requested'};
+    
+    my $yahooapi_url = "http://search.yahooapis.com/SiteExplorerService/V1/inlinkData?appid=${yahoo_id}&query=${url}&results=100&start=${offset}";
+    
+    print STDERR "sending request to yahooapi ... $url ... $offset ... $yahooapi_url\n";
+    
+    my $yahoo_url = "http://search.yahooapis.com/SiteExplorerService/V1/inlinkData?appid=${yahoo_id}&query=${url}&results=100&start=${offset}";
+    my $tree = get_parsed_content($yahoo_url);
+    
+    my @urls;
+
+    if ( defined(ref($tree->{'ResultSet'}->{'Result'})) ) {
+
+	if ( ref($tree->{'ResultSet'}->{'Result'}) eq 'ARRAY' ) {
+	    # print $tree->{'ResultSet'}->{'-totalResultsAvailable'};
+	    foreach my $result (@{$tree->{'ResultSet'}->{'Result'}}) {
+		
+		push @urls, $result->{'Url'};
+		
+		$state->{offset}++;
+		
+	    }
+	}
+	else {
+	    
+	    push @urls, $tree->{'ResultSet'}->{'Result'}->{'Url'};
+	    
+	    $state->{offset}++;
+
+	}
+
+    }
+
+    my $hasmore = 0;
+    if ( scalar(@urls) == $n_requested ) {
+	$hasmore = 1;
+    }
+
+    return ($hasmore, $state, \@urls);
+
+}
+
+sub send_request_google {
+
+    my $state = shift;
+
+    if ( !defined($state) ) {
+	$state = {
+	    'offset' => 0,
+	    'n_requested' => 20,
+	    'sleep_time' => 1.5
+	}
+    }
+
+    my $offset = $state->{'offset'};
+    my $n_requested = $state->{'n_requested'};
+
+    my $google_url = "https://research.google.com/university/search/service?clid=websummarization-cs.columbia.edu&start=$offset&rsz=large&q=link:$url";
+    my $tree = get_parsed_content($google_url);
+
+    my @urls;
+    my $maximum_index = 0;
+
+    if ( $tree ) {
+
+	$maximum_index = $tree->{'GSP'}->{'RES'}->{'M'};
+	
+	if ( defined( $tree->{'GSP'}->{'RES'}->{'R'} ) ) {
+	    
+	    if ( ref($tree->{'GSP'}->{'RES'}->{'R'}) eq 'ARRAY' ) {
+		
+		foreach my $result (@{$tree->{'GSP'}->{'RES'}->{'R'}}) {
+		    
+		    push @urls, $result->{'U'};
+		    
+		    $state->{offset}++;
+		    
+		}
+		
+	    }
+	    else {
+		
+		push @urls, $tree->{'GSP'}->{'RES'}->{'R'}->{'U'};
+		
+		$state->{offset}++;
+		
+	    }
+	    
+	}
+	
+    }
+
+    my $hasmore = 0;
+    if ( scalar(@urls) == $state->{'n_requested'} ) {
+	$hasmore = 1;
+    }
+    else {
+	print STDERR "will stop here: " . join("/", scalar(@urls), $maximum_index || 0, $state->{'offset'}) . "\n";
+    }
+
+    return ($hasmore, $state, \@urls);
+
+}
+
+if ( $output_mode eq 'line' ) {
+    print "\n";
+}
+
+1;

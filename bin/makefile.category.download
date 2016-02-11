@@ -1,0 +1,24 @@
+# Move this to a common makefile ?
+TOOLS_DIR_DIST:=$(dir $(lastword $(MAKEFILE_LIST)))
+###$(info TOOLS_DIR_DIST: $(TOOLS_DIR_DIST))
+
+.PRECIOUS: %.content %.anchortext
+
+# no default target
+default:
+
+category-download: $(CATEGORY).content $(CATEGORY).anchortext
+
+# TODO : instead of doing this, illegal/potentially problematic characters (e.g. ') should be removed from category names
+.DELETE_ON_ERROR:
+%.content: %
+	cat "$*" | perl $(TOOLS_DIR_DIST)/line-processor | awk -F"\t" '{ print $$1 "\t" $$3 }' | iconv -c -f utf8 -t utf8 > "$@"
+
+%.anchortext: %.anchortext.urls
+	###$(info Computing anchortext for $*)
+	#TODO: figure out why make is unable to call get-context-anchortext at times
+	cat $< | while read URL ANCHORTEXT_URLS; do URL_CONTEXT=; RETRIES=5; while [ $${RETRIES} > 0 ] && [ -z "$${URL_CONTEXT}" ]; do RETRIES=$$(( $${RETRIES} - 1 )); URL_CONTEXT=`${TOOLS_DIR_DIST}/get-context-anchortext --output=line $${URL} "$${ANCHORTEXT_URLS}"`; done; if [ -z "$${URL_CONTEXT}" ]; then rm -f $@; exit 100; fi; echo -e "$${URL}\t$${URL_CONTEXT}"; done > $@
+
+category-download-clean:
+	rm -f $(CATEGORY).content $(CATEGORY).anchortext
+	rm -f $(CATEGORY)*.temp

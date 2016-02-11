@@ -1,0 +1,73 @@
+#!/usr/bin/env perl
+
+# input is a list of category folds (STDIN) and a target directory
+# output are 2 files: dmoz.training.data and dmoz.testing.data
+
+# (it may be up to the learning algorithm to reserve part of the training data as dev set)
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/perl/";
+# TODO: move Category::Fold to top-level src dir 
+use lib "${FindBin::Bin}/../summarizers/graph-summarizer/src/";
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use Category::Fold;
+
+my $target_dir = $ARGV[0];
+if ( ! defined $target_dir || ! -d $target_dir ) {
+    die "Usage: $0 <target-dir>";
+}
+
+my $training_data_file = join("/", $target_dir, "dmoz.training.data");
+my $testing_data_file = join("/", $target_dir, "dmoz.testing.data");
+
+open TRAINING_DATA_FILE, ">$training_data_file" or die "Unable to create file $training_data_file: $!";
+open TESTING_DATA_FILE, ">$testing_data_file" or die "Unable to create file $testing_data_file: $!";
+
+binmode(TRAINING_DATA_FILE,":utf8");
+binmode(TESTING_DATA_FILE,":utf8");
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    
+    my $category_data_base = shift @fields;
+    my $category_data_fold_path = shift @fields;
+
+    print STDERR ">> processing : $category_data_base / $category_data_fold_path ...\n";
+
+    # load fold
+    my $category_data_fold = Category::Fold->restore( $category_data_base , $category_data_fold_path );
+
+    # get fold data
+    my $fold_url_data = $category_data_fold->url_data();
+    for (my $i=0; $i<scalar(@{ $fold_url_data }); $i++) {
+	print TRAINING_DATA_FILE _create_entry( $fold_url_data->[$i] ) . "\n";
+    }
+
+    # get testing data
+    my $testing_fold_url_data = $category_data_fold->get_test_url_data();
+    for(my $i=0; $i<scalar(@{ $testing_fold_url_data }); $i++) {
+	print TESTING_DATA_FILE _create_entry( $testing_fold_url_data->[$i] ) . "\n"; 
+    }
+
+}
+
+close TESTING_DATA_FILE;
+close TRAINING_DATA_FILE;
+
+sub _create_entry {
+
+    my $url_data = shift;
+
+    # return join("\t", $url_data->url() , $summary , $url_data->fields()->{ 'content::prepared' };
+    return $url_data->freeze();
+
+}
+
+1;
