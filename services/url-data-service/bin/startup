@@ -1,0 +1,11 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+source ${BINDIR}/../../../dist.rc
+
+SERVICE_PSGI=${BINDIR}/../url_data_service.psgi
+SERVICE_PORT=8990
+SERVICE_LIB=${BINDIR}/../src/
+
+${BINDIR}/../../bin/startup-common ${SERVICE_PSGI} ${SERVICE_PORT} ${SERVICE_LIB}

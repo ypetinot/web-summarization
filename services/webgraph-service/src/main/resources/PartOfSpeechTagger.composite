@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<composite xmlns="http://www.osoa.org/xmlns/sca/1.0"
+	xmlns:tuscany="http://tuscany.apache.org/xmlns/sca/1.0"	
+    	targetNamespace="http://confusius"
+	xmlns:confusius="http://confusius"
+    	name="NLP">
+
+<!--
+	<component name="NLPServiceComponent">
+                <implementation.java class="confusius.services.nlp.NLPServiceImpl"/>
+        	<reference name="posTaggerService">
+           		<interface.java interface="confusius.services.nlp.PartOfSpeechTagger" />
+			<binding.ws uri="http://localhost:8080/pos-tagger/PartOfSpeechTagger" />
+        	</reference>
+    	</component>
+-->
+
+	<component name="PartOfSpeechTaggerComponent">
+		<implementation.java class="confusius.services.nlp.PartOfSpeechTaggerImpl" />
+		<service name="PartOfSpeechTagger">
+	        	<interface.java interface="confusius.services.nlp.PartOfSpeechTagger" />  
+            		<binding.ws/>
+			<tuscany:binding.jsonrpc/>
+		</service>
+    	</component>
+
+	<component name="SentenceChunkerComponent">
+		<implementation.java class="confusius.services.nlp.SentenceChunkerImpl" />
+		<service name="SentenceChunker">
+			<interface.java interface="confusius.services.nlp.SentenceChunker" />
+			<binding.ws/>
+			<tuscany:binding.jsonrpc/>
+		</service>
+	</component>
+
+</composite>

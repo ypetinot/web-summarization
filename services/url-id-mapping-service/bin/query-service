@@ -1,0 +1,14 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../../dist.rc
+
+URL=$1
+
+if [[ -z "${URL}" ]]; then
+    echo "Usage: $0 <url>";
+    exit 1;
+fi
+
+# TODO : reimplement this using the abstraction provided by Service::Web::WebGraph
+${ROOTDIR_THIRD_PARTY}/mongodb/bin/mongo url-2-id --quiet --eval "db.mapping.find( { '_id' : '${URL}' } ).shellPrint();" | sed 's/^.*NumberLong(\([[:digit:]]\+\)).*$/\1/'

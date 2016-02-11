@@ -1,0 +1,44 @@
+STANFORD_THRIFT_GIT_URL=https://github.com/EducationalTestingService/stanford-thrift
+STANFORD_THRIFT_DIRECTORY=$(notdir $(STANFORD_THRIFT_GIT_URL))
+THRIFT_SERVICE_SRC=$(STANFORD_THRIFT_DIRECTORY)
+
+STANFORD_SERVICE_THRIFT=$(STANFORD_THRIFT_DIRECTORY)/corenlp.thrift
+
+STANFORD_THRIFT_PERL=gen-perl
+PARSE_CLIENT_MODIFIED=parse-java.modified.sh
+
+default: thrift-install-perl-libs $(PARSE_CLIENT_MODIFIED)
+
+$(THRIFT_SERVICE_SRC):
+	git clone $(STANFORD_THRIFT_GIT_URL)
+	mv $(STANFORD_SERVICE_THRIFT) $(STANFORD_SERVICE_THRIFT).original
+	echo 'namespace perl CoreNLP' > $(STANFORD_SERVICE_THRIFT)
+	cat $(STANFORD_SERVICE_THRIFT).original >> $(STANFORD_SERVICE_THRIFT)
+
+include $(CURDIR)/../makefile.service
+
+# TODO : this should be coming from a standard location ...
+SPACE :=
+SPACE +=
+THRIFT_BUILD=$(THRIFT_BASE)/thrift-0.9.2/lib/java/build/
+THRIFT_JARS=$(subst $(SPACE),:,$(shell find $(THRIFT_BUILD)/ -type f -name '*.jar'))
+
+STANFORD_JARS=${THIRD_PARTY_RESOURCES_STANFORD_JAVA_CLASSPATH}
+STANFORD_THRIFT_JARS=$(STANFORD_JARS):$(THRIFT_JARS)
+STANFORD_THRIFT_PARSE_CLIENT=$(STANFORD_THRIFT_DIRECTORY)/scripts/parse-java.sh
+
+$(STANFORD_THRIFT_START_SERVER): $(STANFORD_THRIFT_DIRECTORY)
+	cd $< && PATH=${THIRD_PARTY_RESOURCES_JAVA_BASE}/bin/:$(CURDIR)/../local/bin/:${PATH} CLASSPATH=${CLASSPATH}:$(STANFORD_THRIFT_JARS) ant
+
+$(PARSE_CLIENT_MODIFIED): $(STANFORD_THRIFT_PARSE_CLIENT)
+	cat $< | sed -e 's/StanfordCoreNLPClient/org.ets.research.nlp.stanford_thrift.StanfordCoreNLPClient/g' > $@
+	chmod +x $@
+
+$(STANFORD_THRIFT_PERL): $(STANFORD_THRIFT_DIRECTORY)
+	$(THIRD_PARTY_BASE)/local/bin/thrift --gen perl $(STANFORD_SERVICE_THRIFT)	
+
+clean:
+	rm -rf *~
+	rm -rf $(STANFORD_THRIFT_DIRECTORY)
+	rm -rf $(STANFORD_THRIFT_PERL)
+	rm -rf $(PARSE_CLIENT_MODIFIED)

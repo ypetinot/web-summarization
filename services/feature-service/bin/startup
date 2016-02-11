@@ -1,0 +1,9 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+
+SERVICE_PORT=8989
+SERVICE_PSGI=${BINDIR}/../feature_service.psgi
+
+SERVICE_COMMON_RESOURCES=${BINDIR}/../../bin/startup-common
+source ${SERVICE_COMMON_RESOURCES}

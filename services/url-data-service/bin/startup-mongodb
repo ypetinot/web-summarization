@@ -1,0 +1,19 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+DIST_ROOT=${BINDIR}/../../../
+source ${DIST_ROOT}/dist.rc
+
+MONGODB_DB_PATH=/local/nlp/ypetinot/data/web-data-commons/2014/mapping-db/
+
+function _cleanup {
+
+    echo "Shutting down mongodb ..."
+    ${ROOTDIR_THIRD_PARTY}/mongodb/bin/mongod --dbpath=${MONGODB_DB_PATH} --shutdown
+
+}
+
+trap "_cleanup" SIGINT SIGKILL SIGTERM SIGQUIT
+
+MONGODB_PARAMS_AUTH=--auth
+${ROOTDIR_THIRD_PARTY}/mongodb/bin/mongod ${MONGODB_PARAMS_AUTH} --dbpath=${MONGODB_DB_PATH}

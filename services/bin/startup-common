@@ -1,0 +1,22 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+DIST_ROOT=${BINDIR}/../../
+THIRD_PARTY_LOCAL_ROOT=${DIST_ROOT}/third-party/local/
+
+SERVICE_PSGI=`readlink -f $1`
+SERVICE_PORT=$2
+LOCAL_LIB=`readlink -f $3`
+
+if [[ -z "${SERVICE_PSGI}" ]]; then
+    echo "Missing service psgi ...";
+    exit 2;
+elif [[ -z "${SERVICE_PORT}" ]]; then
+    echo "Missing service port ...";
+    exit 1;
+fi
+
+# CURRENT : moving to Thrift for all services
+
+#perl -I${LOCAL_LIB} -I${THIRD_PARTY_LOCAL_ROOT}/lib/ ${THIRD_PARTY_LOCAL_ROOT}/script/plackup -s Starman --port ${SERVICE_PORT} ${SERVICE_PSGI}
+perl -I${LOCAL_LIB} -I${THIRD_PARTY_LOCAL_ROOT}/lib/ ${THIRD_PARTY_LOCAL_ROOT}/script/plackup --port ${SERVICE_PORT} ${SERVICE_PSGI}

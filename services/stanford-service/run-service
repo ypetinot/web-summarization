@@ -1,0 +1,25 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+SERVICE_PORT=$1
+
+if [ -z "${SERVICE_PORT}" ]; then
+    echo "Usage: $0 <port>"
+    exit 1;
+fi
+
+# TODO : can we do better ?
+source ${BINDIR}/../../dist.rc
+source ${BINDIR}/..//service.rc
+source ${THIRD_PARTY_RESOURCES_JAVA}
+
+STANFORD_ROOT=${ROOTDIR_THIRD_PARTY}/stanford/
+STANFORD_CORENLP_ROOT=${STANFORD_ROOT}/stanford-corenlp-full-2014-10-31/
+STANFORD_THRIFT_ROOT=${BINDIR}
+
+# 8888 => pos
+# 8889 => dependencies
+
+# TODO : how to estimate (better word ?) memory requirements ?
+CLASSPATH=${CLASSPATH_THRIFT}:${STANFORD_CORENLP_ROOT}/stanford-corenlp-3.5.0.jar:${STANFORD_CORENLP_ROOT}/stanford-corenlp-3.5.0-models.jar:${STANFORD_ROOT}/stanford-srparser-2014-10-23-models.jar ${STANFORD_THRIFT_ROOT}/stanford-thrift/scripts/start_server.sh ${SERVICE_PORT} 25g ${STANFORD_THRIFT_ROOT}/config

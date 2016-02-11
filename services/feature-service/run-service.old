@@ -1,0 +1,83 @@
+#!/usr/bin/env perl
+
+use strict;
+#use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use FeatureService;
+
+use JSON::RPC::Legacy::Server::Daemon;
+
+my $vocabulary_file = $ARGV[ 0 ];
+if ( ! -f $vocabulary_file ) {
+    die "Usage: $0 <vocabulary-file>";
+}
+
+# TODO: communicate vocabulary file via ENV variable ?
+$ENV{ 'VOCABULARY_FEATURES' } = $vocabulary_file;
+
+my $json_rpc_daemon = JSON::RPC::Legacy::Server::Daemon->new(LocalPort => 8989);
+#$json_rpc_daemon->{ 'json' }->allow_blessed( 1 );
+#$json_rpc_daemon->{ 'json' }->convert_blessed( 1 );
+$json_rpc_daemon->dispatch({'/' => 'FeatureService'})->handle();
+
+use JSON::RPC::Dispatch;
+
+=pod
+my $router = Router::Simple->new; # or use Router::Simple::Declare
+$router->connect(
+    'get_word_semantics' => {
+	handler => new FeatureService( vocabulary => $vocabulary_file ),
+	action  => 'get_word_semantics'
+    }
+    );
+
+my $dispatch = JSON::RPC::Dispatch->new(
+    router => $router
+    );
+
+$dispatch->handle();
+
+use JSON::RPC::Dispatch;
+use Router::Simple::Declare;
+
+my $router = router {
+    connect "foo" => {
+            handler => "+FeatureService",
+            action  => "get_word_semantics"
+    };
+};
+
+my $dispatch = JSON::RPC::Dispatch->new(
+    router => $router,
+    );
+
+print $dispatch . "\n";
+#$dispatch->handle();
+
+sub {
+    my $env = shift;
+    $dispatch->handle_psgi($env);
+};
+
+#$dispatch->handle_psgi( {} );
+
+# simple
+JSON::RPC::Server::CGI->dispatch('MyApp')->handle();
+
+# or 
+JSON::RPC::Server::CGI->dispatch([qw/MyApp FooBar/])->handle();
+
+# or INFO_PATH version
+JSON::RPC::Server::CGI->dispatch({'/Test' => 'MyApp'})->handle();
+
+#sub {
+#    my $env = shift;
+#    $dispatch->handle_psgi($env);
+#};
+=cut
+
+1;

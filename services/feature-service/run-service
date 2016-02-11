@@ -1,0 +1,72 @@
+#!/usr/bin/perl -w
+
+package FeatureServer;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Net::Server;
+
+#use base qw(Net::Server::PreFork); # any personality will do
+use base qw(Net::Server::Single);
+
+FeatureServer->run({ 
+    conf_file => "${FindBin::Bin}/conf/server.conf"
+});
+
+# over-ride the default echo handler
+
+sub process_request {
+
+    my $self = shift;
+
+    eval {
+	
+	local $SIG{'ALRM'} = sub { die "Timed Out!\n" };
+	my $timeout = 30; # give the user 30 seconds to type some lines
+	
+	my $previous_alarm = alarm($timeout);
+	while (<STDIN>) {
+	    s/\r?\n$//;
+	    print "You said '$_'\r\n";
+	    alarm($timeout);
+	}
+	alarm($previous_alarm);
+	
+    };
+    
+    if ($@ =~ /timed out/i) {
+	print STDOUT "Timed Out.\r\n";
+	return;
+    }
+    
+}
+
+sub post_accept {
+
+    my $self = shift;
+
+    use Data::Dumper;
+
+    print STDERR ">> processing request ...\n";
+
+    print STDERR Dumper( \@_ );
+
+}
+
+sub post_client_connection_hook {
+
+    my $self = shift;
+
+#    use Data::Dumper;
+
+#    print STDERR ">> processed request ...\n";
+#    print STDERR Dumper( \@_ );
+
+}
+
+1;

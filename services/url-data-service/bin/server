@@ -1,0 +1,71 @@
+#!/usr/bin/env perl
+
+package Server::UrlDataHandler;
+
+use strict;
+use warnings;
+
+use threads::shared;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../data/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+#use AppearanceModel::Individual;
+use DMOZ::GlobalData;
+use Environment;
+use Service::Corpus::UrlDataService;
+
+use Thrift::Socket;
+use Thrift::Server;
+
+use Moose;
+#use MooseX::NonMoose::InsideOut;
+use MooseX::ClassAttribute;
+use MooseX::NonMoose;
+
+extends( 'Service::Corpus::UrlDataServiceIf' );
+with( 'DMOZ' => { remote => 0 } );
+
+my $global_data :shared;
+
+if( ! $global_data ) {
+    $global_data = new DMOZ::GlobalData( remote => 0 );
+}
+
+sub global_count
+{
+    my($self, $field, $order , $feature) = @_;
+    #return $self->global_data->global_count( $field , $order , $feature );
+    return $global_data->global_count( $field , $order , $feature );
+}
+
+__PACKAGE__->meta->make_immutable;
+
+eval {
+    
+    my $handler       = new Server::UrlDataHandler;
+    my $processor     = new Service::Corpus::UrlDataServiceProcessor($handler);
+    my $serversocket  = new Thrift::ServerSocket(9595);
+    my $forkingserver = new Thrift::ForkingServer($processor, $serversocket);
+
+    print "Starting the server...\n";
+    $forkingserver->serve();
+    print "done.\n";
+
+};
+    
+if ($@) {
+    
+    if ($@ =~ m/TException/ and exists $@->{message}) {
+	my $message = $@->{message};
+	my $code    = $@->{code};
+	my $out     = $code . ':' . $message;
+	die $out;
+    } else {
+	die $@;
+    }
+}
+
+1;

@@ -1,0 +1,75 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+DIST_ROOT=${BINDIR}/../../
+source ${DIST_ROOT}/dist.rc
+
+function _cleanup {
+
+##    echo "Shutting down mongodb ..."
+##    ${ROOTDIR_THIRD_PARTY}/mongodb/bin/mongod --dbpath=${MONGODB_DB_PATH} --shutdown
+
+    echo "Would have to kill the following pids: ${SERVICE_PIDS[@]}"
+    kill -9 "${SERVICE_PGIDS[@]}"
+
+}
+
+LOCAL_LIB=${BINDIR}/
+
+# TODO : create a variable in dist.rc instead ?
+SERVICES_BASE=${BINDIR}/../
+
+#perl -I${LOCAL_LIB} -I${THIRD_PARTY_LOCAL_ROOT}/lib/ ${THIRD_PARTY_LOCAL_ROOT}/script/plackup --port 8989 ${BINDIR}/../feature_service.psgi
+#perl -I${LOCAL_LIB} -I${THIRD_PARTY_LOCAL_ROOT}/lib/ ${THIRD_PARTY_LOCAL_ROOT}/script/plackup --port 8990 ${BINDIR}/../url_data_service.psgi
+
+# CURRENT : collect pids and stop individual services on exit
+function _startup_service {
+
+    service_id=$1
+    service_bin="$2"
+    
+    # launching service
+    ${service_bin} &
+
+    # collecting pid of service process
+    service_process_pid=$!
+    if [ -z "${service_process_pid}" ]; then
+	echo "Unable to start service ${service_id}"
+	exit 1;
+    fi
+
+    SERVICE_PIDS+=( ${service_process_pid} )
+    SERVICE_PGIDS+=( -$( ps -p ${service_process_pid} -o pgid= ) )
+    
+    echo "Started service ${service_id}: ${service_process_pid}";
+
+}
+
+trap "_cleanup" SIGINT SIGKILL SIGTERM SIGQUIT
+
+# Note : service started independently
+# start up word2vec service
+###_startup_service "word2vec" ${SERVICES_BASE}/word2vec-service/bin/startup
+
+# TODO : not implemented yet
+# start up webgraph service
+###_startup_service "webgraph" "${SERVICES_BASE}/webgraph-service/startup"
+
+# TODO : to be removed ?
+# Note : service started independently
+# start up url-data service
+###_startup_service "url-data-service" "${SERVICES_BASE}/url-data-service/bin/startup"
+
+# Note : service started independently
+# start up mongod
+# Note : in I case I ever need to setup a distributed setup with authentication enabled => --config /local/nlp/ypetinot/mongodb.conf
+# http://docs.mongodb.org/manual/tutorial/enable-authentication/
+# TODO : automatically create mongodb user from user file
+###MONGODB_DB_PATH=/local/nlp/ypetinot/web-data-commons/2014/mapping-db/
+###${ROOTDIR_THIRD_PARTY}/mongodb/bin/mongod --auth --dbpath=${MONGODB_DB_PATH} &
+
+# Note : service to be started independently
+## start up Stanford Thrift service
+###_startup_service "stanford-thrift" "${ROOTDIR_THIRD_PARTY}/stanford-thrift/run-service"
+
+wait "${SERVICE_PIDS[@]}"

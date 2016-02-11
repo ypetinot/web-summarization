@@ -1,0 +1,30 @@
+THIRD_PARTY_BASE=$(CURDIR)/../../third-party
+THIRD_PARTY_LIB=$(THIRD_PARTY_BASE)/local/lib/
+
+GOOGLE_SPARSEHASH_INCLUDE=-I $(ROOTDIR_THIRD_PARTY)/google/sparsehash-1.10/src/
+
+THRIFT_BASE=$(THIRD_PARTY_BASE)/thrift/
+THRIFT_CPP_GEN=gen-cpp
+THRIFT_CPP_BASE=$(THRIFT_BASE)/thrift-0.9.2/lib/cpp/
+THRIFT_CPP_INCLUDE=$(THRIFT_CPP_BASE)/src/
+THRIFT_CPP_LIB=$(THRIFT_CPP_BASE)/.libs/
+THRIFT_CPP_ADDITIONAL_BASE=$(THRIFT_CPP_INCLUDE)/thrift/
+THRIFT_CPP_ADDITIONAL=$(foreach test,TApplicationException Thrift concurrency/Monitor concurrency/Mutex concurrency/PosixThreadFactory concurrency/TimerManager concurrency/Util server/TSimpleServer server/TThreadedServer transport/TBufferTransports transport/TServerSocket transport/TSocket transport/TTransportException,$(THRIFT_CPP_ADDITIONAL_BASE)/$(test).o)
+
+# TODO : make modifications so that both the optimized and debug versions can be built
+DEBUG_FLAGS=-g
+THRIFT_CPP_GCC_FLAGS=-I $(THRIFT_CPP_INCLUDE) -I $(THRIFT_CPP_GEN) $(THRIFT_SERVER_CFLAGS)
+%.o: %.cpp
+	g++ -c $(THRIFT_CPP_GCC_FLAGS) $< -o $@
+
+# TODO : could we require a specific dependency by obtaining the current service name
+# TODO : turn into a "make-and-install" macro where I can designate an (optional) location for installation ?
+gen-%: $(shell find $(CURDIR)/ -type f -name '*.thrift')
+	$(CURDIR)/../../third-party/local/bin/thrift --gen $* $<
+
+.PHONY:
+clean-service:
+	rm -rf gen-*
+
+thrift-install-perl-libs: gen-perl
+	cp -rf $</* $(THIRD_PARTY_BASE)/local/lib/

@@ -1,0 +1,14 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+
+source ${BINDIR}/../../../dist.rc
+source ${BINDIR}/../../service.rc
+
+MAVEN_REPOSITORY_BASE=${HOME}/.m2/repository/
+WEBGRAPH_LIB_BASE=${MAVEN_REPOSITORY_BASE}/it/unimi/dsi/
+
+SERVICE_PORT=8994
+SERVICE_LIB=${MAVEN_REPOSITORY_BASE}/com/martiansoftware/jsap/2.1/jsap-2.1.jar:${MAVEN_REPOSITORY_BASE}/org/apache/commons/commons-math3/3.3/commons-math3-3.3.jar:${WEBGRAPH_LIB_BASE}/dsiutils/2.2.2/dsiutils-2.2.2.jar:${WEBGRAPH_LIB_BASE}/sux4j/3.2.1/sux4j-3.2.1.jar:${WEBGRAPH_LIB_BASE}/webgraph/3.4.2/webgraph-3.4.2.jar:${WEBGRAPH_LIB_BASE}/webgraph-big/3.3.5/webgraph-big-3.3.5.jar:${WEBGRAPH_LIB_BASE}/fastutil/6.5.15/fastutil-6.5.15.jar:${BINDIR}/../target/webgraph-service.jar
+
+java -cp ${SERVICE_LIB}:${CLASSPATH_THRIFT} edu.columbia.cs.nlp.webgraph.server.thrift.WebGraphServer ${SERVICE_PORT}

@@ -1,0 +1,8 @@
+BINDIR=`dirname $0`
+
+source ${BINDIR}/../../../dist.rc
+
+SERVICE_PORT=9090
+WORD2VEC_EMBEDDING=/local/nlp/ypetinot/data/word2vec/GoogleNews-vectors-negative300.bin
+
+${BINDIR}/../word2vec-server ${WORD2VEC_EMBEDDING}

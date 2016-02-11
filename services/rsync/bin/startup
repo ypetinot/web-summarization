@@ -1,0 +1,70 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+DIST_ROOT=${BINDIR}/../../../
+source ${DIST_ROOT}/dist.rc
+
+# TODO : check that we are indeed running on the target host ?
+
+RSYNCD_PID_FILE=/local/nlp/ypetinot/rsyncd.pid
+function _rsyncd_load_pid() {
+    RSYNCD_PID=`cat ${RSYNCD_PID_FILE}`
+    _log "[odp-rsync-service] current rsync daemon pid : ${RSYNCD_PID}";
+}
+
+function _rsyncd_start() {
+
+    _log "[odp-rsync-service] starting rsync daemon ..."
+
+    # 1 - check if the pid file exists
+    if [ -f ${RSYNCD_PID_FILE} ]; then
+	_log "[odp-rsync-service] checking existing rsync daemon pid file ..."
+	# make sure the pid list in the pid file actually exists
+	_rsyncd_load_pid
+	# TODO : is this accurate enough ?
+	# http://stackoverflow.com/questions/6550484/avoid-grep-returning-error-when-input-doesnt-match
+	RSYNCD_RUNNING=`$( ps --no-headers --pid ${RSYNCD_PID} || true ) | wc -l`
+	if [ "${RSYNCD_RUNNING}" == "0" ]; then
+	    # remove pid file
+	    _log "[odp-rsync-service] rsynd daemon pid no longer valid, removing pid file ..."
+	    rm -f ${RSYNCD_PID_FILE}
+	fi
+    fi
+
+    # 2 - start rsync daemon if it is not running
+    if [[ "${RSYNCD_RUNNING}" -ne "1"  ]]; then
+
+	_log "[odp-rsync-service] starting new rsync daemon ..."
+
+	# start rsync daemon
+	rsync -v --daemon --config=${CONFDIR_DATA}/rsyncd.repository.conf --port=${DMOZ_REPOSITORY_PORT};
+
+        # wait for pid file to be created
+	_n_iterations=100
+	while [[ ! -f ${RSYNCD_PID_FILE} && $_n_iterations -gt 0 ]]; do
+	    _n_iterations=$(( $_n_iterazations - 1 ))
+	    sleep 0.01;
+	done;
+
+	# TODO : just checking for the existence of the pid file might not always be good enough, create function that checks whether rsync daemon is running instead
+	if [ ! -f ${RSYNCD_PID_FILE} ]; then
+	    _log "[odp-rsync-service] unable to start rsync daemon, aborting ..."
+	    exit 1;
+	fi
+	
+    fi
+    
+    # finally update rsync daeomn pid
+    _rsyncd_load_pid
+
+}
+
+# start rsync daemon to serve repository data
+# TODO : keep the daemon alive as a standalone service
+# EXIT signal : http://www.alittlemadness.com/2012/06/25/bash-tip-reliable-clean-up-with-trap/
+trap '_log "[odp-rsync-service] killing rsync daemon (${RSYNCD_PID}) ..."; if [ ! -z "${RSYNCD_PID}" ]; then rm -f ${RSYNCD_PID_FILE}; kill -9 -- -${RSYNCD_PID}; fi; wait; exit 0;' EXIT SIGINT SIGTERM
+_rsyncd_start
+
+for ((;;)); do
+    sleep 5;
+done;

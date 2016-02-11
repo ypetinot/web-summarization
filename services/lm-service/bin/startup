@@ -1,0 +1,20 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+DIST_ROOT=${BINDIR}/../../../
+DIST_LIB=${DIST_ROOT}/src/perl/
+THIRD_PARTY_LOCAL_ROOT=${DIST_ROOT}/third-party/local/
+THIRD_PARTY_LIB=${THIRD_PARTY_LOCAL_ROOT}/lib/
+
+trap "echo 'Terminating ngram server ...'; exit" SIGINT SIGTERM
+
+NGRAM_ORDER=3
+NGRAM_MODEL_FILE="${BINDIR}/../../../data/ngrams/summary/${NGRAM_ORDER}/-no-sos+++-no-eos.model";
+NGRAM_OPTIONS=""
+NGRAM_SERVER_PORT_NUMBER=5010
+perl -I${DIST_LIB}/ -I${THIRD_PARTY_LIB} -e "use NGramLanguageModel; my (\$proc_obj, \$status_file) = NGramLanguageModel->startServer( ${NGRAM_ORDER} , '${NGRAM_MODEL_FILE}' , '${NGRAM_OPTIONS}' , ${NGRAM_SERVER_PORT_NUMBER} ); while (1) { sleep(5); }";
+
+#### infinite loop
+###for ((;;)); do
+###    sleep 10;
+###done

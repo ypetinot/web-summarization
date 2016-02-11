@@ -1,0 +1,27 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../../dist.rc
+
+if [[ ! -d ${WEBCOMMONS_DATA_DIRECTORY} ]]; then
+    echo "Invalid directory for raw Web Graph data: ${WEBCOMMONS_DATA_DIRECTORY}";
+    exit 1;
+fi
+
+if [[ -z "${WEBCOMMONS_DATA_MAPPING_DB}" ]]; then
+    echo "Invalid directory for URL-Id mapping database: ${WEBCOMMONS_DATA_MAPPING_DB}";
+    exit 2;
+fi
+
+DATABASE_DIRECTORY=${WEBCOMMONS_DATA_MAPPING_DB}
+
+# create database directory
+mkdir -p ${DATABASE_DIRECTORY}
+
+# TODO : actually install mongodb in local install
+find ${WEBCOMMONS_DATA_DIRECTORY}/ -type f -name 'index-*.gz' -exec gunzip -c {} \; | ${ROOTDIR_THIRD_PARTY}/mongodb/bin/mongoimport --db url-2-id --type tsv --dbpath=${DATABASE_DIRECTORY} --fields _id,node_id, --file -
+
+# TODO : db optimization + security
+# 1 - create index on node_id field
+#db.mapping.ensureIndex( { 'node_id' : 1 } )
+# 2 - security ?

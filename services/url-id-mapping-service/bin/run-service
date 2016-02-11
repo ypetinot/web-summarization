@@ -1,0 +1,8 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../../dist.rc
+
+DATABASE_DIRECTORY=${WEBCOMMONS_DATA_MAPPING_DB}
+
+${ROOTDIR_THIRD_PARTY}/mongodb/bin/mongod --dbpath=${DATABASE_DIRECTORY}
