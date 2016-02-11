@@ -1,0 +1,154 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use JSON;
+
+my $count = 0;
+my %field2index;
+
+=pod
+my @combination_fields;
+sub _generate_combination_fields {
+
+    my $record = shift;
+
+    my $combination = defined( $record ) ? {} : [];
+
+    # for now we only handle pairwise combination
+    for (my $i=0; $i<$#combination_fields; $i++) {
+	my $combination_field_i = $combination_fields[ $i ];
+	for (my $j=$i+1; $j<$#combination_fields; $j++) {
+	    my $combination_field_j = $combination_fields[ $j ];
+	    my $combination_key = join( "::" , $combination_field_i , $combination_field_j );
+	    if ( defined( $record ) ) {
+		$record->{ $combination_key } = $record->{ $combination_field_i } * $record->{ $combination_field_j };
+	    }
+	    else {
+		push @{ $combination } , $combination_key;
+	    }
+	}
+    }    
+
+    return $combination;
+
+}
+=cut
+
+my $active_key = undef;
+my $state = {};
+while( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+
+    # TODO : this should not be necessary
+    if ( ! length( $line ) ) {
+	next;
+    }
+
+    my @fields = split /\t/ , $line;
+
+    # TODO : ultimately this should not be necessary
+    if ( scalar( @fields ) < 5 ) {
+	next;
+    }
+
+    if ( ! $count++ ) {
+
+	for (my $i=0; $i<=$#fields; $i++) {
+	    my $field_id = $fields[ $i ];
+	    $field2index{ $field_id } = $i;
+	}
+
+	next;
+
+    }
+
+    # TODO : add support for multi-field keys
+    my $current_key = $fields[ 0 ];
+
+    if ( defined( $active_key ) && ( $current_key ne $active_key ) ) {
+	_finalize_state( $active_key , $state );
+	$state = {};
+    }
+
+    $active_key = $current_key;
+    
+    # populate record
+    my %record;
+    map { $record{ $_ } = $fields[ $field2index{ $_ } ] } keys( %field2index );
+    _update_state( $active_key , $state , \%record );
+
+}
+
+# TODO : we should be able to get rid of this
+# final check
+_finalize_state( $active_key , $state );
+
+my $token_count = 0;
+sub _finalize_state {
+
+    my $token = shift;
+    my $state = shift;
+
+    my @state_keys = keys( %{ $state } );
+    if ( ! scalar( @state_keys ) ) {
+	return;
+    }
+
+    foreach my $key (@state_keys) {
+	if ( $key =~ m/^\// ) {
+	    $state->{ $key } /= $state->{ '+count' };
+	}
+    }
+
+    my $token_id = $token_count++;
+    print join( "\t" , $token , $token_id , encode_json( $state ) ) . "\n";
+
+}
+
+sub _update_state {
+
+    my $token = shift;
+    my $state = shift;
+    my $record = shift;
+
+    $state->{ '+count' } += 1;
+
+    my @record_keys = (keys( %{ $record } ));
+    foreach my $key (@record_keys) {
+	
+	my $record_value = $record->{ $key };
+	
+	if ( $key =~ m/^\@/ ) {
+	    # nothing
+	}
+	else {
+	    
+	    if ( $key =~ m/^\+|\/|\*/ ) {
+		if ( $record_value eq 'N/A' ) {
+		    # skip
+		    next;
+		}
+		$state->{ $key } += $record_value;
+	    }
+	    
+	    my $key_collect = "${key}::list";
+	    if ( ! defined( $state->{ $key_collect } ) ) {
+		$state->{ $key_collect } = [];
+	    }
+	    push @{ $state->{ $key_collect } } , $record_value;
+###	    if ( scalar( @{ $state->{ $key_collect } } ) ) {
+###		print STDERR "Large entry : $
+###	    }
+	    
+	}
+	
+    }
+
+}
+
+1;

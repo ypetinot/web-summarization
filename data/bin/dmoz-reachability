@@ -1,0 +1,74 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../bin/job-resources
+
+# compute reachability for all DMOZ sub-categories => how ?
+
+DMOZ_DATA_SPLITS_ROOT=$1
+OUTPUT_DIRECTORY=$2
+LENGTH_DATA=$3
+
+if [[ -z "${DMOZ_DATA_SPLITS_ROOT}" || -z "${OUTPUT_DIRECTORY}" || -z "${LENGTH_DATA}" ]]; then
+    echo "Usage: <dmoz-data-splits-root> <output-directory> <length-data>"
+    exit 1
+fi
+
+function _split_stream {
+    SPLITS=$1
+    cat ${SPLITS} | while read SPLIT_FILE; do gunzip -c ${SPLIT_FILE}; done;
+}
+
+# create output directory
+mkdir -p ${OUTPUT_DIRECTORY}
+
+# list splits
+SPLITS=${OUTPUT_DIRECTORY}/splits
+find ${DMOZ_DATA_SPLITS_ROOT} -type f -name '*.gz' -size +0 | sort | tail -n +40 > ${SPLITS}
+
+# list out all categories of interest => up to depth 3 ?
+CATEGORIES=${OUTPUT_DIRECTORY}/categories
+if [ ! -f ${CATEGORIES} ]; then
+    _split_stream ${SPLITS} | cut -f4 | awk -F"/" '{ if ( NF >= 3 ) { print $1 "/" $2 "/" $3 } }' | sort -u > ${CATEGORIES}
+fi
+
+CATEGORIES_LENGTH_DISTRIBUTION=${OUTPUT_DIRECTORY}/length_distribution
+if [ ! -f ${CATEGORIES_LENGTH_DISTRIBUTION} ]; then
+    cp ${LENGTH_DATA} ${CATEGORIES_LENGTH_DISTRIBUTION}
+fi
+
+#TODO : CATEGORY_MINIMUM_COUNT=100
+CATEGORY_MINIMUM_COUNT=50
+
+# process each category independently (in parallel ?)
+DMOZ_REACHABILITY=${OUTPUT_DIRECTORY}/reachability
+cat ${CATEGORIES} | while read CATEGORY; do
+
+    CATEGORY_OUTPUT_BASE=${OUTPUT_DIRECTORY}/${CATEGORY}
+    CATEGORY_OUTPUT_BASE_DIRECTORY=`dirname ${CATEGORY_OUTPUT_BASE}`
+    mkdir -p ${CATEGORY_OUTPUT_BASE_DIRECTORY}
+
+    CATEGORY_LIST=${CATEGORY_OUTPUT_BASE}.list
+
+    if [ ! -f ${CATEGORY_LIST} ]; then
+	_split_stream ${SPLITS} | grep "${CATEGORY}" > ${CATEGORY_LIST}
+    fi
+    
+    CATEGORY_LIST_SIZE=`wc -l ${CATEGORY_LIST} | awk '{ print $1 }'`
+    if [[ $CATEGORY_LIST_SIZE -lt ${CATEGORY_MINIMUM_COUNT} ]]; then
+	continue;
+    fi
+
+    CATEGORY_REACHABILITY=${CATEGORY_OUTPUT_BASE}.reachability
+    CATEGORY_REACHABILITY_ANALYSIS=${CATEGORY_REACHABILITY}.analysis
+
+    echo ${CATEGORY} ${CATEGORY_LIST} ${CATEGORY_MINIMUM_COUNT} ${CATEGORY_REACHABILITY} ${CATEGORY_REACHABILITY_ANALYSIS} ${CATEGORIES_LENGTH_DISTRIBUTION}
+
+done | ${PARALLEL_COMMAND} --progress --colsep ' ' ${BINDIR}/dmoz-reachability-single {1} {2} {3} {4} {5} {6} | sort -u > ${DMOZ_REACHABILITY}
+
+##while read CATEGORY CATEGORY_LIST CATEGORY_MINIMUM_COUNT CATEGORY_REACHABILITY CATEGORY_REACHABILITY_ANALYSIS CATEGORIES_LENGTH_DISTRIBUTION; do
+##    echo "Now running: ${BINDIR}/dmoz-reachability-single ${CATEGORY} ${CATEGORY_LIST} ${CATEGORY_MINIMUM_COUNT} ${CATEGORY_REACHABILITY} ${CATEGORY_REACHABILITY_ANALYSIS} ${CATEGORIES_LENGTH_DISTRIBUTION}"
+#    ${BINDIR}/dmoz-reachability-single ${CATEGORY} ${CATEGORY_LIST} ${CATEGORY_MINIMUM_COUNT} ${CATEGORY_REACHABILITY} ${CATEGORY_REACHABILITY_ANALYSIS} ${CATEGORIES_LENGTH_DISTRIBUTION}
+##    sleep 5;
+##    exit 1;
+##done;

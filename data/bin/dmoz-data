@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# TODO : to be removed - overlaps with both makefile.data (filtering) and run-experiment (for a failsafe import)
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../dist.rc
+
+DMOZ_REPOSITORY_BASE=$1
+
+SHORTOPTS="i"
+LONGOPTS="help,import"
+
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+# defaults
+DO_IMPORT=0
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+	-i | --import )
+	    DO_IMPORT=1; shift; break;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+if [[ -z "${DMOZ_REPOSITORY_BASE}" || ! -d "${DMOZ_REPOSITORY_BASE}" ]]; then
+    echo "Usage: $0 <dmoz-repository-base>"
+    exit 1;
+fi
+
+function _import {
+    if [[ ${DO_IMPORT} == 1 ]]; then
+	${BINDIR_PARALLEL}/parallel --pipe --sshloginfile ${SERVERS_LIST} --no-notice ${BINDIR}/dmoz-data-import
+    else
+	cat
+    fi
+}
+
+# Note: we normalize all URLs before they get into the system => # => here and (preemptively) in run-summarizer-harness
+find ${DMOZ_REPOSITORY_BASE}/Top/ -maxdepth 5 -type f -name '*.summary' | ${BINDIR_PARALLEL}/parallel -j200% --progress --no-notice "cat {} | ${BINDIR}/url-normalizer" | _import

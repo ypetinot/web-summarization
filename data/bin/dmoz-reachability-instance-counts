@@ -1,0 +1,85 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../src/";
+
+use File::Slurp;
+use JSON;
+
+my $category_length_distributions_file = $ARGV[ 0 ];
+my $filter_mode = $ARGV[ 1 ];
+my $filter_threshold = $ARGV[ 2 ];
+my $category = $ARGV[ 3 ];
+
+if ( !defined( $category_length_distributions_file ) || !defined( $filter_mode ) || !defined( $filter_threshold ) ) {
+    die "Usage: <distribution-file> <filter-mode> <filter-threshold> [<category>]";
+}
+
+if ( ! -f $category_length_distributions_file ) {
+    die "Invalid category length distributions file: $category_length_distributions_file";
+}
+
+my %category_2_length_distribution;
+map {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+    my $category_id = $fields[ 0 ];
+    my $category_length_distribution = $fields[ 1 ];
+
+    my $distribution = decode_json( $category_length_distribution );
+
+    $category_2_length_distribution{ $category_id } = $distribution;
+
+} read_file( $category_length_distributions_file );
+
+my $category_listed = defined( $category ) ? defined( $category_2_length_distribution{ $category } ) : 0;
+my $total_count = 0;
+foreach my $category_id (keys( %category_2_length_distribution )) {
+    
+    if ( defined( $category ) && $category_listed ) {
+	# if category specified and listed => easy
+	if ( $category_id ne $category ) {
+	    next;
+	}
+    }
+    elsif ( defined( $category ) && ! $category_listed ) {
+	# if category specified and not listed => match
+	if ( $category_id !~ m/^$category/si ) {
+	    next;
+	}
+    }
+    else {
+	# if category not specified => all
+    }
+
+    my $distribution = $category_2_length_distribution{ $category_id };
+    foreach my $length ( keys( %{ $distribution } ) ) {
+	
+	if ( ( $filter_mode eq 'long' ) && ( $length < $filter_threshold ) ) {
+	    next;
+	}
+	elsif ( ( $filter_mode eq 'short' ) && ( $length > $filter_threshold ) ) {
+	    next;
+	}
+	
+	my $length_count = $distribution->{ $length };
+#	if ( $length == 0 ) {
+#	    die "This should not happen ?";
+#	} 
+
+	$total_count += $length_count;
+	
+    }
+
+}
+
+print join( "\t" , $category || 'Top' , $filter_mode , $filter_threshold , $total_count ) ."\n";
+
+1;

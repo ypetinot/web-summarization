@@ -1,0 +1,27 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+source ${BINDIR}/../../dist.rc
+
+EXPERIMENT_DIRECTORY=$1
+OUTPUT_DIRECTORY=$2
+
+if [[ -z "${EXPERIMENT_DIRECTORY}" || ! -d "${EXPERIMENT_DIRECTORY}" || -z "${OUTPUT_DIRECTORY}" ]]; then
+    echo "Usage: $0 <experiment-directory> <output-directory>"
+    exit 1;
+fi
+
+MAKEFILE_APPEARANCE=${BINDIR}/makefile.appearance
+
+# 1 - make output directory
+mkdir -p ${OUTPUT_DIRECTORY}
+
+# 2 - link to experiment directory in output directory
+OUTPUT_DIRECTORY_EXPERIMENT_DIRECTORY_LINK=${OUTPUT_DIRECTORY}/experiment
+if [[ ! -h ${OUTPUT_DIRECTORY_INSTANCES_RAW} ]]; then
+    ln -s ${EXPERIMENT_DIRECTORY} ${OUTPUT_DIRECTORY_EXPERIMENT_DIRECTORY_LINK}
+fi
+
+# 2 - make
+make -f ${MAKEFILE_APPEARANCE} -C ${OUTPUT_DIRECTORY}

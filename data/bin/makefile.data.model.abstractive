@@ -1,0 +1,139 @@
+DATA_MODEL_ABSTRACTIVE_MAKEFILE_DIR:=$(realpath $(dir $(lastword $(MAKEFILE_LIST))))
+include $(DATA_MODEL_ABSTRACTIVE_MAKEFILE_DIR)/makefile.data
+
+DATA_MODEL_ABSTRACTIVE_ROOT:=$(ROOTDIR_DATA)/models/abstractive/
+DATA_MODEL_ABSTRACTIVE_RAW:=$(DATA_MODEL_ABSTRACTIVE_ROOT)/summary_appearance.raw
+DATA_MODEL_ABSTRACTIVE_RAW_LOG:=$(DATA_MODEL_ABSTRACTIVE_RAW).log
+DATA_MODEL_ABSTRACTIVE_AGGREGATE:=$(DATA_MODEL_ABSTRACTIVE_ROOT)/summary_appearance.aggregate
+DATA_MODEL_ABSTRACTIVE_GLOBAL_STATS:=$(DATA_MODEL_ABSTRACTIVE_ROOT)/summary_appearance.global.stats
+DATA_MODEL_ABSTRACTIVE_SIGNIFICANCE:=$(DATA_MODEL_ABSTRACTIVE_ROOT)/summary_abstractive.significance
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_INSTANCES:=$(DATA_MODEL_ABSTRACTIVE_ROOT)/instances
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION:=$(DATA_MODEL_ABSTRACTIVE_ROOT)/summary_abstractive.significance.selection
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION).data
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA_LABEL:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION).data.label
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION).features
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_MAP:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES).map
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_COUNT:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES).count.gz
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_MAPPED:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES).mapped.gz
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_JOBLOG:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES).joblog
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_LIBSVM:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES).libsvm
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_GRAPH:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION).graph
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_BASE:=$(DATA_MODEL_ABSTRACTIVE_ROOT)/summary_abstractive.predictive.model
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_M3L:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_BASE).m3l
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_MULTIBOOST:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_BASE).mb
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_OWN:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_BASE).own
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_CORRLDA:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_BASE).corrlda
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODELS:=$(DATA_MODEL_ABSTRACTIVE_ROOT)/summary_abstractive.predictive.models
+DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODELS_LIST:=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODELS).list
+
+DATA_MODEL_PARALLELISM_LEVEL=3
+FEATURE_COUNT_THRESHOLD=50
+
+#model-abstractive-global: $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_OWN)
+model-abstractive-global: $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_CORRLDA)
+model-abstractive-individual: $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODELS_LIST)
+
+# TODO : only here for temporary use, should be removed ultimately
+model-abstractive-libsvm: $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_LIBSVM)
+
+# TODO : create additional rule to build the 'models' root directory ?
+$(DATA_MODEL_ABSTRACTIVE_ROOT):
+	mkdir -p $@
+
+# TODO : automatic detection of TMPDIR location (e.g. /local/ypetinot/data/ ==> put in .bashrc ?)
+# TODO : create directory dependency macro to abstract the filter-out/wildcard gizmo
+# TODO: clean this up
+$(DATA_MODEL_ABSTRACTIVE_RAW) $(DATA_MODEL_ABSTRACTIVE_RAW_LOG): $(filter-out $(wildcard $(DATA_MODEL_ABSTRACTIVE_ROOT)), $(DATA_MODEL_ABSTRACTIVE_ROOT)) $(CATEGORY_LIST) $(DMOZ_VOCABULARY_TRUE)
+	cat $(CATEGORY_LIST) | $(PARALLEL_COMMAND_RESUME) --progress --joblog=$@.joblog 'echo {} | $(BINDIR_DATA)/global-category-processor 0 AbstractiveExtractiveFunctionAnalyzer --global-data-base=$(ROOTDIR_DATA) --repository-base=$(DMOZ_REPOSITORY_BASE) --summary_vocabulary=$(DMOZ_VOCABULARY_TRUE) --job_id={#}' | grep -v 'global-category-processor' | grep -v 'Skipping URL' > $@.unsorted 2> $(DATA_MODEL_ABSTRACTIVE_RAW_LOG)
+	cat $@.unsorted | grep 'appears_in_' > $@.header
+	cat $@.unsorted | grep -v '#instance#' | grep -v 'appears_in' | grep -v 'ypetinot' | grep -v '^$$' | LC_COLLATE=C sort -k1 -t'	' > $@.body
+	cat $@.unsorted | grep '#instance#' > $(DATA_MODEL_ABSTRACTIVE_RAW_LOG)
+	cat $@.header $@.body > $@
+	rm $@.header $@.body $@.unsorted
+
+$(DATA_MODEL_ABSTRACTIVE_GLOBAL_STATS): $(DATA_MODEL_ABSTRACTIVE_RAW_LOG)
+	cat $< | $(BINDIR_DATA)/abstractive-stats > $@
+
+$(DATA_MODEL_ABSTRACTIVE_AGGREGATE): $(DATA_MODEL_ABSTRACTIVE_RAW)
+	cat $< | $(BINDIR_DATA)/aggregate > $@
+
+$(DATA_MODEL_ABSTRACTIVE_SIGNIFICANCE): $(DATA_MODEL_ABSTRACTIVE_AGGREGATE) $(DATA_MODEL_ABSTRACTIVE_GLOBAL_STATS)
+	cat $< | $(BINDIR_DATA)/abstractive-significance --global-stats=$(DATA_MODEL_ABSTRACTIVE_GLOBAL_STATS) > $@
+
+# TODO : thresholds need to be revised
+# min count >= 100 : seems a good threshold to have enough data for model training
+# max cout <= ? : should be based on frequency, i.e. should appear in less than 50% of summaries ?
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION): $(DATA_MODEL_ABSTRACTIVE_SIGNIFICANCE)
+	cat $< | awk -F"\t" '{ if ( $$3 > 100 && $$NF < 0.05 ) { print $$1 } }' > $@
+
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION) $(DATA_MODEL_ABSTRACTIVE_AGGREGATE)
+	LC_COLLATE=C join -1 1 -2 1 -t$$'\t' $< $(DATA_MODEL_ABSTRACTIVE_AGGREGATE) > $@
+
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA_LABEL): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA)
+	cat $< | $(BINDIR_DATA)/abstractive-label-exploder | sort -k1,2 - | perl $(BINDIR_DATA)/abstractive-label-aggregator | sort -k1 > $@
+
+.DELETE_ON_ERROR:
+
+# TODO : test the function below
+_directory_dependency=$(filter-out $(wildcard $1), $1)
+
+# TODO : fix dependencies ?
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_MAPPED): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_COUNT) $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_INSTANCES)
+	find $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES) -type f -name '*.gz' | $(PARALLEL_COMMAND_LOCAL) 'gunzip -c {}' | perl $(BINDIR_DATA)/abstractive-predictive-features-map --map-file=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_MAP) --count-file=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_COUNT) --min-count=$(FEATURE_COUNT_THRESHOLD) | sort -k1 | join -1 2 -2 1 -t$$'\t' $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_INSTANCES) - | cut -f2,5- | gzip -c > $@
+#$(PARALLEL_COMMAND_RESUME) --progress --joblog $@.joblog 'gunzip -c {}' | perl $(BINDIR_DATA)/abstractive-predictive-features-map --map-file=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_MAP) --count-file=$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_COUNT) --min-count=$(FEATURE_COUNT_THRESHOLD) | sort -k1 | gzip -c > $@
+
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_GRAPH): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA)
+	cat $< | $(BINDIR_DATA)/abstractive-predictive-graph > $@
+
+# Note : this rule shoudln't be needed once parallel correctly separates STDERR/STDOUT
+# Note : we are sorting on the url field (#2)
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_INSTANCES): $(DATA_MODEL_ABSTRACTIVE_RAW_LOG)
+	cat $< | grep '^#instance#' | cut -f 2- | sort -k2 > $@
+
+###$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_INTERMEDIATE): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_MAPPED) $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA_LABEL)
+###	gunzip -c $< | join -1 1 -2 1 $@.label.temp - | cut -d' ' -f 2- > $@
+
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_LIBSVM): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_MAPPED) $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA_LABEL)
+	cat $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA_LABEL) | awk -F"\t" '{ gsub( / / , "," , $$2 ); print $$1 "\t" $$2 }' > $@.label.temp
+	gunzip -c $< | join -1 1 -2 1 $@.label.temp - | cut -d' ' -f 2- > $@
+	rm $@.label.temp
+
+M3L_OPTIONS:=
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_M3L): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_LIBSVM)
+	$(ROOTDIR_DIST)/experimental/m3l/M3L/bin/linuxx64/M3L -train $(M3L_OPTIONS) $< $@
+#	$(ROOTDIR_DIST)/experimental/m3l/M3L/bin/linux/M3L -train $(M3L_OPTIONS) $< $@
+
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_MULTIBOOST): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_LIBSVM)
+	$(ROOTDIR_DIST)/experimental/multiboost/MultiBoost-Build/multiboost --train $< 1 --onlinetraining --fileformat svmlight
+
+# TODO : list out full list of targets
+# TODO : move to parallel-based shell (?)
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODELS): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA) $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_MAPPED)	
+	mkdir -p $@
+	cat $< | awk -F"\t" '{ print $$0 > "$@/" $$2 }'
+	find $@/ -maxdepth 1 -type f | ${PARALLEL_COMMAND_RESUME} --progress --joblog $@.joblog 'gunzip -c $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_MAPPED) | perl $(BINDIR_DATA)/appearance-model-individual --train --max-training-samples=50000 $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODELS)/ {}' > $@.log
+
+# TODO : create per-model meta-file to avoid having to general a models list
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODELS_LIST): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODELS) $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA)
+	cat $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODELS).log | grep "__MODEL__" | cut --complement -f 1 > $@
+
+# TODO : can be easily parallelized if we create one model per term entry
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_OWN): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA) $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES)
+	find $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES) -maxdepth 1 -type f | $(PARALLEL_COMMAND_LOCAL) gunzip -c {} | perl $(BINDIR_DATA)/appearance-model-prepare-data --max-per-label-instances=5000 --balanced $< | $(BINDIR_DATA)/appearance-model --train --global-data=$(ROOTDIR_DATA) --repository-base=$(DMOZ_REPOSITORY_BASE) $(FOLD_ID) $@
+
+.PHONY:$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_CORRLDA)
+$(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_MODEL_CORRLDA): $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_LIBSVM)
+	mkdir -p $@
+	cat $< | $(BINDIR_DATA)/appearance-model-feature-mapper-corrlda > $@/model.input
+	cat $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_DATA) | cut -f 1,2 | sort -k1 | tr '\t' '=' > $@/term_to_id.txt
+	cat $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_MAP) | cut -f 1,2 | sort -k1 | tr '\t' '='> $@/corr_term_to_id.txt
+	cd $(ROOTDIR_EXPERIMENTAL)/multilabel-corrlda/ && bin/CorrLDA experiment-1/experiment.txt train --verbose
+
+##### #### Note : for now we opt for category-based processing at the top-level since it is more efficient in terms of distribution
+##### #### TODO : move to per-instance data archives
+##### .DELETE_ON_ERROR:
+##### $(DATA_FEATURES): $(DATA_INSTANCES)
+#####	mkdir -p $@
+#####	cat $(DATA_MODEL_ABSTRACTIVE_RAW_LOG) | grep '^#instance#' | cut -f 2- | $(PARALLEL_COMMAND) -C '\t' --progress --joblog $(DATA_MODEL_ABSTRACTIVE_PREDICTIVE_SELECTION_FEATURES_JOBLOG) perl $(BINDIR_DATA)/generate-features --global-data=$(ROOTDIR_DATA) --repository-base=$(DMOZ_REPOSITORY_BASE) {1} {2} {3} {4} | split -l $(INSTANCE_BATCH_SIZE) --filter='gzip > $$FILE.gz' - $@/features.
+##### #### TODO : problem with pipe , will split at a later stage
+##### ####| $(PARALLEL_COMMAND_LOCAL) --pipe -N $(INSTANCE_BATCH_SIZE) 'gzip -c > $@/{#}.gz'

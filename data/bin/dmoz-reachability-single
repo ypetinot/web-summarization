@@ -1,0 +1,76 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+# Note : only for debugging purposes otherwise we cannot stop reading streams early
+#source ${BINDIR}/../../bin/parallel-job-resources
+
+CATEGORY=$1
+CATEGORY_LIST=$2
+CATEGORY_MINIMUM_COUNT=$3
+CATEGORY_REACHABILITY=$4
+CATEGORY_REACHABILITY_ANALYSIS=$5
+LENGTH_DATA=$6
+
+#REACHABILITY_ANALYZER_OPTIONS="loose 0.75 100"
+REACHABILITY_ANALYZER_OPTIONS="loose 0.5 100"
+
+if [ ! -f ${CATEGORY_REACHABILITY} ]; then
+    cat ${CATEGORY_LIST} | perl ${BINDIR}/reachability ${CATEGORY_MINIMUM_COUNT} > ${CATEGORY_REACHABILITY}
+fi
+
+HEADER_LINE="category"
+OUTPUT_LINE="${CATEGORY}"
+
+function _run_reachability_analyzer() {
+
+    output_file=$1
+    filter_mode=$2
+    filter_threshold=$3
+    label="$4"
+
+    options=""
+    
+    if [ ! -z "${filter_mode}" ]; then
+	options="${options} --filter-length-mode=${filter_mode}"
+    fi
+    
+    if [ ! -z "${filter_threshold}" ]; then
+	options="${options} --filter-length=${filter_threshold}"
+    fi
+
+# Note : this is not expensive - can be re-run every time
+#    if [ ! -f ${output_file} ]; then
+    cat ${CATEGORY_REACHABILITY} | perl ${BINDIR}/reachability-analyzer ${REACHABILITY_ANALYZER_OPTIONS} ${options} > ${output_file}
+#    fi
+
+    REACHABILITY_RATIO=`cat ${output_file} | tail -n1 | awk '{ print $5 }' | sed 's/^(\(.*\)%)$/\1/'`
+
+    # generate instance count for this configuration
+    INSTANCE_COUNT_FULL=`${BINDIR}/dmoz-reachability-instance-counts ${LENGTH_DATA} ${filter_mode} ${filter_threshold} ${CATEGORY} | awk -F"\t" '{ print $4 }'`
+    INSTANCE_COUNT=`printf %.0f $(echo "${REACHABILITY_RATIO} * ${INSTANCE_COUNT_FULL} / 100" | bc -l )`
+#    INSTANCE_COUNT_RAW=$(bc -l <<< "${REACHABILITY_RATIO} * ${INSTANCE_COUNT_FULL}")
+#    INSTANCE_COUNT_RAW=$(echo "${REACHABILITY_RATIO} * ${INSTANCE_COUNT_FULL}" | bc -l)
+
+    HEADER_LINE="${HEADER_LINE}\treachability_ratio@$label\tinstance_count@$label"
+    OUTPUT_LINE="${OUTPUT_LINE}\t${REACHABILITY_RATIO}\t${INSTANCE_COUNT}"
+
+}
+
+# run full analysis
+_run_reachability_analyzer ${CATEGORY_REACHABILITY_ANALYSIS} "any" 0 "all"
+
+# run legnth-based analysis
+
+for length_threshold_type in 'short' 'long'; do
+
+    for (( length_threshold=5; length_threshold<=20; length_threshold++ )); do
+
+	_run_reachability_analyzer ${CATEGORY_REACHABILITY_ANALYSIS}.${length_threshold_type}.${length_threshold} ${length_threshold_type} ${length_threshold} "${length_threshold_type}.${length_threshold}";
+
+    done
+
+done
+
+echo -e ${HEADER_LINE}
+echo -e ${OUTPUT_LINE}

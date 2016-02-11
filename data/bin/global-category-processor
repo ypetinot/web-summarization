@@ -1,0 +1,153 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Category::Folds;
+use Category::GlobalOperator;
+use DMOZ::GlobalData;
+
+use Devel::Cycle;
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+
+my $batch_size = 0;
+my $categories = '';
+my $global_data_base = undef;
+my $repository_base = undef;
+my $job_id = 1;
+my $do_list_test_instances = 0;
+
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure qw(bundling pass_through);
+
+GetOptions('batch=i' => \$batch_size , 'categories=s' => \$categories ,
+	   'global-data-base=s' => \$global_data_base , 'repository-base=s' => \$repository_base ,
+	   'job_id' => \$job_id ,
+	   'list-test-instances' => \$do_list_test_instances ,
+	   'help|?' => \$help, man => \$man) or pod2usage(2);
+pod2usage(1) if ( $help || !defined( $global_data_base ) || !defined( $repository_base ) );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+# TODO : turn into Moose class with automatic handling of command line parameters
+### # job id
+### has 'job_id' => ( is => 'ro' , isa => 'Num' , default => 1 );
+
+if ( scalar(@ARGV) < 2 ) {
+    die "Usage: $0 <fold-id> <operator-class>";
+}
+
+my $fold_id = shift @ARGV;
+my $operator_class = shift @ARGV;
+
+# initialize operator
+eval("use $operator_class;");
+if ( $! ) {
+    die "Unable to load operator class ($operator_class) : $!";
+}
+my $operator = $operator_class->new( @ARGV );
+
+my $global_data = new DMOZ::GlobalData( data_directory => $global_data_base );
+my $category_repository = new DMOZ::CategoryRepository( global_data => $global_data , repository_root => $repository_base );
+
+my @categories_list = split /\s+/ , $categories;
+
+# initialize
+$operator->initialize;
+
+my $count = 0;
+my $batch_count = 0;
+while ( my $category_base = shift @categories_list || <STDIN> ) {
+    
+    chomp $category_base;
+
+#   print STDERR ">> processing $category_base with $operator_class ...\n";
+
+    # fold data might be corrupted for a few categories - this is not unexpected but should be fixed in the long run
+    eval {
+	
+	# get category fold
+	my $category_data = $category_repository->get_category_data( $category_base );
+	my $category_fold = $category_data->folds->get_fold( $fold_id );
+	if ( ! $category_fold ) {
+	    print STDERR ">> Unable to load category fold : $category_base / $fold_id\n";
+	}
+
+	# get url entry
+	my $training_data = $category_fold->fold_data;
+
+	if ( $batch_size && $count && ! $batch_count ) {
+	    $operator->flush_batch;
+	}
+
+	# let the operator know we are processing a new category
+	$operator->start_category( $category_fold );
+	
+	# iterate over URL entries
+	foreach my $training_entry (@{ $training_data }) {
+
+	    my $instance_id = join( "/" , $this->job_id , $this->instance_count );
+
+	    #my $training_entry_url = $training_entry->url();
+	    #print STDERR "processing entry : $training_entry_url\n";
+	    
+	    # delegate to operator
+	    $operator->process( $instance_id , $training_entry );
+
+	    # Unload the current entry
+	    # TODO: this woudln't be needed if UrlData weren't pointing back to Category::Data 
+	    $training_entry->release;
+
+	}
+
+	if ( $do_list_test_instances ) {
+
+	    my $test_instances = $category->test_data;
+	    foreach my $test_instance (@{ $test_instances }) {
+		my $instance_id = 
+		print STDERR join( "\t" , "#instance-test#" , $instance_id , $instance_url , $instance_category , $category_data_base ) . "\n";
+	    }
+
+	}
+
+	# let the operator know we are done with this category
+	$operator->end_category( $category_fold );
+
+	# Unload data associated with the current category
+	$category_fold->category_data()->release();
+	$category_repository->release_category( $category_data );
+
+    };
+    
+    if ( $@ ) {
+	print STDERR ">> An error occurred while loading fold data for category $category_base : $@";
+    }
+
+    if ( $count++ % 1000 == 0 ) {
+	print STDERR ">> $0 processed $count categories ...\n";
+    }
+
+    if ( $batch_size ) {
+	$batch_count = ( $batch_count + 1 ) % $batch_size;
+    }
+
+}
+
+# just in case
+# TODO : shouldn't batch_size be moved to Category::GlobalOperator ?
+if ( $batch_size ) {
+    $operator->flush_batch();
+}
+
+# finalize
+$operator->finalize();
+
+1;

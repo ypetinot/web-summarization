@@ -1,0 +1,457 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../src/";
+
+use Carp::Assert;
+use Category::UrlData;
+use DiffAnalysis;
+use DMOZ::CategoryRepository;
+use DMOZ::SummaryProcessor;
+use File::Slurp;
+use Getopt::Long;
+use JSON;
+use Similarity;
+use Text::Trim;
+use URI;
+
+use List::Util qw/max min/;
+
+my $debug = 0;
+my $help = 0;
+my $man = 0;
+
+my $keep_punctuation = 0;
+my $normalize_by_max_length = 0;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, man => \$man,
+	   'keep-punctuation' => \$keep_punctuation,
+	   'normalize-by-max-length' => \$normalize_by_max_length,
+           'debug|d' => \$debug
+    ) or pod2usage(2);
+
+my $_target_count = $ARGV[ 0 ];
+my $top_level_categories = $ARGV[ 1 ];
+
+if ( ! defined( $_target_count ) ) {
+    die "Usage: $0 <target-per-category-count> [<top-level-categories>]";
+}
+
+my $target_count_total;
+my $target_category_count;
+my %top_level_category_2_count;
+
+my $filter_categories = 0;
+if ( defined( $top_level_categories ) ) {
+
+    $target_category_count = $_target_count;
+
+    my @requested_categories;
+    if ( -f $top_level_categories ) {
+	@requested_categories = map { chomp; $_; } read_file( $top_level_categories );
+    }
+    else {
+	push @requested_categories , $top_level_categories;
+    }
+    
+    map {
+	$top_level_category_2_count{ $_ } = 0;
+	$target_count_total += $_target_count;
+    } @requested_categories;
+
+    $filter_categories = 1;
+    
+}
+else {
+
+    $target_count_total = $_target_count;
+
+}
+
+my $category_repository = new DMOZ::CategoryRepository( repository_root => $ENV{DMOZ_REPOSITORY_BASE} );
+
+my @reachability_modes = ( [ 'strict' , 0 , {} ] , [ 'loose' , 1 , {} ] );
+
+my @reference_levels = ( 1 , 10 , 20 , 50 , 100 );
+
+my $key_reachability_template = 'r-t';
+my $key_reachability_extractive_strict_string = 'r-e';
+my $key_reachability_extractive_loose_string = 'r-e';
+my $key_reachability_abstractive_nref_strict_string = 'r-a';
+my $key_reachability_abstractive_nref_loose_string = 'r-a';
+
+# TODO : turn into command line parameters ?
+my $column_separator = ' & ';
+my $line_separator = ' \\\\ ' . "\n";
+my $line_separator_header = ' \\\\ \\hline' . "\n";
+my $precision = 3;
+
+my $summary_processor = new DMOZ::SummaryProcessor( keep_punctuation => $keep_punctuation );
+
+my $count = 0;
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/ , $_;
+
+    my $url = shift @fields;
+    my $url_normalized = shift @fields;
+    my $ground_truth_summary = shift @fields;
+    my $category = shift @fields;
+
+    # TODO : to be removed once the improved filtering process has been deployed
+    if ( ! defined( $ground_truth_summary ) || ! defined( $category ) ) {
+	next;
+    }
+
+    print STDERR "[reachability] processing $category / $url ...\n";
+    my $top_level_category = _top_level_category( $category );
+
+    if ( $filter_categories && ( ( ! defined( $top_level_category_2_count{ $top_level_category } ) ) ||
+	 ( $top_level_category_2_count{ $top_level_category } >= $target_category_count ) ) ) {
+	next;
+    }
+
+    # 1 - retrieve all url-summary entries in $category
+    my $category_base = $category_repository->get_category_filename( $category , 'summary' );
+    if ( ! -f $category_base ) {
+	next;
+    }
+
+    # for each slot determine whether is can be found in the target
+    my $target_data = Category::UrlData->load_url_data( $url_normalized );
+    if ( ! defined( $target_data ) ) {
+	next;
+    }
+
+=pod
+    # TODO : to be removed once the full DMOZ corpus has been imported
+    if ( ! $target_data->has_field( 'summary' , namespace => 'dmoz' ) ) {
+	$target_data->set_field( 'summary' , $ground_truth_summary , namespace => 'dmoz' , store => 0 );
+    }
+=cut
+
+    my $ground_truth_summary_sequence = $summary_processor->generate_sequence( $ground_truth_summary );
+
+    my $summary_data = $category_repository->read_file( $category_base );
+    my $best_lcs = undef;
+    my $best_lcs_overlap = -1;
+    my $best_reference = undef;
+    my $best_reference_sequence = undef;
+    my @summary_data_filtered;
+    foreach my $summary_data_entry ( @{ $summary_data } ) {
+
+	my $reference_url = $summary_data_entry->[ 0 ];
+	if ( $url eq $reference_url ) {	    
+	    next;
+	}
+
+	my $reference_summary = $summary_data_entry->[ 1 ];
+	# TODO : to be removed once the corresponding issue in data filtering has been fixed
+	if ( ! $reference_summary ) {
+	    next;
+	}
+
+	my $reference_summary_sequence = $summary_processor->generate_sequence( $reference_summary );
+
+	# 2 - compute LCS between reference summary and ground-truth summary
+	my ( $lcs_overlap , $lcs ) = Similarity->lcs_similarity( $ground_truth_summary_sequence , $reference_summary_sequence , normalize_by_max_sequence_length => 1 , return_lcs => 1 );
+
+	if ( $lcs_overlap > $best_lcs_overlap ) {
+	    $best_lcs_overlap = $lcs_overlap;
+	    $best_lcs = $lcs;
+	    $best_reference = $summary_data_entry;
+	    $best_reference_sequence = $reference_summary_sequence;
+	}
+
+	push @summary_data_filtered , [ @{ $summary_data_entry } , $lcs_overlap ];
+
+    }
+
+    # sort references by decreasing lcs overlap to the ground truth
+    my @summary_data_sorted = sort { $b->[ 2 ] <=> $a->[ 2 ] } @summary_data_filtered;
+
+    # compute instance stats
+    my $instance_stats = _compute_instance_stats( $target_data , $ground_truth_summary_sequence );
+
+    # compute diff between reference and target summary
+    # => this gives use the template (lcs) and the slots (diff)
+    my $best_diff = Similarity->lcs_diff( $ground_truth_summary_sequence , $best_reference_sequence );
+    
+    # Note : no need to actually have a minimum overlap => can however register the overlap when reachable
+    
+    foreach my $reachability_mode (@reachability_modes) {
+	
+	my $reachability_mode_id = $reachability_mode->[ 0 ];
+	my $reachability_mode_loose = $reachability_mode->[ 1 ];
+	my $reachability_mode_entries = $reachability_mode->[ 2 ];
+	
+	my $is_globally_reachable_extractive = _reachable_extractive( $target_data , $best_diff , $reachability_mode_loose );
+	my $is_globally_reachable_abstractive_at_nref = _reachable_abstractive( $target_data , $best_diff , $reachability_mode_loose , \@summary_data_sorted );
+
+	my @entry = ( $best_lcs_overlap , $is_globally_reachable_extractive , @{ $is_globally_reachable_abstractive_at_nref } );
+	
+	# add entry to target features
+	_add_entry( $reachability_mode_entries , $top_level_category , \@entry );
+	
+	print join( "\t" , $line , $top_level_category , $reachability_mode_id , @entry , encode_json( $instance_stats ) ) . "\n";
+
+    }
+
+    # update counts
+    $top_level_category_2_count{ $top_level_category }++;
+    if ( $count++ >= $target_count_total ) {
+	last;
+    }
+
+}
+
+if ( $count < $target_count_total ) {
+    die "Need more data : $count / $target_count_total";
+}
+
+sub _compute_instance_stats {
+
+    my $instance = shift;
+    my $instance_summary = shift;
+
+    my %stats;
+
+    # summary length (number of tokens => exclude punctuation ?)
+    #$stats{ 'summary_length' } = scalar( grep { ! $_->is_punctuation } @{ $instance->summary_modality->utterance->object_sequence } );
+    $stats{ 'summary_length' } = scalar( grep { $_ !~ m/^\p{PosixPunct}+$/ } @{ $instance_summary } );
+    
+    # number of content utterances
+    $stats{ 'content_utterances' } = scalar( @{ $instance->content_modality->utterances } );
+
+    # title utterance
+    $stats{ 'title_utterance' } = defined( $instance->title_modality->utterance ) || 0;
+
+    # title length (in words)
+    $stats{ 'title_length' } = defined( $instance->title_modality->utterance ) ? scalar( split /\s+/ , $instance->title_modality->utterance->verbalize ) : 0;
+
+    # anchortext utterances
+    $stats{ 'anchortext_utterances' } = scalar( @{ $instance->anchortext_modality->utterances } );
+
+    # url path components
+    my $uri = new URI( $instance->url );
+    my @url_components = split /\// , $uri->path;
+    $stats{ 'url_path_components' } = scalar( @url_components );
+
+    return \%stats;
+
+}
+
+sub _add_entry {
+
+    my $entries = shift;
+    my $feature_key = shift;
+    my $entry = shift;
+    
+    if ( ! defined( $entries->{ $feature_key } ) ) {
+	$entries->{ $feature_key } = [];
+    }
+
+    push @{ $entries->{ $feature_key } } , $entry;
+
+}
+
+sub _reachable_extractive {
+    my $target_data = shift;
+    my $diff = shift;
+    my $loose = shift || 0;
+    return _reachable( $target_data , $diff , $loose , 1 );
+}
+
+sub _reachable_abstractive {
+
+    my $target_data = shift;
+    my $diff = shift;
+    my $loose = shift || 0;
+    my $reference_data = shift;
+
+    my @_reachable_at_level = map { _reachable( $target_data , $diff , $loose , 1 , 1 , $reference_data , $_ ) } @reference_levels;
+
+    return \@_reachable_at_level;
+
+}
+
+sub _reachable {
+
+    my $target_data = shift;
+    my $diff = shift;
+    my $loose = shift;
+    my $use_extractive = shift || 0;
+    my $use_abstractive = shift || 0;
+    my $reference_data = shift;
+    my $reference_data_max = shift;
+    
+    # diff analysis
+    my $operations = DiffAnalysis::diff_analysis( $diff );
+    
+    # determine whether is can be found in the most similar references (that would be abstractive)
+    # top 10/20/30/40 ... based on template similarity
+    
+    my $is_globally_reachable = 0;
+    my $n_operations = 0;
+    foreach my $operation (@{ $operations }) {
+	    
+	my $operation_type = $operation->[ 0 ];
+	my $operation_from = $operation->[ 1 ];
+	my $operation_to   = $operation->[ 2 ];
+	
+	# Note : operation_from is what we seek to generate here
+	# TODO : Web::Summarizer::Token should ultimately be handling the normalization process
+	my $string_to_match = trim( $operation_from );
+	#my $string_to_match = $operation_to; # for testing purposes only => reachability should be 1 using abstraction
+
+	if ( ( ! length( $string_to_match ) ) || ( $string_to_match =~ m/^\[\[/ ) || ( $string_to_match =~ m/^\p{PosixPunct}+$/ ) ) {
+	    next;
+	}
+
+	$n_operations++;
+	
+	my $is_locally_reachable;
+	
+	if ( $operation_type eq $DiffAnalysis::OPERATION_SUBSTITUTION || $operation_type eq $DiffAnalysis::OPERATION_INSERTION ) {
+
+	    # can the destination token be found in the target object ?
+	    if ( $use_extractive && ( $target_data->supports( $string_to_match ) || $target_data->supports( $string_to_match , regex_match => 1 ) ) ) {
+		# still good
+		$is_locally_reachable = 1;
+	    }
+	    elsif ( $use_extractive && $loose && _has_target_match( $target_data , $string_to_match ) ) {
+		$is_locally_reachable = 1;
+	    }
+	    elsif ( $use_abstractive && _has_match( $reference_data , $reference_data_max , $string_to_match ) ) {
+		$is_locally_reachable = 1;
+	    }
+ 	    elsif ( $use_abstractive && $loose && _has_match( $reference_data , $reference_data_max , $string_to_match , $loose ) ) {
+		$is_locally_reachable = 1;
+	    }
+	    else {
+		$is_locally_reachable = 0 ;
+		#print STDERR "Unable to match: $string_to_match\n";
+	    }
+	    
+	}
+	else {
+	    # deletion 
+	    $is_locally_reachable = 1;
+	}
+	
+	$is_globally_reachable += $is_locally_reachable;
+	
+    }
+
+=pod
+    if ( $n_operations ) {
+	$is_globally_reachable /= $n_operations;
+    }
+=cut
+
+    # reachable ration
+    my $n_segments = $n_operations + 1;
+    my $reachable_ratio = ( $n_segments + $is_globally_reachable ) / ( $n_segments + $n_operations );
+
+    affirm { $reachable_ratio <= 1 } "Reachability ratio cannot be greater than 1" if DEBUG;
+
+    return $reachable_ratio;
+
+}
+
+sub _has_match {
+
+    my $reference_set = shift;
+    my $reference_set_max = shift;
+    my $string = shift;
+    my $loose = 0;
+
+    my $count = 0;
+    foreach my $reference_set_entry (@{ $reference_set }) {
+
+	if ( ++$count > $reference_set_max ) {
+	    last;
+	}
+
+	my $reference_set_entry_summary = $reference_set_entry->[ 1 ];
+	my $reference_set_entry_summary_clean = _remove_punctuation( $reference_set_entry_summary );
+
+	my @tests;
+	if ( $loose ) {
+	    my @string_tokens = split /\s+/ , $string;
+	    @tests = @string_tokens;
+	}
+	else {
+	    @tests = ( $string );
+	}
+
+	my $test_ok = 1;
+	foreach my $test_string ( @tests ) {
+	    my $test_string_clean = _remove_punctuation( $test_string );
+	    if ( $reference_set_entry_summary_clean !~ m/\Q$test_string_clean\E/si ) {
+		$test_ok = 0;
+		last;
+	    }
+	}
+
+	if ( $test_ok ) {
+	    return 1;
+	}
+
+    }
+
+    return 0;
+
+}
+
+sub _remove_punctuation {
+
+    my $string_raw = shift;
+
+    my $string_no_punctuation = $string_raw;
+    $string_no_punctuation =~ s/\p{Punct}+/ /sg;
+    $string_no_punctuation =~ s/\s\s+/ /sg;
+
+    return $string_no_punctuation;
+
+}
+
+sub _has_target_match {
+
+    my $target_data = shift;
+    my $operation_to = shift;
+    my $loose = 1;
+
+    my @tokens = grep { length( $_ ) } split /(?:\s|\p{PosixPunct})/ , $operation_to;
+
+    foreach my $token (@tokens) {
+	if ( ! $target_data->supports( $token ) ) {
+	    return 0;
+	}
+    }
+    
+    return 1;
+
+}
+
+sub _top_level_category {
+
+    my $category = shift;
+
+    my @category_components = split /\// , $category;
+    my $top_level_category = join( '/' , map { $category_components[ $_ ] } ( 0 , 1 ) );
+
+    return $top_level_category;
+
+}
+
+1;

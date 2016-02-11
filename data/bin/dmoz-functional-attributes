@@ -1,0 +1,67 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+package Scripts::Data::DMOZ::FunctionalAttributes;
+
+# Scans a single DMOZ category and output candidate attribute terms
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use DMOZ::SummaryProcessor;
+
+use Moose;
+use namespace::autoclean;
+
+extends( 'Scripts::Data::CategoryProcessor' );
+with( 'WordNetLoader' );
+
+__PACKAGE__->meta->make_immutable;
+
+1;
+
+my %category_attributes;
+my %attribute_2_has_uncapitalized;
+
+sub process_category {
+
+    my $element = shift;
+
+    my $element_normalized = lc( $element );
+    my $element_is_uncapitalized = ( $element =~ m/^[a-z]/ );
+    if ( $element_is_uncapitalized ) {
+	$category_attributes{ $element_normalized }++;
+    }
+
+}
+
+my $category_processor = new Scripts::Data::DMOZ::FunctionalAttributes( processor => \&process_category );
+$category_processor->run();
+
+my $attibute_category_frequency_threshold = 3;
+my $category = $category_processor->_category_processor->category_data_file;
+
+# output filtered category attributes
+map {
+
+    my $attribute = $_;
+    my $attribute_category_frequency = $category_attributes{ $attribute };
+
+    if ( $category_attributes{ $_ } >= $attibute_category_frequency_threshold ) {
+
+	# get predicted POS
+	my @predicted_pos_entries = $category_processor->wordnet_querySense( $attribute );
+	my $is_np = scalar( grep {
+	    $_ =~ m/\#n$/;
+	} @predicted_pos_entries );
+
+	if ( $is_np ) {
+	    print join( "\t" , $attribute , $category , $attribute_category_frequency ) . "\n";
+	}
+
+    }
+
+} keys( %category_attributes );

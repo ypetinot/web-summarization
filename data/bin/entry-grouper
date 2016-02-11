@@ -1,0 +1,48 @@
+#!/usr/bin/env perl
+
+package Scripts::EntryGrouper;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Getopt::Long;
+use JSON;
+use List::MoreUtils qw/uniq/;
+use Pod::Usage;
+use Text::Trim;
+
+use Moose;
+use namespace::autoclean;
+
+extends( 'EntryGrouper' );
+
+my $entry_grouper = new Scripts::EntryGrouper( processor_function => \&processor );
+$entry_grouper->run();
+
+sub processor {
+
+    my $key = shift;
+    my $entries = shift;
+
+    my %entries_all;
+
+    # TODO : can we normalize this and make it part of EntryGrouper ?
+    map {
+	my $entry = $_;
+	$entries_all{ $entry->[ 1 ] }++;
+    } @{ $entries };
+
+    my @entries_processed = keys( %entries_all );
+
+    print join( "\t" , $key , encode_json( \@entries_processed ) ) . "\n";
+
+}
+
+__PACKAGE__->meta->make_immutable;
+
+1;

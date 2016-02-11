@@ -1,0 +1,32 @@
+#!/usr/bin/env perl
+
+package Scripts::Freebase::EntityTypesMapper;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Getopt::Long;
+use JSON;
+use List::MoreUtils qw/uniq/;
+use Pod::Usage;
+use Text::Trim;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+    my $entity_key = shift @fields;
+    my $surfaces_json = shift @fields;
+
+    my @surfaces = uniq @{ decode_json( $surfaces_json ) };
+    map {
+	print join( "\t" , $_ , $entity_key ) . "\n";
+    } @surfaces;
+
+}

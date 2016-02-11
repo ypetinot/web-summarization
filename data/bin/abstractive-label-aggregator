@@ -1,0 +1,47 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Moose;
+with('FileAggregator');
+
+use JSON;
+use List::MoreUtils qw/uniq/;
+use List::Util qw/shuffle/;
+use Pod::Usage;
+
+sub splitter_function {
+
+    my $this = shift;
+    my $line = shift;
+
+    my @fields = split /\t/ , $line;
+    my @aggregate_data = splice @fields , 1;
+
+    return ( \@fields , \@aggregate_data );
+
+}
+
+sub aggregation_function {
+    my $this = shift;
+    my $aggregated_data = [ join( " " , sort { $a <=> $b } map { @{ $_ } } @{ $this->buffer } ) ];
+    return $aggregated_data;
+}
+
+sub key_function {
+    my $this = shift;
+    return join( ":::" , @_ );
+}
+
+__PACKAGE__->meta->make_immutable;
+
+my $instance = __PACKAGE__->new;
+$instance->run;
+
+1;

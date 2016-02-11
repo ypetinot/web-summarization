@@ -1,0 +1,177 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use AppearanceModel;
+use DMOZ::GlobalData;
+use NPModel::BinaryClassifier;
+
+use Digest::MD5 qw/md5_hex/;
+use Getopt::Long;
+use IO::Zlib;
+use JSON;
+use List::MoreUtils qw/uniq/;
+use List::Util qw/shuffle/;
+use Pod::Usage;
+
+my $global_data_base = undef;
+my $repository_base = undef;
+my $do_train = 0;
+
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure qw(bundling pass_through);
+
+GetOptions('global-data-base=s' => \$global_data_base , 'repository-base=s' => \$repository_base ,
+	   'train' => \$do_train ,
+	   'help|?' => \$help, man => \$man) or pod2usage(2);
+pod2usage(1) if ( $help || !defined( $global_data_base ) || !defined( $repository_base ) );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+if ( scalar(@ARGV) < 2 ) {
+    die "Usage: $0 <fold-id> <target-model-directory>";
+}
+
+my $fold_id = shift @ARGV;
+my $features_file = shift @ARGV;
+my $model_base_directory = shift @ARGV;
+
+my $global_data = new DMOZ::GlobalData( data_directory => $global_data_base );
+my $category_repository = new DMOZ::CategoryRepository( global_data => $global_data , repository_root => $repository_base );
+
+my $model_meta_data_filename = "term-model.meta";
+
+# 1 - read in independent term entries
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/ , $line;
+    
+    # TODO : will have to be revised
+    my $term = shift @fields;
+    my $term_id = shift @fields;
+    my $term_entry = decode_json( shift @fields );
+
+    # TODO : duplicate with abstractive-label-exploder
+    my $instance_ids = $term_entry->{ 'instance_id::list' };
+    my $appears_in_summaries = $term_entry->{ '+appears_in_summary::list' };
+    my @check_list = ( $instance_ids , $appears_in_summaries );
+    my $reference_count = scalar( @{ $check_list[ 0 ] } );
+    for ( my $i = 1; $i <= $#check_list; $i++ ) {
+	my $current_count = scalar( @{ $check_list[ $i ] } );
+	if ( $reference_count != $current_count ) {
+	    die "[$term] entry count mismatch : $current_count / $reference_count";
+	}
+    }
+
+    my %instances;
+    my %instances_positive;
+    my $instance_count_positive = 0;
+    for ( my $i = 0; $i < $reference_count; $i++ ) {
+	my $instance_id = $instance_ids->[ $i ];
+	my $appears_in_summary = $appears_in_summaries->[ $i ];
+	if ( $appears_in_summary ) {
+	    $instance_count_positive++;
+	    $instances_positive{ $instance_id } = 1;
+	}
+	# TODO : what if all positive instances are from the same category ? ==> require category diversity to be considered abstractive ?
+    }
+
+    # read in feature data
+    # on the way, collect negative instances (i.e. balance out training set)
+    # TODO :use entries from the same category ==> should provide samples that are sufficiently close to the positive set ?
+=pod
+    my @candidate_categories = uniq map { $_->[ 0 ]->category_data } values( %instances ); 
+    my @candidate_instances_negative = shuffle grep { ! defined( $instances{ $_->url } ) } map { @{ $_->get_fold( $fold_id )->fold_data } } @candidate_categories;
+    for ( my $i=0; $i<$urls_positive_count; $i++ ) {
+	my $instance = $candidate_instances_negative[ $i ];
+	$instances{ $instance->url } = [ $instance , 0 ];
+    }
+=cut
+
+    my $target_count_positive = $instance_count_positive;
+    my $target_count_negative = $instance_count_positive;
+    my $features_file_fh = new IO::Zlib;
+    $features_file_fh->open( $features_file , 'rb' ) or die "Unable to open features file ($features_file): $!";
+    while ( <$features_file_fh> ) {
+##    open FEATURES_FILE , $features_file || die "Unable to open features file ($features_file): $!";
+##    while ( <FEATURES_FILE> ) {
+	chomp;
+	my @fields = split /\t/ , $_;
+	my $key = shift @fields;
+	if ( ! defined( $instances{ $key } ) ) {
+	    my $keep = 1;
+	    if ( defined( $instances_positive{ $key } ) ) {
+		$target_count_positive--;
+	    }
+	    elsif ( $target_count_negative ) {
+		$target_count_negative--;
+	    }
+	    else {
+		$keep = 0;
+	    }
+	    if ( $keep ) {
+		my %features;
+		map { my ($feature_key,$feature_id) = split /:/ , $_; $features{ $feature_key } = $feature_id; } @fields;
+		$instances{ $key } = \%features;
+		if ( !$target_count_positive && !$target_count_negative ) {
+		    last;
+		}
+	    }
+	}
+    }
+
+##    close FEATURES_FILE;
+    $features_file_fh->close;
+
+    # instantiate NPModel (rename ?) and train
+    my $term_model_directory = join( "/" , $model_base_directory , "${term_id}.model" );
+    my $term_model_meta_data = join( "/" , $term_model_directory , $model_meta_data_filename );
+=pod
+    map { $_->[ 0 ]->prepare_data; } values( %instances );
+    map { push @_instances , $_->[ 0 ]; push @_instances_label , [ $_->[ 1 ] ]; } values( %instances );
+=cut
+
+    my @instances_keys = keys( %instances );
+    my @instances_features = map { $instances{ $_ } } @instances_keys;
+    my @instances_labels = map { [ defined( $instances_positive{ $_ } ) || 0 ] } @instances_keys;
+
+    # CURRENT : abstract out Weka at this point
+
+    # TODO : needed ? / clean this up ?
+    my $feature_set = undef;
+    my $term_model = new NPModel::BinaryClassifier(
+	id => $term_id,
+	base_directory => $term_model_directory,
+	bin_root => $FindBin::Bin,
+	contents_featurized => \@instances_features,
+	description => join( " / " , "binary-classification-model" , $term ),
+	);
+
+    # initialize model
+    $term_model->initialize();
+
+    # train model
+    $term_model->train( \@instances_labels );
+
+    # finalize model
+    $term_model->finalize();
+
+    # write out model configuration / feature set / etc
+    $term_model->write_out( $term_model_meta_data );
+
+}
+
+# 2 - if multiple entries are provided, we will attempt to train a joint model
+# TODO
+
+1;

@@ -1,0 +1,67 @@
+#!/usr/bin/env perl
+
+# TODO : rename script ?
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Graph::Undirected;
+use JSON;
+
+my $ATTRIBUTE_COOCCURRENCE_COUNT = 'width';
+
+my %id2term;
+my %url2active;
+
+# first pass
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/ , $line;
+
+    my $term = shift @fields;
+    my $term_id = shift @fields;
+    my $term_data = shift @fields;
+
+    $id2term{ $term_id } = $term;
+
+    my $term_entry = decode_json( $term_data );
+    my $term_entry_urls = $term_entry->{ 'url' };
+
+    foreach my $term_entry_url ( @{ $term_entry_urls } ) {
+	if ( ! defined( $url2active{ $term_entry_url } ) ) {
+	    $url2active{ $term_entry_url } = {};
+	}
+	$url2active{ $term_entry_url }->{ $term_id } = 1;
+    }
+
+}
+
+# second pass
+my $graph = new Graph::Undirected;
+foreach my $url ( keys( %url2active ) ) {
+
+    my $url_active = $url2active{ $url };
+    my @active_terms = sort { $a <=> $b } keys( %{ $url_active } );
+    for (my $i = 0; $i <= $#active_terms; $i++ ) {
+	my $active_term_i = $active_terms[ $i ];
+	for ( my $j = $i+1; $j <= $#active_terms; $j++ ) {
+	    my $active_term_j = $active_terms[ $j ];
+	    $graph->add_edge( $active_term_i , $active_term_j );
+	    my $current_count = $graph->get_edge_attribute( $active_term_i , $active_term_j , $ATTRIBUTE_COOCCURRENCE_COUNT ) || 0;
+	    $graph->set_edge_attribute( $active_term_i , $active_term_j , $ATTRIBUTE_COOCCURRENCE_COUNT , $current_count + 1 );
+	} 
+    }
+
+    print join( "\t" , $url , @active_terms ) . "\n";
+
+}
+
+1;

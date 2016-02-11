@@ -1,0 +1,90 @@
+#!/usr/bin/env perl
+
+package Scripts::DBPedia::DataImporter;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Moose;
+use namespace::autoclean;
+
+use JSON;
+use List::MoreUtils qw/uniq/;
+use URI::Escape;
+
+with( 'DBPedia' );
+
+my $data_importer = new Scripts::DBPedia::DataImporter;
+
+my $current_resource;
+my @current_resource_buffer;
+while( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    if ( $line =~ m/^\#/ ) {
+	next;
+    }
+
+    my @fields = split /\s+/ , $line;
+    my ( $resource , $relation , $type ) = @fields;
+    
+    if ( ! defined( $current_resource ) || ( $resource ne $current_resource ) ) {
+	if ( scalar( @current_resource_buffer ) ) {
+	    $data_importer->_output( $current_resource , \@current_resource_buffer );
+	}
+	$current_resource = $resource;
+	@current_resource_buffer = ();
+    }
+
+    push @current_resource_buffer , $type ;
+
+}
+
+# can we do better ?
+if ( scalar( @current_resource_buffer ) ) {
+    $data_importer->_output( $current_resource , \@current_resource_buffer );
+}
+
+sub _output {
+
+    my $this = shift;
+    my $resource = shift;
+    my $buffer = shift;
+
+    my $resource_string = $this->_to_string( $resource );
+    my @processed_buffer = uniq map { $this->_to_string( $_ ) } @{ $buffer };
+
+    print join( "\t" , $resource , $resource_string , encode_json( \@processed_buffer ) ) . "\n";
+
+    # load data to mongodb
+    $this->set_types( $resource_string , \@processed_buffer );
+
+}
+
+sub _to_string {
+
+    my $this = shift;
+    my $url = shift;
+
+    $url =~ s/^<//;
+    $url =~ s/>$//;
+
+    my @resource_components = split /\// , $url;
+    my $string_encoded = pop @resource_components;
+    my $string_decoded = uri_unescape( $string_encoded );
+    my $string_final = $string_decoded;
+    $string_final =~ s/_+/ /sg;
+
+    return $string_final;
+    
+}
+
+__PACKAGE__->meta->make_immutable;
+
+1;

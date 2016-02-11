@@ -1,0 +1,69 @@
+#!/usr/bin/env perl
+
+package Scripts::Freebase::DataFilter;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use File::Slurp;
+
+use Moose;
+use namespace::autoclean;
+
+with( 'Logger' );
+
+use JSON;
+
+has 'concept_list_file' => ( is => 'ro' , isa => 'Str' , required => 1 );
+has 'concepts' => ( is => 'ro' , isa => 'HashRef' , init_arg => undef , lazy => 1 , builder => '_concepts_builder' );
+sub _concepts_builder {
+    my $this = shift;
+    my %concepts;
+
+    $this->logger->info( "Loading up Freebase concepts ..." );
+    map {
+	chomp;
+	my @fields = split /\t|\s/ , $_;
+	if ( scalar( @fields ) == 4 ) {
+	    my $concept_freebase = $fields[ 0 ];
+	    my $concept_wikidata = $fields[ 2 ];
+	    $concepts{ $concept_freebase } = 1;
+	}
+    } read_file( $this->concept_list_file );
+    $this->logger->info( "Done loading up Freebase concepts" );
+
+    return \%concepts;
+}
+
+my $concept_list_file = $ARGV[ 0 ];
+if ( ! $concept_list_file ) {
+    die "Usage: $0 <concept-list-file>";
+}
+
+my $data_filter = new Scripts::Freebase::DataFilter( concept_list_file => $concept_list_file );
+
+while( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    if ( $line =~ m/^\#/ ) {
+	next;
+    }
+
+    my @fields = split /\s+/ , $line;
+    my $concept_freebase = $fields [ 0 ];
+
+    if ( ! defined( $data_filter->concepts->{ $concept_freebase } ) ) {
+	next;
+    }
+
+    print "$line\n";
+
+}
+
+1;

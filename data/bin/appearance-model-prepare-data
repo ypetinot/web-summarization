@@ -1,0 +1,97 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Getopt::Long;
+use JSON;
+use List::Util qw/min/;
+use Pod::Usage;
+
+my $help = 0;
+my $man = 0;
+
+# TODO : allow for balanced (or close to be) data for all labels ? ==> difficult combinatorial problem
+my $balanced = 0;
+my $max_per_label_instances = 0;
+
+Getopt::Long::Configure qw(bundling pass_through);
+
+GetOptions('balanced' => \$balanced ,
+	   'max-per-label-instances=i' => \$max_per_label_instances ,
+	   'help|?' => \$help, man => \$man) or pod2usage(2);
+pod2usage(1) if ( $help );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+if ( scalar(@ARGV) < 0 ) {
+    die "Usage: $0 <labels-file>";
+}
+
+my $labels_file = $ARGV[ 0 ];
+my $labels_data = _load_labels_data( $labels_file );
+
+while ( <STDIN> ) {
+
+    chomp;
+    
+    my @fields = split /\t/ , $_;
+    my $instance_id = shift @fields;
+
+    my $instance_features = \@fields;
+    my $instance_labels = $labels_data->{ $instance_id };
+
+    my $instance_labels_string = join( " " , keys( %{ $instance_labels } ) );
+    my $instance_features_string = join( "\t" , @{ $instance_features } );
+    print join( "\t" , $instance_labels_string , $instance_features_string ) . "\n";
+
+}
+
+sub _load_labels_data {
+
+    my $filename = shift;
+    my %labels_data;
+
+    open LABELS_FILE, $filename or die "Unable to open labels file ($filename) : $!";
+    while ( <LABELS_FILE> ) {
+	
+	chomp;
+	
+	my $line = $_;
+	my @fields = split /\t/ , $line;
+	
+	# TODO : will have to be revised
+	my $term = shift @fields;
+	my $term_id = shift @fields;
+	my $term_entry = decode_json( shift @fields );
+
+	my $term_instances = $term_entry->{ 'instance_id::list' };
+	my $term_appears_in_summary = $term_entry->{ '+appears_in_summary::list' };
+	
+	my $_n_term_instances = scalar( @{ $term_instances } );
+	my $_n_term_appears_in_summary = scalar( @{ $term_appears_in_summary } );
+
+	if ( $_n_term_instances != $_n_term_appears_in_summary ) {
+	    die "Data mismatch for term $term : $_n_term_instances / $_n_term_appears_in_summary";
+	}
+
+	my $term_instance_limit = $max_per_label_instances ? min( $max_per_label_instances , $_n_term_instances ) : $_n_term_instances;
+
+	for ( my $i = 0; $i < $term_instance_limit; $i++ ) {
+	    my $instance_id = $term_instances->[ $i ];
+	    my $instance_appears_in_summary = $term_appears_in_summary->[ $i ];
+	    $labels_data{ $instance_id }->{ $term_id } = 1;
+	}
+
+    }
+    close LABELS_FILE;
+
+    return \%labels_data;
+
+}
+
+1;

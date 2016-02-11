@@ -1,0 +1,15 @@
+.DELETE_ON_ERROR:
+.SECONDARY:
+
+adaptation.model: adaptation.features.mapped
+	cat $< | ${BINDIR_DATA}/dmoz-category-adaptation-extractive-adapter-trainer --model_filename=$@ > $@.stats
+
+adaptation.features adaptation.features.mapping: adaptation.instances
+	cat $< | ${BINDIR_DATA}/dmoz-category-adaptation-extractive-data-features adaptation.features.mapping > adaptation.features
+
+adaptation.features.mapped: adaptation.features adaptation.features.mapping
+	cat $< | ${BINDIR_DATA}/dmoz-category-adaptation-extractive-data-feature-mapper > $@
+
+adaptation.instances: adaptation.overlap
+	cat $< | perl -d ${BINDIR_DATA}/dmoz-category-adaptation-extractive-data
+#> $@

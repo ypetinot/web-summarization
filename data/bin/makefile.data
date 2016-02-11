@@ -1,0 +1,195 @@
+DATA_MAKEFILE_DIR:=$(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+include $(DATA_MAKEFILE_DIR)/../../bin/makefile.common
+include $(DATA_MAKEFILE_DIR)/../../bin/makefile.fold
+
+DATA_INSTANCES:=$(DATA_REPOSITORY)/instances
+
+DATA_INSTANCES_FULL_BASE:=$(LOCAL_BASE_DATA_COMMON)/dmoz/instances.full
+DATA_INSTANCES_FULL_GZ:=$(DATA_INSTANCES_FULL_BASE).gz
+DATA_INSTANCES_FULL_RANDOMIZED_GZ:=$(DATA_INSTANCES_FULL_BASE).randomized.gz
+DATA_INSTANCES_SOURCE:=$(DATA_INSTANCES).source
+DATA_INSTANCES_SOURCE_SPLIT:=$(DATA_INSTANCES).split
+DATA_INSTANCES_SOURCE_SPLIT_LIST:=$(DATA_INSTANCES_SOURCE_SPLIT).list
+DATA_INSTANCES_NORMALIZED:=$(DATA_INSTANCES).normalized
+
+DATA_INSTANCES_FILTERED=$(DATA_INSTANCES).filtered
+DATA_INSTANCES_FILTERED_GZ=$(DATA_INSTANCES_FILTERED).gz
+
+# TODO : modify to avoid duplication for training/dev/testing
+DATA_INSTANCES_TRAINING:=$(DATA_INSTANCES).training
+DATA_INSTANCES_TRAINING_SPLIT:=$(DATA_INSTANCES_TRAINING).split
+DATA_INSTANCES_OBJECT_FEATURES_TRAINING:=$(DATA_INSTANCES_TRAINING).object-features
+DATA_INSTANCES_OBJECT_FEATURES_TRAINING_COUNT:=$(DATA_INSTANCES_OBJECT_FEATURES_TRAINING).count.gz
+
+DATA_INSTANCES_DEV:=$(DATA_INSTANCES).dev
+DATA_INSTANCES_DEV_SPLIT:=$(DATA_INSTANCES_DEV).split
+DATA_INSTANCES_OBJECT_FEATURES_DEV:=$(DATA_INSTANCES_DEV).object-features
+
+DATA_INSTANCES_TESTING:=$(DATA_INSTANCES).testing
+DATA_INSTANCES_TESTING_SPLIT:=$(DATA_INSTANCES_TESTING).split
+DATA_INSTANCES_OBJECT_FEATURES_TESTING:=$(DATA_INSTANCES_TESTING).object-features
+
+INSTANCE_BATCH_SIZE=$(MAX_INSTANCES_BLOCK)
+
+default:
+
+# keep all intermediate files
+.SECONDARY:
+
+# TODO : to be removed, this should be covered by the previous line
+.PRECIOUS:
+
+# TODO : how do we use .PRECIOUS and/or .SECONDARY so that it is only necessary to specify the final target without automatically removing the intermediate ones ?
+INSTANCES_TARGETS=$(DATA_INSTANCES_NORMALIZED) $(DATA_INSTANCES_FILTERED) $(DATA_INSTANCES_TRAINING) $(DATA_INSTANCES_TESTING) $(DATA_INSTANCES_DEV)
+instances: $(INSTANCES_TARGETS)
+# TODO : create macro to generate this rule
+instances-clean:
+	rm -rf $(INSTANCES_TARGETS)
+
+INSTANCES_FEATURES_TARGETS=$(DATA_INSTANCES_OBJECT_FEATURES_TRAINING) $(DATA_INSTANCES_OBJECT_FEATURES_TESTING) $(DATA_INSTANCES_OBJECT_FEATURES_TRAINING_COUNT)
+instances-features: $(INSTANCES_FEATURES_TARGETS)
+# TODO : create macro to generate this rule
+instances-features-clean:
+	rm -rf $(INSTANCES_FEATURES_TARGETS)
+
+ifdef MAX_INSTANCES
+# TODO : can we do better ? => pipefail is probably deactivated by custom-shell so this makes no sense
+PIPE_CONTROL=set +o pipefail &&
+FILTER=--max $(MAX_CATEGORIES)
+FILTER_CATEGORIES=|head -n$(MAX_CATEGORIES)
+FILTER_INSTANCES=|head -n$(MAX_INSTANCES)
+else
+FILTER=
+endif
+
+# TODO : to be removed
+#### input categories (only these can be used)
+###${DATA_CATEGORY_LIST}:
+###	${BINDIR_DIST}/run-dmoz-iterator $(FILTER) | sort -R > $@
+
+# TODO : eventually the list of instances should not depend on a list of categories but instead a raw dump of the DMOZ data
+# TODO : gzip output
+# Note : we re-randomize just to be sure :-P
+# CURRENT : we want to split immediately, the question is how do we create dependencies after the fact => don't need dependencies, just a job-log
+
+# TODO : to be removed
+####$(DATA_INSTANCES_SOURCE): ${DATA_CATEGORY_LIST}
+####	$(PIPE_CONTROL) cat ${DATA_CATEGORY_LIST} $(FILTER_CATEGORIES) | while read CATEGORY_BASE; do SUMMARY_FILE=$${CATEGORY_BASE}.summary; if [ -f $${SUMMARY_FILE} ]; then join -t$$'\t' $${SUMMARY_FILE} $${CATEGORY_BASE}; fi; done | sort -u | sort -R $(FILTER_INSTANCES) > $@
+
+$(DATA_INSTANCES_SOURCE_SPLIT): $(DATA_INSTANCES_FULL_RANDOMIZED_GZ)
+	mkdir -p $@.temp
+	$(PIPE_CONTROL) gunzip -c $< $(FILTER_INSTANCES) | cut -f 1,3- | split -l $(INSTANCE_BATCH_SIZE) --suffix-length=5 --filter='gzip > $$FILE.gz' - $@.temp/
+	mv $@.temp $@
+
+$(DATA_INSTANCES_NORMALIZED): $(DATA_INSTANCES_SOURCE_SPLIT)
+	mkdir -p $@.temp
+	find $</ -type f -name *.gz | $${PARALLEL_COMMAND_LOCAL} --progress --joblog $@.log 'gunzip -c {} | perl ${BINDIR_DATA}/url-normalizer | gzip -c > $@.temp/{/}'
+	mv $@.temp $@
+
+# TODO : create directory dependency macro to abstract the filter-out/wildcard gizmo
+$(DATA_INSTANCES_FILTERED): $(filter-out $(wildcard $(DATA_INSTANCES_NORMALIZED)), $(DATA_INSTANCES_NORMALIZED))
+	mkdir -p $@.temp
+	find $(DATA_INSTANCES_NORMALIZED)/ -type f -name *.gz | $${PARALLEL_COMMAND_LOCAL} --progress 'gunzip -c {} | ${BINDIR_DATA}/dmoz-data-import --expect-category | gzip -c > $@.temp/{/}'
+	mv $@.temp $@
+
+# TODO : problem, this rule gets executed multiple times
+$(DATA_INSTANCES_SOURCE_SPLIT_LIST): $(call folder_dependency,$(DATA_INSTANCES_SOURCE_SPLIT))
+	find $(DATA_INSTANCES_SOURCE_SPLIT) -type f -name '*.gz' | sort > $@
+
+$(DATA_INSTANCES_TRAINING) $(DATA_INSTANCES_DEV) $(DATA_INSTANCES_TESTING): $(DATA_INSTANCES_SOURCE_SPLIT_LIST)
+	$(BINDIR_DIST)/split-corpus $< 98 1 1 $(DATA_INSTANCES)
+
+# Note : anything beyond this point will be automatically deleted upon make failure
+.DELETE_ON_ERROR:
+
+$(DATA_INSTANCES_FULL_RANDOMIZED_GZ): $(DATA_INSTANCES_FULL_GZ)
+	gunzip -c $< | grep -v 'Top/World/' | sort -R | gzip -c > $@
+
+$(DATA_INSTANCES).%.object-features: $(DATA_INSTANCES).%.split
+	mkdir -p $@.temp
+	find $</ -type f -name '*.gz' | $${PARALLEL_COMMAND} --progress --joblog $@.joblog 'gunzip -c {} | perl $(BINDIR_DATA)/generate-features --global-data=$(ROOTDIR_DATA) --repository-base=$(DMOZ_REPOSITORY_BASE) | gzip -c > $@.temp/{/.}.object-features.gz'
+	mv $@.temp $@
+#### TODO : problem with pipe , will split at a later stage
+####| $(PARALLEL_COMMAND_LOCAL) --pipe -N $(INSTANCE_BATCH_SIZE) 'gzip -c > $@/{#}.gz'
+
+# Note : this rule shoudln't be needed once parallel correctly separates STDERR/STDOUT
+# Note : we are sorting on the url field (#2)
+# TODO : training vs testing, is this really clean ?
+$(DATA_INSTANCES).%ing: $(DATA_CATEGORY_LIST)
+	cat $< | perl $(BINDIR_DIST)/dmoz-category-fold --global-data-base=$(ROOTDIR_DATA) --repository-base=$(DMOZ_REPOSITORY_BASE) --$* $(FOLD_ID) --fields="_category" --fields="_base" | awk -F"\t" '{ print NR FS $$0 }' > $@
+
+# TODO : automatic detection of TMPDIR location (e.g. /local/ypetinot/data/ ==> put in .bashrc ?)
+####	cat $(DATA_CATEGORY_LIST) | $(PARALLEL_COMMAND_RESUME) --progress --joblog=$@.joblog 'echo {} | $(BINDIR_DATA)/global-category-processor 0 AbstractiveExtractiveFunctionAnalyzer --global-data-base=$(ROOTDIR_DATA) --repository-base=$(DMOZ_REPOSITORY_BASE) --summary_vocabulary=$(DMOZ_VOCABULARY_TRUE) --job_id={#}' | grep -v 'global-category-processor' | grep -v 'Skipping URL' > $@.unsorted 2> $(DATA_MODEL_ABSTRACTIVE_RAW_LOG)
+####	cat $@.unsorted | grep 'appears_in_' > $@.header
+####	cat $@.unsorted | grep -v '#instance#' | grep -v 'appears_in' | grep -v 'ypetinot' | grep -v '^$$' | LC_COLLATE=C sort -k1 -t'	' > $@.body
+
+# Note : this is only necessary (?) for a global appearance model
+$(DATA_INSTANCES_OBJECT_FEATURES_TRAINING_COUNT): $(DATA_INSTANCES_OBJECT_FEATURES_TRAINING)
+	mkdir -p $@.raw.temp
+	find $< -type f -name '*.gz' | $${PARALLEL_COMMAND_LOCAL} "gunzip -c {} | cut -f 3- | tr '\t' '\n' | PATH=$${PATH}:$(BINDIR_THIRD_PARTY)/ $(BINDIR_THIRD_PARTY)/ngram-count -read - -sort | gzip -c - > $@.raw.temp/{#}.count.ngrams.gz"
+	bash -c 'export PATH=$${PATH}:$(BINDIR_THIRD_PARTY)/; $(BINDIR_THIRD_PARTY)//merge-batch-counts $@.raw.temp/'
+	ls -t $@.raw.temp/*.files | head -n1 | xargs -i{} cat {} | xargs -i{} mv {} $@
+	rm -rf $@.raw.temp/
+
+# true dmoz vocabulary (any string not appearing in this set should be tokenized using basic whitespace/punctuation tokenization)
+DMOZ_VOCABULARY_TRUE:=$(ROOTDIR_DATA)/dmoz_summary.vocabulary.true
+$(DMOZ_VOCABULARY_TRUE): $(DATA_CATEGORY_LIST)
+	cat $(DATA_CATEGORY_LIST) | xargs -i{} cat {}.summary.chunked.refined | cut -d'	' -f2- | tr '\t' '\n' | awk -F"/" '{ print tolower($$1) }' | LC_COLLATE=C sort -u > $@
+
+# ngram models
+# TODO : enforce fold id ?
+# TODO : ngram-models generated by combining per-category models ?
+NGRAM_MODEL_BASE:=${ROOTDIR_DATA}/ngrams/
+
+# TODO : combine two commands ? ==> use variable as last statement in generated constructs
+# Weird : https://www.gnu.org/software/make/manual/html_node/Syntax-of-Functions.html
+empty:=
+space:= $(empty) $(empty)
+dmoz_language_model=$(or $(eval $(call _dmoz_language_model,$(1),$(2),$(3))),$(call dmoz_language_model_file,$(1),$(2),$(3)) )
+# 1: field / 2: max order / 3: options
+dmoz_language_model_file=$(NGRAM_MODEL_BASE)/$(1)/$(2)/$(subst $(space),+++,$(3)).model
+
+define _dmoz_language_model_summary
+
+# TODO : any elegant way to avoid the duplication with the final call above ?
+# currently we don't generate summary n-grams at the category level
+$(call dmoz_language_model_file,$(1),$(2),$(3)): $$(DATA_CATEGORY_LIST)
+	mkdir -p $$(dir $$@)
+	cat $$< | perl $(BINDIR_DIST)/dmoz-category-fold --global-data-base=$(ROOTDIR_DATA) --repository-base=$(DMOZ_REPOSITORY_BASE) --train $(FOLD_ID) --fields=summary | awk -F"\t" '{ print $$$$2 }' | $(BINDIR_THIRD_PARTY)/ngram-count -order $(2) -text - $(3) -write $$@.counts $$(foreach ngram_order,$$(shell seq 1 $(2) | tr '\n' ' ' ),-write$$(ngram_order) $$@.counts.$$(ngram_order)) -write-vocab $$@.vocab -write-vocab-index $$@.index -lm $$@ -write-binary-lm
+
+endef
+
+define _dmoz_language_model_default
+
+# TODO : any elegant way to avoid the duplication with the final call above ?
+$(call dmoz_language_model_file,$(1),$(2),$(3)): $(DATA_CATEGORY_LIST)
+# merge n-grams for specific field/order
+	mkdir -p $$(dir $$@)
+	mkdir -p $$(dir $$@)/category.counts/
+	bash -c "export PATH=$${PATH}:$(BINDIR_THIRD_PARTY); $(BINDIR_THIRD_PARTY)/make-batch-counts $$< 1000 'perl $(BINDIR_DIST)/dmoz-category-fold --train $(FOLD_ID) --field=$(1) --no-url' $$(dir $$@)/category.counts/"
+	bash -c 'export PATH=$${PATH}:$(BINDIR_THIRD_PARTY)/; $(BINDIR_THIRD_PARTY)//merge-batch-counts $$(dir $$@)/category.counts/'
+	bash -c 'export PATH=$${PATH}:$(BINDIR_THIRD_PARTY)/; $(BINDIR_THIRD_PARTY)/make-big-lm -name $$(dir $$@) -read $$(dir $$@)/category.counts/*-*.ngrams.gz -order $(2) -sort $(3) -write $$@.counts -write1 $$@.counts.1 -write-vocab $$@.vocab -write-vocab-index $$@.index -lm $$@ -write-binary-lm'
+
+### Original (slightly modified)	cat $< | perl $$(BINDIR_DIST)/dmoz-category-fold --train $$(FOLD_ID) --fields=summary | awk -F"\t" '{ print $$$2 }' | $(BINDIR_THIRD_PARTY)/ngram-count -order $$(lastword $(N_GRAM_ORDERS)) -text - -sort -write-vocab $$@.temp/$$@.vocab -write-vocab-index $$@.temp/$$@.index $(foreach ngram_order,$(N_GRAM_ORDERS),-write$(ngram_order) $@.temp/$@.$(ngram_order)) -lm $@.temp/$@.lm -write-binary-lm
+
+endef
+
+# define language model file name and create associated recipe
+# ( field , type , order , parameters )
+define _dmoz_language_model
+
+# CURRENT : even if the parameters are specific, I can provide a specific name for this LM so it can be easily loaded
+# CURRENT : how ?
+# CURRENT : only one model ?
+# CURRENT : or, normalize generation of filename => perl module ?
+$(if $(filter summary,$(1)),$(eval $(call _dmoz_language_model_summary,$(1),$(2),$(3),$(4))),$(eval $(call _dmoz_language_model_default,$(1),$(2),$(3),$(4))))
+###overide DMOZ_LANGUAGE_MODEL_FILE_LOCAL:=$(call dmoz_language_model_file,$(1),$(2),$(3),$(4))
+
+endef
+
+#| xargs -i{} -n1 -P3 $(BINDIR_THIRD_PARTY)/ngram-count -text {}.$* -write $@.temp/category.counts/{}.counts
+#####	$(BINDIR_THIRD_PARTY)/ngram-count -read $@.temp/category.counts/*-*.ngrams.gz -order $(lastword $(N_GRAM_ORDERS)) -sort -no-sos -no-eos -write-vocab $@.temp/$@.vocab -write-vocab-index $@.temp/$@.index $(foreach ngram_order,$(N_GRAM_ORDERS),-write$(ngram_order) $@.temp/$@.$(ngram_order) -gt$(ngram_order)min $(N_GRAM_THRESHOLD)) -lm $@.temp/$@.lm -write-binary-lm
+
+data-clean:
+	rm -rf $(DATA_CATEGORY_LIST)
+	rm -rf $(DATA_INSTANCES_OBJECT_FEATURES_TRAINING) $(DATA_INSTANCES_OBJECT_FEATURES_TESTING)

@@ -1,0 +1,114 @@
+#!/bin/bash
+
+# http://www.cyberciti.biz/faq/unix-linux-bsd-find-real-physical-path/
+BINDIR=`readlink -f $(dirname $0)`
+# TODO : merge resource files, will avoid having to include multiple files from client scripts/makefiles
+source ${BINDIR}/../../environment.rc
+source ${BINDIR}/../../dist.rc
+
+# TODO : rename resource file ?
+source ${PARALLEL_JOB_RESOURCES}
+
+SHORTOPTS="h"
+LONGOPTS="help,fresh-download,filter-mode,level:,log-to:,sync"
+
+ARGS_COPY=$@
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+# default processing level
+LEVEL=1
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+	--filter-mode )
+	    FILTER_MODE_PARAM="--filter-mode"; shift 1;;
+	--level )
+	    LEVEL=$2; shift 2;;
+	--log-to )
+	    LOG_DIRECTORY=$1; shift 2;;
+	--sync )
+	    SYNC_PARAM="--sync"; shift 1;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+FIELDS="$@"
+
+# TODO: make this an optional STDIN input instead
+#CATEGORY_BASE=$3
+
+if [ -d "${LOG_DIRECTORY}" ]; then
+    LOG_DESTINATION="${LOG_DIRECTORY}/data-generation.log"
+fi
+
+###function _log() {
+###
+###    message=$@
+###
+###    # TODO : optimize ?
+###    if [ ! -z "${LOG_DESTINATION}" ]; then 
+###	echo $@ >> ${LOG_DESTINATION}
+###    else
+###	echo $@ 1>&2
+###    fi
+###
+###}
+
+# list all categories in repository
+function _collect_categories() {
+    if [[ "${FILTER_MODE}" == "1" ]]; then
+	cat -
+    elif [[ ! -z "${CATEGORY_BASE}" ]]; then
+	echo ${CATEGORY_BASE}
+    else
+	# TODO : trigger the generation of categories list if it does not exist ? / i.e. add some form of dependency to makefile.data
+	cat ${ROOTDIR_DATA}/categories.list
+    fi
+}
+
+# TODO : log warnings to log file
+function _check_categories() {
+
+    cat | while read CATEGORY_BASE; do
+	if [ ! -f ${CATEGORY_BASE} ]; then
+	    _log "[run-data-generation] incomplete/invalid category data : ${CATEGORY_BASE}";
+	    continue;
+	fi
+	echo ${CATEGORY_BASE}
+    done;
+
+}
+
+# Note : not needed
+### function _compress_set() {
+###     # CURRENT : implement using cpio
+###     cat - | while read BASE; do
+### 	TEMP_ARCHIVE=`mktemp url-data-archive.XXXXXX`
+### 	find ${BASE}* | cpio -o --quiet --file=${TEMP_ARCHIVE}
+### 	echo ${TEMP_ARCHIVE}
+###     done
+### }
+
+# TODO : turn into parameter ?
+FOLD_ID=0
+
+# run global data generation
+# TODO : abstract name of data makefile ?
+make --quiet -C ${DATA_REPOSITORY} -f ${BINDIR_DATA}/makefile.data FOLD_ID=${FOLD_ID} REPOSITORY_ROOT=${DMOZ_REPOSITORY_BASE} instances
+
+RSYNCD_URL_BASE="odp\@${HOSTNAME}::repository"
+
+# run category processing
+# Note : for now we do not make rsync URLs visible outside of this script (especially since the rsync daemon's lifespan is the same as this script's), but provided I find a way of seemlessly handle rsync URLs (write my own tool ?) for read (mostly) / write purposes, then I could make the rsync URLs visible outside.
+# TODO : categories should simply become arbitrary slices of the corpus data
+# TODO : http://savannah.gnu.org/bugs/?42493 => what if we open our own channels instead of relying on ssh's existing channels ? Is this possible ?
+
+# TODO : to be removed ?
+#### TODO : parallel command with ungroup as default (speedup apparently according to man page)
+###_collect_categories | _check_categories | sed "s#${DMOZ_REPOSITORY_BASE}#${RSYNCD_URL_BASE}#" | ${BINDIR_PARALLEL}/parallel -j50% --ungroup --no-notice --halt-on-error 2 --sshloginfile ${SERVERS_LIST} "${BINDIR}/run-data-generation-category ${FILTER_MODE_PARAM} --silent --source=${HOSTNAME} ${SYNC_PARAM} --post-cleanup {} ${LEVEL} ${FIELDS} 2> /dev/null" | stdbuf -o0 grep -v 'run-data-generation-category' | stdbuf -o0 sed "s#${RSYNCD_URL_BASE}#${DMOZ_REPOSITORY_BASE}#"

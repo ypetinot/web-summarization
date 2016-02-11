@@ -1,0 +1,37 @@
+FREEBASE_ARCHIVE=freebase-rdf-latest.gz
+FREEBASE_WIKIDATA_MAPPING=fb2w.nt.gz
+
+FREEBASE_FILTERED=freebase-rdf.filtered.gz
+FREEBASE_ENTITY_SURFACE_MAPPING_FULL=surface_entity.mapping.full.gz
+FREEBASE_SURFACE_ENTITY_MAPPING_SORTED=surface_entity.mapping.sorted.gz
+FREEBASE_SURFACE_ENTITY_MAPPING=surface_entity.mapping.gz
+FREEBASE_ENTITY_TYPES_MAPPING=entity_types.mapping.gz
+TARGET_ENTITIES=target.entities
+
+default: $(FREEBASE_ENTITY_SURFACE_MAPPING_FULL) $(FREEBASE_ENTITY_TYPES_MAPPING) $(FREEBASE_SURFACE_ENTITY_MAPPING)
+
+$(TARGET_ENTITIES): $(FREEBASE_WIKIDATA_MAPPING)
+	gunzip -c $(FREEBASE_WIKIDATA_MAPPING) | awk '{ if ( NF == 4 ) { print $$1 } }' > $@
+
+.DELETE_ON_ERROR:
+$(FREEBASE_FILTERED): $(FREEBASE_ARCHIVE) $(FREEBASE_WIKIDATA_MAPPING)
+	#TODO: define as a temporary resource	
+	gunzip -c $(FREEBASE_WIKIDATA_MAPPING) > $(TARGET_ENTITIES)
+	gunzip -c $(FREEBASE_ARCHIVE) | $(BINDIR_DATA)/freebase-data-filter $(TARGET_ENTITIES) | gzip -c > $@
+	rm $(TARGET_ENTITIES)
+
+$(FREEBASE_ENTITY_SURFACE_MAPPING_FULL): $(FREEBASE_FILTERED)
+	gunzip -c $(FREEBASE_FILTERED) | $(BINDIR_DATA)/freebase-entity-surface-mapping | grep -v '/quotationsbook/quote/' | gzip -c > $@
+
+# entity key => types
+$(FREEBASE_ENTITY_TYPES_MAPPING): $(FREEBASE_FILTERED)
+	gunzip -c $(FREEBASE_FILTERED) | grep -v wikipedia | grep 'rdf-syntax' | $(BINDIR_DATA)/freebase-entity-type-mapping | gzip -c > $@
+
+# string => entity key
+$(FREEBASE_SURFACE_ENTITY_MAPPING): $(FREEBASE_SURFACE_ENTITY_MAPPING_SORTED)
+	# CURRENT : is length filtering still required ? => Invalid UTF-8 detected while decoding BSON
+	# TODO : need to figure out how I end up collecting extremely long keys (maybe need to filter out some specific type of keys ?)
+	gunzip -c $< | $(BINDIR_DATA)/entry-grouper | awk -F"\t" '{ if ( length( $$1 ) <= 128 ) { print $$0 } }' | gzip -c > $@
+
+$(FREEBASE_SURFACE_ENTITY_MAPPING_SORTED): $(FREEBASE_ENTITY_SURFACE_MAPPING_FULL)
+	gunzip -c $< | cut -f1,2 | $(BINDIR_DATA)/freebase-surface-entity-mapping | sort -k1 | gzip -c >$@

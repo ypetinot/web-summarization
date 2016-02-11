@@ -1,0 +1,202 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../environment.rc
+source ${BINDIR}/../../dist.rc
+
+# TODO : rename resource file ?
+source ${PARALLEL_JOB_RESOURCES}
+
+SHORTOPTS="h"
+LONGOPTS="help,fresh-download,filter-mode,silent,source:,sync,post-cleanup"
+
+ARGS_COPY=$@
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+	--post-cleanup )
+	    POST_CLEANUP=1; shift 1;;
+	--fresh-download )
+            FRESH_DOWNLOAD=1; shift 1;;
+	--filter-mode )
+	    FILTER_MODE=1; shift 1;;
+	--silent )
+	    SILENT=1; shift 1;;
+	--clean )
+	    CLEAN=1; shift 1;;
+	--source )
+	    SOURCE=$2; shift 2;;
+	--sync )
+	    SYNC=1; shift 1;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+CATEGORY=$1;
+LEVEL=$2;
+
+# CURRENT
+RSYNCD_OPTIONS="--quiet --port=10027 --password-file=${HOME}/rsyncd.user"
+
+# LEVEL == 1 ==> clean + non-core download + preprocessing
+# LEVEL == 2 ==> non-core download + preprocessing
+# LEVEL == 3 ==> no downloading , only preprocessing
+# LEVEL == 4 ==> feature generation
+
+if [[ -z ${CATEGORY} || -z "${LEVEL}" ]]; then
+   echo "Usage: $0 <category> <level> [<required-field-1> [<required-field-2> ... ]]"
+   exit 1;
+fi
+
+shift 2;
+
+CATEGORY_BASE=`basename ${CATEGORY}`
+
+# TODO : to avoid duplicated calls to rsync
+##function _rsync() {
+##
+##    FROM=$1
+##    TO=$2
+
+# TODO : use _log function (create library ?)
+echo "[run-data-generation-category] worker : ${HOSTNAME}" 1>&2
+if [[ ! -z "${SOURCE}" ]]; then
+    
+    # create temp dir to host data
+    LOCAL_COPY=`mktemp -d`
+    
+    # rsync data to local copy
+    ##_rsync( ${SOURCE}:${CATEGORY} , ${LOCAL_COPY} );
+    rsync -avz ${RSYNCD_OPTIONS} ${CATEGORY}* ${LOCAL_COPY}
+# Note : for testing only
+###    rsync -avvz ${SOURCE}:${CATEGORY}* ${LOCAL_COPY}
+    
+    WORKING_BASE="${LOCAL_COPY}/${CATEGORY_BASE}"
+    
+else
+
+    WORKING_BASE=${CATEGORY}
+
+fi
+
+if [ ! -f ${WORKING_BASE} ]; then
+    echo "[run-data-generation-category] invalid working base : ${WORKING_BASE}" 1>&2;
+    exit 1;
+fi
+
+echo "[run-data-generation-category] working base : ${WORKING_BASE}" 1>&2
+COMMAND_LINE_FIELDS="$@"
+
+#ls -lh ${WORKING_BASE}*
+
+# http://stackoverflow.com/questions/806906/how-do-i-test-if-a-variable-is-a-number-in-bash
+re='^[0-9]$'
+if ! [[ $LEVEL =~ $re ]] ; then
+   echo "Error: level must be a number" >&2;
+   exit 1;
+fi
+
+RUN_MAKE_OPTIONS="--sequential"
+
+# TODO : little bit of redundancy with run-make, how can we avoid this ?
+if [[ "${SILENT}" == "1" ]]; then
+    RUN_MAKE_OPTIONS="${RUN_MAKE_OPTIONS} --silent"
+fi
+
+function _call_run_make() {
+    
+    _RUN_MAKEFILE=$1;
+    _RUN_CATEGORY=$2;
+    _RUN_MAKEFILE_TARGETS=$3;
+    _RUN_MAKEFILE_TARGETS_CLEAN=$4;
+
+    # TODO : can we come up with something more efficient ?
+    _RUN_MAKEFILE_TARGETS_ALL="${_RUN_MAKEFILE_TARGETS}";
+    if [[ "${CLEAN}" == 1 ]]; then
+	# Note : the cleaning targets must (obviously) be executed first
+	_RUN_MAKEFILE_TARGETS_ALL="${_RUN_MAKEFILE_TARGETS_CLEAN} ${_RUN_MAKEFILE_TARGETS_ALL}";
+    fi
+
+    ${BINDIR_DIST}/run-make ${RUN_MAKE_OPTIONS} ${_RUN_MAKEFILE} "${_RUN_MAKEFILE_TARGETS_ALL}" ${_RUN_CATEGORY}
+
+}
+
+# 1 - run make (category)
+if [[ ${LEVEL} < 2 ]]; then
+    CATEGORY_TARGETS=
+    CATEGORY_TARGETS_CLEAN="category-clean-minimal"
+    _call_run_make ${BINDIR_DIST}/makefile.category ${WORKING_BASE} "${CATEGORY_TARGETS}" "${CATEGORY_TARGETS_CLEAN}"
+fi
+
+# 2 - run make (category download)
+if [[ ${LEVEL} < 3 ]]; then
+    DOWNLOAD_TARGETS="category-download"
+    # TODO: add safer test
+    if [[ "${FRESH_DOWNLOAD}" == "1" ]]; then
+	DOWNLOAD_TARGETS="category-download-clean ${DOWNLOAD_TARGETS}"
+    fi
+    DOWNLOAD_TARGETS_CLEAN=
+    _call_run_make ${BINDIR_DIST}/makefile.category.download ${WORKING_BASE} "${DOWNLOAD_TARGETS}" "${DOWNLOAD_TARGETS_CLEAN}"
+fi
+
+# 3 - run make (category preprocessing)
+if [[ ${LEVEL} < 4 ]]; then
+
+    FIELDS_REQUIRED=${COMMAND_LINE_FIELDS}
+#    FIELDS_REQUIRED="content.rendered title url.words"
+#    FIELDS_OPTIONAL="anchortext.basic anchortext.sentence"
+
+    FIELDS="${FIELDS_REQUIRED}"
+    for field_optional in ${FIELDS_OPTIONAL}; do
+	# Note: only request generation of fields for which the core data is available ...
+	if [[ -f ${WORKING_BASE}.${field_optional} ]]; then
+	    FIELDS="${FIELDS} ${field_optional}";
+	fi
+    done;
+
+# TODO : ngram field dependencies should be requested at preparation/execution time ?
+### Note : taking this out, I don't think we need to generate field ngrams at the category level (anymore)
+###    N_GRAM_ORDER=3
+###    FIELDS_SPECIFIC=`for field in ${FIELDS}; do for (( order=1 ; order<=${N_GRAM_ORDER} ; order++ )); do echo ${WORKING_BASE}.${field}.ngrams.${order}; done; done | tr '\n' ' '`
+###    TARGETS="${FIELDS_SPECIFIC}"
+    TARGETS=`for field in ${FIELDS}; do echo ${WORKING_BASE}.${field}; done | tr '\n' ' '`
+    TARGETS_CLEAN="category-preprocessing-clean"
+
+    _call_run_make ${BINDIR_DIST}/makefile.category.preprocessing ${WORKING_BASE} "${TARGETS}" "${TARGETS_CLEAN}"
+
+fi
+
+# 4 - run feature generation
+if [[ ${LEVEL} < 5 ]]; then
+
+    TARGETS=${WORKING_BASE}.features.gz
+    TARGETS_CLEAN=
+    _call_run_make ${BINDIR_DIST}/makefile.features ${WORKING_BASE} "${TARGETS}" "${TARGETS_CLEAN}"
+
+fi
+
+# 5 - synchronize
+if [[ ! -z "${SOURCE}" && "${SYNC}" == "1" ]]; then
+
+    CATEGORY_DIRECTORY=`dirname ${CATEGORY}`
+    #rsync -navz ${RSYNCD_OPTIONS} ${WORKING_BASE}* ${CATEGORY_DIRECTORY}
+    rsync -avz ${RSYNCD_OPTIONS} ${WORKING_BASE}* ${CATEGORY_DIRECTORY}
+    
+fi
+
+if [[ "${POST_CLEANUP}" == "1" && ! -z "${LOCAL_COPY}" ]]; then
+#    ls -lht ${LOCAL_COPY}
+    rm -rf ${LOCAL_COPY}
+fi
+
+# echo category base so that this script can be used as part of a filtering process
+if [[ "${FILTER_MODE}" == "1" ]]; then
+    echo ${CATEGORY}
+fi

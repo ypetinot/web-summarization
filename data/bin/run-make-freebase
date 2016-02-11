@@ -1,0 +1,17 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../dist.rc
+
+TARGET_DIRECTORY=$1
+if [ -z "${TARGET_DIRECTORY}" ]; then
+    echo "Usage: $0 <target-directory>"
+    exit 1;
+fi
+
+# build Freebase data
+
+RUN_MAKEFILE=${BINDIR}/makefile.freebase
+
+# run makefile
+make -f ${RUN_MAKEFILE} -C ${TARGET_DIRECTORY}

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# build DMOZ
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../dist.rc
+
+RUN_MAKEFILE=${BINDIR}/makefile.dmoz
+
+# run makefile
+make -f ${RUN_MAKEFILE}

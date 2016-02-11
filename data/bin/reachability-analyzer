@@ -1,0 +1,285 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../src/";
+
+use DMOZ::Reachability;
+
+use Getopt::Long;
+use JSON;
+
+my $debug = 0;
+my $help = 0;
+my $man = 0;
+
+my $lcs_stats = 0;
+my $reachability_contingency = 1;
+my $reachability_stats = 0;
+my $do_filtering = 1;
+my $length_filtering = undef;
+my $length_filtering_mode = undef;
+
+# TODO : can I avoid duplication with reachability script ?
+my @reference_levels = ( 1 , 10 , 20 , 50 , 100 );
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, man => \$man,
+	   'filter-length=i' => \$length_filtering,
+	   'filter-length-mode=s' => \$length_filtering_mode,
+           'debug|d' => \$debug
+    ) or pod2usage(2);
+
+my $requested_reachability_mode_id = $ARGV[ 0 ];
+my $current_template_threshold = $ARGV[ 1 ];
+my $reference_level = $ARGV[ 2 ];
+my $max_count = $ARGV[ 3 ];
+
+if ( ! defined( $requested_reachability_mode_id ) || ! defined( $current_template_threshold ) || ! defined( $reference_level ) ) {
+    die "Usage: $0 <reachability-mode> <template-threshold> <reference-level>";
+}
+
+my $reference_level_index;
+
+if ( $reference_level > 0 ) {
+    for ( my $i=0; $i<=$#reference_levels; $i++ ) {
+	if ( $reference_levels[ $i ] == $reference_level ) {
+	    $reference_level_index = $i + 1;
+	    last;
+	}
+    }
+    if ( ! defined( $reference_level_index ) ) {
+	die "Unable to find reference level index for : $reference_level_index";
+    }
+}
+else {
+    $reference_level_index = 0;
+}
+
+my @contingency_table;
+
+my $count = 0;
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/ , $line;
+
+    my $url = shift @fields;
+    my $url_normalized = shift @fields;
+    my $ground_truth_summary = shift @fields;
+    my $category = shift @fields;
+    my $top_level_category = shift @fields;
+    my $reachability_mode_id = shift @fields;
+
+    my $stats = decode_json( pop @fields );
+
+    # **********************************************************************************************************
+    # filtering
+
+    if ( $reachability_mode_id ne $requested_reachability_mode_id ) {
+	next;
+    }
+
+    # optimal on Top/Society => 12.8%
+    # optimal on Top/Society => 16.0% with length( url ) < 35
+    if ( $do_filtering ) {
+
+	if ( defined( $length_filtering ) ) {
+
+	    my $summary_length = DMOZ::Reachability->summary_length( $ground_truth_summary );
+	    #if ( $stats->{ 'summary_length' } > 30 ) {
+	    my $length_threshold_short = 9;  # for Top/News/College_and_Universities : 83.3 @ 6 , 71.4 @ 9 
+	    my $length_threshold_long = 10; # for Top/Sports/Track_and_Field : 69.8 @ 10
+	    if ( ( $length_filtering_mode eq 'long' ) && ( $summary_length < $length_filtering ) ) {
+		next;
+	    }
+	    elsif ( ( $length_filtering_mode eq 'short' ) && ( $summary_length > $length_filtering ) ) {
+		next;
+	    }
+
+	}
+
+=pod
+	if ( $stats->{ 'content_utterances' } < 10 ) { 
+	    next;
+	}
+
+#    if ( ! $stats->{ 'title_utterance' } ) {
+#	next;
+#    }
+
+	if ( $stats->{ 'anchortext_utterances' } > 10 ) {
+	    next;
+	}
+	
+	if ( $stats->{ 'url_path_components' } > 3 ) {
+	    next;
+	}
+
+#    if ( ( $stats->{ 'anchortext_utterances' } * $stats->{ 'content_utterances' } ) > 10 ) {
+#	next;
+#    }
+
+#    if ( $url !~ m/\.com/ ) {
+#	next;
+#    }
+
+#    if ( length( $url ) > 50 ) {
+#	next;
+#    }
+=cut
+    
+    }
+
+    # **********************************************************************************************************
+
+    $count++;
+    if ( $max_count && ( $count >= $max_count ) ) {
+	last;
+    }
+
+    if ( $reachability_contingency ) {
+
+	my $reachability_type_1 = 0;
+	my $reachability_type_2 = 0;
+	
+	# => start with slot identification
+	# => best_diff => ok
+	
+	# => then derive template
+	# => best_lcs => ok
+	
+	# => compute template ratio
+	my $template_ratio = $fields[ 0 ];
+	
+	# => evaluate reachability
+	if ( $template_ratio >= $current_template_threshold ) {
+	    $reachability_type_1 = 1;
+	}
+	$reachability_type_2 = ( $fields[ $reference_level_index ] == 1 ) || 0;
+	
+	# update contingency table
+	$contingency_table[ $reachability_type_1 ][ $reachability_type_2 ]++;
+	
+    }
+
+}
+
+_dump_contingency_table( $current_template_threshold , $reference_level , $requested_reachability_mode_id );
+
+sub _dump_contingency_table {
+
+    my $current_template_threshold = shift;
+    my $reference_level = shift;
+    my $reachability_mode_id = shift;
+
+    print join( "\t" , '%' . " Reachability (template-threshold: $current_template_threshold) (references: $reference_level) (slot matching mode: $reachability_mode_id)" ) . "\n";
+    print join( "\t" , '' , 't2-0' , 't2-1' ) . "\n";
+    for ( my $i=0; $i<=1; $i++ ) {
+	print join( "\t" , 't1-' . $i , map {
+	    my $value = $contingency_table[ $i ][ $_ ] || 0;
+	    my $ratio = $count ? ( 100 * ( $value / $count ) ) : 0;
+	    sprintf( "%d (%.1f" , $value , $ratio ) . '%)';
+		    } ( 0 , 1 ) ) . "\n";
+    }
+    
+}
+
+=pod
+    # TODO : can we avoid putting this here ?
+    my @header_reachability;
+    
+    if ( $lcs_stats ) {
+	
+	push @header , ( 'lcs_min' , 'lcs_average' , 'lcs_max' );
+	#push @header , ( 'url' , 'top_level_category' , 'reference_count' );
+	
+    }
+    
+    if ( $reachability_stats ) {
+	
+	push @header_reachability , ( $key_reachability_template , ( $reachability_mode_loose ? $key_reachability_extractive_loose_string : $key_reachability_extractive_strict_string ) );
+	push @header_reachability , map { join( ':' , ( $reachability_mode_loose ? $key_reachability_abstractive_nref_loose_string : $key_reachability_abstractive_nref_strict_string ) , $_ ) } @reference_levels;
+	
+	push @header , @header_reachability;
+	
+	print '% ' . $reachability_mode_id . "\n";
+	
+    }
+    
+    print join( $column_separator , 'group' , @header ) . $line_separator_header;
+    
+    # compute statistics for each feature groups
+    foreach my $feature_key (keys( %{ $reachability_mode_entries } )) {
+	
+	my $feature_group = $reachability_mode_entries->{ $feature_key };
+	my $group_size = scalar( @{ $feature_group } );
+	my @group_statistics;
+	
+	if ( $lcs_stats ) {
+	    
+	    # 1 - compute lowest lcs
+	    my $lcs_min = min( map { $_->[ 0 ] } @{ $feature_group } );
+	    push @group_statistics , $lcs_min;
+	    
+	    # 2 - compute average lcs
+	    my $lcs_average = 0;
+	    map { $lcs_average += $_->[ 0 ] } @{ $feature_group };
+	    $lcs_average /= $group_size;
+	    push @group_statistics , $lcs_average;
+	    
+	    # 3 - compute max lcs
+	    my $lcs_max = max( map { $_->[ 0 ] } @{ $feature_group } );
+	    push @group_statistics , $lcs_max;
+	    
+	}
+	
+	if ( $reachability_stats ) {
+	    
+	    # 4 - compute proportion of entries that are fully reachable at each level of available resources
+	    for my $index ( 0 .. $#header_reachability ) {
+		
+		my $perfect_count = 0;
+		my $positive_count = 0;
+		
+		foreach my $feature_entry (@{ $feature_group }) {
+		    
+		    my $reachability_ratio = $feature_entry->[ $index ];
+		    if ( $reachability_ratio == 1 ) {
+			$perfect_count++;
+		    }
+		    
+		    $positive_count += $reachability_ratio;
+		    		    
+		}
+		
+		push @group_statistics , [ ( $positive_count / $group_size ), ( $perfect_count / $group_size ) ];
+		
+	    }
+	    
+	}
+	
+	print join( $column_separator , $feature_key , map {
+	    my $entry = $_;
+	    if ( ref( $entry ) ) {
+		sprintf( "%.${precision}f (%.${precision}f)" , @{ $entry } )
+	    }
+	    else {
+		sprintf( "%.${precision}f" , $entry )
+	    }
+		    } @group_statistics ) . $line_separator;
+	
+    }
+    
+    print "\n\n";
+    
+}
+=cut
+
+1;

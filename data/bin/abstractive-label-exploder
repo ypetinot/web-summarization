@@ -1,0 +1,65 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use AppearanceModel;
+
+use Digest::MD5 qw/md5_hex/;
+use Getopt::Long;
+use JSON;
+use List::MoreUtils qw/uniq/;
+use List::Util qw/shuffle/;
+use Pod::Usage;
+
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure qw(bundling pass_through);
+
+GetOptions('help|?' => \$help, man => \$man) or pod2usage(2);
+pod2usage(1) if ( $help );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+# 1 - read in individual term entries
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/ , $line;
+    
+    # TODO : will have to be revised
+    my $term = shift @fields;
+    my $term_id = shift @fields;
+    my $term_entry = decode_json( shift @fields );
+
+    # 1 - generate training instances (featurization)
+    my $instance_ids = $term_entry->{ 'instance_id::list' };
+    my $appears_in_summaries = $term_entry->{ '+appears_in_summary::list' };
+
+    my @check_list = ( $instance_ids, $appears_in_summaries );
+    my $reference_count = scalar( @{ $check_list[ 0 ] } );
+    for ( my $i = 1; $i <= $#check_list; $i++ ) {
+	my $current_count = scalar( @{ $check_list[ $i ] } );
+	if ( $reference_count != $current_count ) {
+	    die "[$term] entry count mismatch : $current_count / $reference_count";
+	}
+    }
+
+    for ( my $i = 0; $i < $reference_count; $i++ ) {
+	my $instance_id = $instance_ids->[ $i ];
+	my $appears_in_summary = $appears_in_summaries->[ $i ];
+	if ( $appears_in_summary ) {
+	    print join( "\t" , $instance_id , $term_id ) . "\n";
+	}
+    }
+
+}
+
+1;

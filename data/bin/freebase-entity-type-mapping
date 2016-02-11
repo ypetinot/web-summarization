@@ -1,0 +1,53 @@
+#!/usr/bin/env perl
+
+package Scripts::Freebase::EntityTypesMapper;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Getopt::Long;
+use JSON;
+use List::MoreUtils qw/uniq/;
+use Pod::Usage;
+use Text::Trim;
+
+use Moose;
+use namespace::autoclean;
+
+extends( 'Freebase::DataParser' );
+
+my $debug = 0;
+my $help  = 0;
+my $man   = 0;
+
+GetOptions('help|?' => \$help, man => \$man,
+	   'debug|d' => \$debug
+    ) or pod2usage(2);
+
+my $entity_types_mapper = new Scripts::Freebase::EntityTypesMapper( filter_function => \&filter , processor_function => \&processor );
+$entity_types_mapper->run();
+
+sub filter {
+    return 1;
+}
+
+sub processor {
+
+    my $entity_key = shift;
+    my $entries = shift;
+
+    # 1 - generate set of unique types
+    my @types = uniq map {
+	$entity_types_mapper->_get_key( $_->[ 2 ] );
+    } @{ $entries };
+
+    print join( "\t" , $entity_key , encode_json( \@types ) ) . "\n";
+
+}
+
+1;

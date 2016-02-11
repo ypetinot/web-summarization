@@ -1,0 +1,129 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use File::Slurp;
+use Getopt::Long;
+use JSON;
+use Math::MatrixReal;
+
+my $global_stats_file = undef;
+
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure qw(bundling);
+
+GetOptions( 'global-stats=s' => \$global_stats_file , 'help|?' => \$help, man => \$man ) or pod2usage(2);
+pod2usage(1) if ( $help || !defined( $global_stats_file ) );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+my $global_stats = decode_json( read_file( $global_stats_file ) );
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/ , $line;
+
+    my $term = $fields[ 0 ];
+    my $term_id = $fields[ 1 ];
+    my $entry = decode_json( $fields[ 2 ] );
+    
+    # summary/content
+    # 1/1 -> ok
+    # 1/0 -> ok
+    # 0/0 ->
+    # 0/1 -> 
+
+    # plot distribution of 1/1 / 1/0 ratio
+    my $term_summary_frequency = $entry->{ '+appears_in_summary' };
+    my $term_summary_content_frequency = $entry->{ '+appears_in_content' };
+    my $term_summary_title_frequency = $entry->{ '+appears_in_title' };
+    my $term_summary_url_frequency = $entry->{ '+appears_in_url' };
+    my $term_summary_modalities_frequency = $entry->{ '+appears_in_modalities' };    
+
+    if ( ! $term_summary_frequency ) {
+	next;
+    }
+
+    my $term_content_extractive_probability = $term_summary_content_frequency / $term_summary_frequency;
+    my $term_title_extractive_probability = $term_summary_title_frequency / $term_summary_frequency;
+    my $term_url_extractive_probability = $term_summary_url_frequency / $term_summary_frequency;
+    my $term_modalities_extractive_probability = $term_summary_modalities_frequency / $term_summary_frequency;
+
+    # chi-square computation
+    my $summary_key = '+appears_in_summary';
+    my $summary_content_key = '+appears_in_summary_and_content';
+    my $content_key = '+appears_in_content';
+    my $_11 = $entry->{ $summary_content_key };
+    my $_01 = $entry->{ $content_key } - $_11;
+    my $_10 = $entry->{ $summary_key } - $_11;
+    my $_00 = $global_stats->{ 'instance_count' } - $_11 - $_01 - $_10;
+
+    if ( $_11 < 0 || $_01 < 0 || $_10 < 0 || $_00 < 0 ) {
+	die "We have a problem with [ $term ] : $_11 / $_01 / $_10 / $_00";
+    }
+
+    my $chi_square_score = _compute_chi_square( $_00 , $_01 , $_10 , $_11 ) || 'N/A';
+
+=pod
+    my $chi_square_nominator = ( $_11 + $_10 + $_01 + $_00 ) * ( $_11 * $_00 - $_10 * $_01 );
+    my $chi_square_denominator = ( ( $_11 + $_01 ) * ( $_11 + $_10 ) * ( $_10 + $_00 ) * ( $_01 + $_00 ) ) + 0.00000001;
+    my $chi_square_score = $chi_square_nominator / $chi_square_denominator;
+=cut
+    
+    print join( "\t" , $term , $term_id , $term_summary_frequency ,
+		$term_summary_content_frequency , $term_content_extractive_probability ,
+		$term_summary_title_frequency , $term_title_extractive_probability ,
+		$term_summary_url_frequency , $term_url_extractive_probability ,
+		$term_summary_modalities_frequency , $term_modalities_extractive_probability ,
+		$_00 , $_01 , $_10 , $_11 ,
+		$chi_square_score
+	) . "\n";
+
+}
+
+sub _compute_chi_square {
+
+    my $contingency_00 = shift;
+    my $contingency_01 = shift; 
+    my $contingency_10 = shift;
+    my $contingency_11 = shift;
+
+    if ( ! $contingency_00 || ! $contingency_01 || ! $contingency_10 || ! $contingency_11 ) {
+	return undef;
+    }
+
+    my $contingency_matrix = Math::MatrixReal->new_from_rows( [
+								  [$contingency_11,$contingency_10],
+								  [$contingency_01,$contingency_00]
+							      ] );
+    
+    my $n = $contingency_matrix->norm_sum;
+    my $chi_square = 0;
+
+    $contingency_matrix->each( sub {
+
+	my $element = shift;
+	my $i = shift;
+	my $j = shift;
+    
+	my $e_ij = $contingency_matrix->column( $j )->norm_sum * $contingency_matrix->row( $i )->norm_sum / $n;
+	my $o_ij = $element;
+	$chi_square += ( $o_ij - $e_ij )^2 / $e_ij;
+			       }
+	);
+
+    return $chi_square;
+
+}
+
+1;

@@ -1,0 +1,25 @@
+#!/bin/bash
+
+NGRAM_ORDER=$1
+USE_DELIMITERS=$2
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../dist.rc
+
+# TODO : rename resource file ?
+source ${PARALLEL_JOB_RESOURCES}
+
+# TODO : use some sort of field extractor ?
+# TODO : full weighted LM ? assign weights so as to maximize the likelihood of summaries
+cat - | while read URL DATA; do
+
+    TEMP_LM_FILE=`mktemp`
+ 
+    echo "${DATA}" | ${BINDIR_THIRD_PARTY}/ngram-count -text - -order ${NGRAM_ORDER} -sort -no-sos -no-eos -unk -lm ${TEMP_LM_FILE} -write-binary-lm
+    DATA_LM=`cat ${TEMP_LM_FILE} | gzip -c - | base64 --wrap=0`
+
+    rm ${TEMP_LM_FILE}
+
+    echo -e "${URL}\t${DATA_LM}";
+
+done;

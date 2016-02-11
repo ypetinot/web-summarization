@@ -1,0 +1,12 @@
+#!/bin/bash
+
+LANGUAGE=en
+
+cat - | awk -F"\t" '{ print $2 }' | while read TERM; do
+
+    sleep 1;
+
+    TERM_ENTRY=`wget -q -O - "http://${LANGUAGE}.wikipedia.org/wiki/${TERM}" | tr '\n\t' '  '`
+    echo -e "${TERM}\t${TERM_ENTRY}"    
+
+done;

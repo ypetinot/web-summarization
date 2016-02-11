@@ -1,0 +1,92 @@
+#!/usr/bin/env perl
+
+package Scripts::Freebase::EntitySurfaceMapper;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Getopt::Long;
+use JSON;
+use Pod::Usage;
+
+use Moose;
+use namespace::autoclean;
+
+extends( 'Freebase::DataParser' );
+
+my $debug = 0;
+my $help  = 0;
+my $man   = 0;
+my $surface_mapping = 0;
+
+GetOptions('help|?' => \$help, man => \$man,
+	   'surface-mapping' => \$surface_mapping,
+	   'debug|d' => \$debug
+    ) or pod2usage(2);
+
+my %attributes = ( 
+    'type.object.key' => 1 ,
+    'type.object.name' => 1 ,
+    'common.topic.alias' => 1
+    );;
+
+my $entity_surface_mapper = new Scripts::Freebase::EntitySurfaceMapper( filter_function => \&filter , processor_function => \&processor );
+$entity_surface_mapper->run();
+
+sub processor {
+
+    my $entity_key = shift;
+    my $entries = shift;
+
+    my %concept_surfaces;
+    my %concept_keys;
+
+    foreach my $entry ( @{ $entries } ) {
+
+	my $attribute_key = $entity_surface_mapper->_get_key( $entry->[ 1 ] );
+	my $attribute_value = $entity_surface_mapper->_get_value( $entry->[ 2 ] );
+    
+	if ( $attribute_key eq 'type.object.key' ) {
+	    $concept_keys{ $attribute_value }++;
+	}
+	elsif ( length( $attribute_value ) && $attribute_value =~ m/\w/ ) {
+	    $concept_surfaces{ $attribute_value }++;
+	}
+
+    }
+
+    my @concept_surfaces_values = keys( %concept_surfaces );
+    my @concept_keys_values = grep { $_ !~ m#/wikipedia/#si && $_ !~ m#/user/#si } keys( %concept_keys );
+
+    if ( $surface_mapping ) {
+	# TODO : apply test to both output modes ?
+	if ( scalar( @concept_keys_values ) ) {
+	    foreach my $concept_surface_value (@concept_surfaces_values) {
+		print join( "\t" , $concept_surface_value , encode_json( \@concept_keys_values ) ) . "\n";
+	    }
+	}
+    }
+    else {
+	print join( "\t" , $entity_key , encode_json( \@concept_surfaces_values ) , encode_json( \@concept_keys_values ) ) . "\n";
+    }
+
+}
+
+sub filter {
+
+    my $attribute_key = shift;
+   
+    if ( ! defined( $attributes{ $attribute_key } ) ) {
+	return 0;
+    }
+
+    return 1;
+
+}
+
+1;

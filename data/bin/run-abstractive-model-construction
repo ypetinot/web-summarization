@@ -1,0 +1,45 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../dist.rc
+source ${BINDIR}/../../environment.rc
+source ${BINDIR_DIST}/job-resources
+
+SHORTOPTS="h"
+LONGOPTS="help,features,individual,global"
+
+ARGS_COPY=$@
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+# default processing level
+LEVEL=1
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+	--features )
+	    TARGET="model-abstractive-libsvm"; shift 1;;
+	--individual )
+	    TARGET="model-abstractive-individual"; shift 1;;
+	--global )
+	    TARGET="model-abstractive-global"; shift 1;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+# TODO : move up ?
+MODEL_MAKEFILE_ABSTRACTIVE=${BINDIR}/makefile.data.model.abstractive
+
+if [[ -z "${TARGET}" ]]; then
+    echo "Usage: $0 <--individual|--global>"
+    exit 1;
+fi
+
+# TODO : make FOLD_ID a parameter ?
+# TODO : model REPOSITORY_ROOT a parameter ?
+make --warn-undefined-variables -f ${MODEL_MAKEFILE_ABSTRACTIVE} FOLD_ID=0 REPOSITORY_ROOT=/proj/nlp/users/ypetinot/data/dmoz-repository/ ${TARGET}

@@ -1,0 +1,8 @@
+Corpus-level data is generated and stored here.
+
+# 1 - generation of homogeneous set
+# Note : difficulty in getting 1000 instances right away, so starting with a slightly larger set
+cat clusterable-with-largest-0-5.data | grep -v 'Top/World' | grep -v cluster_size | awk -F"\t" '{ if ( $2 >= 20 && $NF >= 0.7 ) { print $0 } }' > ~/experiments/manual-analysis-2015-07-21/category_list_20_0_7.out
+cat manual-analysis-2015-07-21/category_list_20_0_7.out | cut -f1 | grep -v "'" > ~/experiments/list.homogeneous.20_07
+/proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/data/bin/collect-instances-2  list.homogeneous.20_07 4 | sort -t$'\t' -u -k4 > instances.homogeneous.20_01
+cat ~/experiments/instances.homogeneous.20_97 | head -n1000 > instances.homogeneous

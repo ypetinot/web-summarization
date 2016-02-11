@@ -1,0 +1,31 @@
+#!/bin/bash
+
+OUTPUT_DIRECTORY=$1
+if [ -z "${OUTPUT_DIRECTORY}" ]; then
+    echo "Usage: $0 <output-directory>";
+    exit 1;
+elif [ -d "${OUTPUT_DIRECTORY}" ]; then
+    echo "Output directory already exists: ${OUTPUT_DIRECTORY}";
+    exit 2;
+fi
+
+cat - | cut -f4 | uniq | while read CATEGORY; do
+
+    CATEGORY_OUTPUT_FILE="${OUTPUT_DIRECTORY}/${CATEGORY}.summary"
+    CATEGORY_OUTPUT_DIRECTORY=`dirname ${CATEGORY_OUTPUT_FILE}`
+
+    # make sure the category output directory exists
+    mkdir -p ${CATEGORY_OUTPUT_DIRECTORY}
+
+done;
+
+exit 0;
+
+cat - | while read LINE; do
+
+    CATEGORY=`echo "${LINE}" | awk -F"\t" '{ print $4 }'`
+
+    # append to category output file
+    ###echo "${LINE}" >> ${CATEGORY_OUTPUT_FILE}
+
+done;

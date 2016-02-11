@@ -1,0 +1,42 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../../summarizers/graph-summarizer-4/src/";
+
+use FeatureMapper;
+
+my $feature_mapper = new FeatureMapper( training => 1 , feature_mapping_file => $ARGV[ 0 ] );
+
+use JSON;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+    my $label = shift @fields;
+    my $features_json = shift @fields;
+
+    my $features = decode_json( $features_json );
+
+    # map feature keys to numerical ids
+    my %features_mapped;
+    map {
+	my $feature_id = $feature_mapper->register_feature( $_ );
+	$features_mapped{ $feature_id } = $features->{ $_ };
+    } keys( %{ $features } );
+
+    print join( " " , ( $label ? 1 : -1 ) , map { join( ":" , $_ , $features_mapped{ $_ } ) } sort { $a <=> $b } keys( %features_mapped ) ) . "\n";
+
+}
+
+# write out feature mapping
+$feature_mapper->write_feature_mapping;
+
+1;

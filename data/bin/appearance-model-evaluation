@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# evaluate individual models in parallel and out estimates to stdout
+
+BINDIR=`dirname $0`
+DIST_ROOTDIR=${BINDIR}/../../
+source ${BINDIR}/environment.rc
+source ${BINDIR}/parallel-job-resources
+
+MODELS_ROOT=$1;
+FEATURE_FILE=$2;
+
+shift 2;
+
+# TODO : should probably be read from STDIN ?
+REQUESTED_TERMS=$@
+
+find ${MODELS_ROOT}/ -type f -name '*term-model.meta' | $(PARALLEL_COMMAND) 

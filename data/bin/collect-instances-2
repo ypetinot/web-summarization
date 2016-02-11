@@ -1,0 +1,22 @@
+#!/bin/bash
+
+BINDIR=$(dirname $0)
+source ${BINDIR}/../../dist.rc
+
+CATEGORY_FILTER_LIST=$1
+PER_CATEGORY_COUNT=$2
+
+if [[ -z "${CATEGORY_FILTER_LIST}" || ! -f ${CATEGORY_FILTER_LIST} ]]; then
+    echo "Usage: $0 <category-filter-list: list.kapil | list.reachability | list.homogeneous> [<per-category-count>]"
+    exit 1;
+fi
+
+if [[ -z "${PER_CATEGORY_COUNT}" ]]; then
+    PER_CATEGORY_COUNT=10
+fi
+
+# Note : it's important that I make a selection that is as aggressive as possible, the quality of my results depend on it
+# TODO : url-normalizer seem to be outputting duplicates - fix
+# TODO : we should be using the filter DMOZ set instead otherwise there is no guarantee that we are dealing exclusively with good URLs
+DMOZ_FULL="/local/nlp/ypetinot/data/dmoz/instances.full.randomized.gz"
+cat ${CATEGORY_FILTER_LIST} | /home/ypetinot/research/infrastructure/parallel/bin/parallel -j 10 --no-notice "gunzip -c ${DMOZ_FULL} | grep '{}$' | grep -v -f remove-urls | head -n ${PER_CATEGORY_COUNT}" | ${BINDIR}/url-normalizer | sort -u | cut -f 1,2,4-

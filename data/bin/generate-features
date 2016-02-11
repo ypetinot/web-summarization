@@ -1,0 +1,99 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use AppearanceModel;
+use DMOZ::GlobalData;
+
+use Devel::Cycle;   # exports find_cycle() by default
+use Getopt::Long;
+use Pod::Usage;
+
+my $global_data_base = undef;
+my $repository_base = undef;
+
+my $help = 0;
+my $man = 0;
+my $_features = undef;
+
+Getopt::Long::Configure qw(bundling pass_through);
+
+GetOptions('global-data-base=s' => \$global_data_base , 'repository-base=s' => \$repository_base ,
+	   'features=s' => \$_features ,
+	   'help|?' => \$help ,
+	   'man' => \$man) or pod2usage(2);
+pod2usage(1) if ( $help || !defined( $global_data_base ) || !defined( $repository_base ) );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+###if ( $#ARGV < 0 ) {
+###    die "Usage: $0 [<features-definition>]";
+###}
+
+my @buffer;
+my $stdin_mode = ( ! scalar(@ARGV) || ( $ARGV[0] eq '-' ) ) || 0;
+
+if ( ! $stdin_mode ) {
+    push @buffer , \@ARGV;
+    #### TODO : this could become the basis for a base class for UrlData data operators
+    ###open DATA_LIST, $input_file or die "Unable to open data list file ($input_file): $!";
+    ###close DATA_LIST;
+}
+
+# TODO : this was (and this should be) coming from a configuration file
+my $features = { "content.rendered" => { "ngrams" => [1,2,3] , # TODO : "node-context" => 1
+		 } ,
+		 "url_words" => { "ngrams" => [1] } ,
+		 "anchortext_basic" => { "ngrams" => [1] },
+		 "title" => { "ngrams" => [1] }
+};
+
+sub _load_buffer {
+
+    if ( $stdin_mode ) {
+
+	# TODO : allow for any input file ?
+	my $line = <STDIN>;
+	if ( defined( $line ) ) { 
+	    chomp $line;
+	    my @fields = split /\t/ , $line;
+	    push @buffer , \@fields;
+	}
+
+    }
+
+    # we never fail (at least not directly)
+    return 1;
+
+}
+
+my $global_data = new DMOZ::GlobalData( data_directory => $global_data_base );
+my $category_repository = new DMOZ::CategoryRepository( global_data => $global_data , repository_root => $repository_base );
+
+while ( _load_buffer && scalar( @buffer ) ) {
+    
+    my $buffer_entry = shift @buffer;
+    
+    my $instance_id = $buffer_entry->[ 0 ];
+    my $url = $buffer_entry->[ 1 ];
+    my $category = $buffer_entry->[ 2 ];
+    my $data_path = $buffer_entry->[ 3 ];
+
+    my $instance = $category_repository->get_url_data( $url , $data_path );
+    my $instance_featurized = $instance->featurize( $features );
+    
+    print join( "\t" , $url , map { join( " " , $_ , $instance_featurized->{ $_ } ); } keys( %{ $instance_featurized } ) ) . "\n";
+
+    # TODO : this should be automatic, there has to be a reference that's not being released
+# Note : the probably is probably still there but we're moving to per-category feature generation
+###    $category_repository->release_category( $instance->category_data );
+###    $instance->release;
+
+}
+
+1;

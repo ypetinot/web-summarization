@@ -1,0 +1,104 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../../summarizers/graph-summarizer-4/src/";
+
+package Scripts::Adaptation::Appearance::Trainer;
+
+use Algorithm::LibLinear;
+use JSON;
+
+use Moose;
+use namespace::autoclean;
+
+with 'MooseX::Getopt';
+
+has 'model_filename' => ( is => 'rw' , isa => 'Str' , required => 1 );
+has 'test' => ( is => 'ro' , isa => 'Bool' , default => 0 );
+
+my $app = __PACKAGE__->new_with_options;
+my $app_name = __PACKAGE__;
+
+# Constructs a model for L2-regularized L2 loss support vector classification.
+my $learner = Algorithm::LibLinear->new(
+    cost => 1,
+    epsilon => 0.0001,
+##    solver => 'L2R_L2LOSS_SVC_DUAL',
+##    solver => 'L2R_L2LOSS_SVC',
+###    solver => 'L2R_L1LOSS_SVC_DUAL',
+##    solver => 'MCSVM_CS',
+##    solver => 'L1R_L2LOSS_SVC',
+##    solver => 'L1R_LR',
+#      solver => 'L1R_LR_DUAL', # not supported ???
+    solver => 'L2R_LR',
+    weights => [
+	+{ label => 1, weight => 2, },
+	+{ label => -1, weight => 1, },
+    ],
+  );
+
+my @test_instances;
+if ( $app->test ) {
+
+    @test_instances = map {
+	
+	my $instance_string = <STDIN>;
+	chomp $instance_string;
+	
+	my @instance_fields = split /\s/ , $instance_string;
+	my $instance_label = shift @instance_fields;
+	my %instance_features;
+	while ( $#instance_fields >= 0 ) {
+	    my $feature_entry = shift @instance_fields;
+	    my ( $feature_id , $feature_value ) = split /:/ , $feature_entry;
+	    $instance_features{ $feature_id } = $feature_value;
+	}
+	
+	[ $instance_label , \%instance_features ];
+	
+    } 1..100;
+
+}
+
+# Loads a training data set from DATA filehandle.
+my $data_set = Algorithm::LibLinear::DataSet->load(fh => \*STDIN);
+
+# Executes cross validation.
+my $accuracy = $learner->cross_validation(data_set => $data_set, num_folds => 10);
+print "[$app_name] Cross-validation accuracy: $accuracy\n";
+
+# Executes training.
+my $classifier = $learner->train(data_set => $data_set);
+
+if ( $app->test ) {
+
+    print "Now testing for real:\n";
+    my $ok = 0;
+    my $total = 0;
+    map {
+	
+	my $ground_truth = $_->[ 0 ];
+	my $prediction = $classifier->predict( feature => $_->[ 1 ] );
+	my @prediction_probabilities = $classifier->predict_probability( feature => $_->[ 1 ] );
+	print join( "\t" , $ground_truth , $prediction , encode_json ( \@prediction_probabilities ) ) . "\n";
+	
+	$ok += ( $prediction == $ground_truth );
+	$total++;
+	
+    } @test_instances;
+    
+    my $accuracy_test = $ok / $total;
+    print "[$app_name] Test accuracy: $accuracy_test\n\n";
+    
+}
+
+print "[$app_name] Writing out model ...\n";
+$classifier->save( filename => $app->model_filename );
+
+1;

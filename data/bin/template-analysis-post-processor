@@ -1,0 +1,196 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use DMOZ::TemplateAnalysis;
+
+use Statistics::Basic qw/mean stddev/;
+
+my %category2entries;
+my %category2level;
+my %categoryLevel2entries;
+my %level2entries;
+my %toplevel2entries;
+
+my $TOP_LEVEL_DEPTH = 2;
+#my $TOP_LEVEL_DEPTH = 3;
+
+my $only_monotonically_increasing = 1;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/ , $line;
+
+    my $summary_file = $fields[ 0 ];
+    my $lcs_overlap_mean = $fields[ 1 ];
+    my $lcs_overlap_stddev = $fields[ 2 ];
+
+    my $category_lcs_data = [ $lcs_overlap_mean , $lcs_overlap_stddev ];
+
+    # 1 - list out all categories associated with this entry
+    my ( $summary_level , $all_categories ) = DMOZ::TemplateAnalysis::_list_all_categories( $summary_file );
+    my $top_level_category = ( map { $_->[ 0 ] } grep { $_->[ 1 ] == $TOP_LEVEL_DEPTH } @{ $all_categories } )[ 0 ];
+
+    if ( ! defined( $top_level_category ) ) {
+	next;
+    }
+    affirm { defined( $top_level_category ) } "The top-level category must exist" if DEBUG;
+
+    # 2 - level <-> lcs overlap distribution
+    if ( ! defined( $level2entries{ $summary_level } ) ) {
+	$level2entries{ $summary_level } = [];
+    }
+    if ( ! defined( $categoryLevel2entries{ $top_level_category }{ $summary_level } ) ) {
+	$categoryLevel2entries{ $top_level_category }{ $summary_level } = [];
+    }
+    push @{ $level2entries{ $summary_level } } , $category_lcs_data;
+    push @{ $categoryLevel2entries{ $top_level_category }{ $summary_level } } , $category_lcs_data;
+
+    # 3 - register entry with all categories that have been listed out
+    foreach my $category_entry (@{ $all_categories }) {
+
+	my $category = $category_entry->[ 0 ];
+	my $category_level = $category_entry->[ 1 ];
+	
+	if ( ! defined( $category2entries{ $category } ) ) {
+	    $category2entries{ $category } = [];
+	}
+
+	if ( ! defined( $category2level{ $category } ) ) {
+	    $category2level{ $category } = $category_level;
+	}
+	else {
+	    affirm { $category2level{ $category } == $category_level } "Category level must remain consistent" if DEBUG;
+	}
+
+	# Note : update global stats
+	push @{ $category2entries{ $category } } , $category_lcs_data;
+
+	# Note : update stats specifically for the top-level category associated with this category
+	if ( ! defined( $toplevel2entries{ $top_level_category } ) ) {
+	    $toplevel2entries{ $top_level_category } = [];
+	}
+	# CURRENT : what is the meaning of this ? => everything below this level => if mean increases, it means that deeper categories under the top-level category are more homogeneous
+	# Note : it better to do things this way since we may not have any entry at an intermediate level (or very few maybe) => would lead to less stable numbers
+	push @{ $toplevel2entries{ $top_level_category }->[ $category_level ] } , $category_lcs_data;
+
+    }
+
+}
+
+=pod
+# compute aggregate stats for all categories
+foreach my $category (keys( %category2entries )) {
+
+    my $entries = $category2entries{ $category };
+
+    my ( $category_lcs_mean_mean , $category_lcs_mean_stddev ) = _compute_entries_stats( $entries );
+    print join( "\t" , $category , $category2level{ $category } , $category_lcs_mean_mean , $category_lcs_mean_stddev ) . "\n";
+
+}
+=cut
+
+my $aggregate = 0;
+my @top_level_categories = sort {
+    $a cmp $b
+} keys( %categoryLevel2entries );
+
+if ( ! $aggregate ) {
+    print join( "\t" , 'Level' , @top_level_categories ) . "\n";
+}
+
+# compute aggregate stats for individual levels
+my %categoryLevel2current;
+foreach my $level ( sort { $a <=> $b } keys( %level2entries )) {
+
+    my $level_entries = $level2entries{ $level };
+    my ( $level_lcs_mean_mean , $level_lcs_mean_stddev ) = _compute_entries_stats( $level_entries );
+    my $entry_count = scalar( @{ $level_entries } );
+
+    if ( ! $aggregate ) {
+	my @output_fields;
+	foreach my $top_level_category (@top_level_categories) {
+	    my @category_level_lcs_stats = _compute_entries_stats( $categoryLevel2entries{ $top_level_category }{ $level } );
+	    if ( $category_level_lcs_stats[ 0 ] ne 'n/a' ) {
+		$categoryLevel2current{ $top_level_category } = \@category_level_lcs_stats;
+	    }
+	    elsif( defined( $categoryLevel2current{ $top_level_category } ) ) {
+		@category_level_lcs_stats = @{ $categoryLevel2current{ $top_level_category } };
+	    }
+	    else {
+		@category_level_lcs_stats = ( 0.0 , 0.0 );
+	    }
+	    push @output_fields , \@category_level_lcs_stats;
+	}
+	print join( "\t" , $level , map { $_->[ 0 ] } @output_fields ) . "\n";
+    }
+    else {
+	print join( "\t" , $level , $level_lcs_mean_mean , $level_lcs_mean_stddev , $entry_count ) . "\n";
+    }
+
+}
+
+=pod
+# compute aggregate stats for top-level categories
+foreach my $top_level_category (keys( %toplevel2entries )) {
+
+    my @level_data;
+    my $is_monotonically_increasing = 1;
+    foreach my $depth ( $TOP_LEVEL_DEPTH .. 15 ) {
+
+	my $top_level_category_depth_entries = $toplevel2entries{ $top_level_category }->[ $depth ];
+
+	my ( $top_level_category_depth_lcs_mean_mean , $top_level_category_depth_lcs_mean_stddev ) = _compute_entries_stats( $top_level_category_depth_entries );
+
+	# Note : test monotonicity
+	if ( scalar( @level_data ) ) {
+	    if ( $top_level_category_depth_lcs_mean_mean eq 'n/a' ) {
+		# nothing
+	    }
+	    elsif ( $top_level_category_depth_lcs_mean_mean < $level_data[ $#level_data ]->[ 0 ] ) {
+		$is_monotonically_increasing = 0;
+	    }
+	}
+
+	push @level_data , [ $top_level_category_depth_lcs_mean_mean , $top_level_category_depth_lcs_mean_stddev ];
+
+    }
+
+    if ( $only_monotonically_increasing && ! $is_monotonically_increasing ) {
+	next;
+    }
+
+    print join( "\t" , $top_level_category , $is_monotonically_increasing , map { join( ':' , @{ $_ } ) } @level_data ) . "\n";
+
+}
+=cut
+
+sub _compute_entries_stats {
+
+    my $entries = shift;
+
+    my @entries_means;
+    my @entries_stddevs;
+    
+    map {
+	push @entries_means , $_->[ 0 ];
+	push @entries_stddevs , $_->[ 1 ];
+    } @{ $entries };
+
+    my $entries_lcs_mean_mean = mean( @entries_means );
+    my $entries_lcs_mean_stddev = stddev( @entries_means );
+
+    return ( $entries_lcs_mean_mean , $entries_lcs_mean_stddev );
+
+}
+
+1;

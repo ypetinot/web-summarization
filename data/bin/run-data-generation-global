@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Handles the pre-processing of the raw DMOZ data
+
+# TODO : ultimately this needs to be merged with the category-based data generation facility (run-data-generation/run-data-generation-category). Maybe this should go as a top level target in run-data-generation which then triggers the generation of per-category targets (although we do want to be able to generate global data/models without each individual category/instance being available).
+
+BINDIR=`dirname $0`
+BINDIR_ABSOLUTE=`readlink -f ${BINDIR}`
+
+source ${BINDIR}/../../dist.rc
+source ${PARALLEL_JOB_RESOURCES}
+
+DATA_MAKEFILE=${BINDIR}/../Makefile
+DATA_MAKEFILE_2=${BINDIR}/../bin/makefile.data
+DATA_MAKEFILE_PARAMETERS="FOLD_ID=0"
+
+# TODO : turn this in a top level resource ?
+# check if we are running in a dev environment
+if [[ ${BINDIR_ABSOLUTE} =~ working-copy ]]; then
+    DATA_MAKEFILE_PARAMETERS="${DATA_MAKEFILE_PARAMETERS} FILTER_COUNT=1000"
+fi
+
+# 1 - generate list of instances 
+make -f ${DATA_MAKEFILE_2} instances ${DATA_MAKEFILE_PARAMETERS}
+
+exit 1;
+
+# 2 - ngram data
+make -f ${DATA_MAKEFILE} global-ngrams ${DATA_MAKEFILE_PARAMETERS}
+
+exit 1;
+
+# 3 - features
+make -f ${DATA_MAKEFILE_2} data ${DATA_MAKEFILE_PARAMETERS}
+
+# TODO : how can we achieve pretty makefile outputs ? should everything be wrapped inside a script ?
+make -f ${DATA_MAKEFILE} vocabulary-data ${DATA_MAKEFILE_PARAMETERS}

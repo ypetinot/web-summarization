@@ -1,0 +1,33 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../dist.rc
+
+TARGET_DIRECTORY=$1
+LCS_THRESHOLD=$2
+OVERLAP_DATA=$3
+
+if [[ -z "${TARGET_DIRECTORY}" || -z "${LCS_THRESHOLD}" || -z "${OVERLAP_DATA}" ]]; then
+    echo "Usage: $0 <target-directory> <lcs-threshold> <overlap-data-file>"
+    exit 1;
+fi
+
+if [[ ! -f "${OVERLAP_DATA}" ]]; then
+    echo "Invalid overlap data file: ${OVERLAP_DATA}"
+    exit 2;
+fi
+
+# 1 - copy instances
+if [ ! -d "${TARGET_DIRECTORY}" ]; then
+
+    echo "Creating target directory ..."
+    mkdir -p ${TARGET_DIRECTORY}
+
+    #echo "Copying instances file (${INSTANCES_FILE}) to target directory ...";
+    #cp ${INSTANCES_FILE} ${TARGET_DIRECTORY}/adaptation.instances
+    cat ${OVERLAP_DATA} | awk -F"\t" -v lcs_threshold=${LCS_THRESHOLD} '{ if ( $3 > lcs_threshold ) { print $0 } }' > ${TARGET_DIRECTORY}/adaptation.overlap
+
+fi
+
+# 2 - make model
+make -f ${BINDIR}/makefile.adaptation adaptation.model -C ${TARGET_DIRECTORY}

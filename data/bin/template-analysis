@@ -1,0 +1,95 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+####package Scripts::Data::TemplateAnalysis;
+
+use DMOZ::TemplateAnalysis;
+use Similarity;
+use String::Similarity;
+
+use File::Slurp;
+use List::MoreUtils qw/uniq/;
+use Statistics::Basic qw/mean stddev/;
+
+use Moose;
+extends( 'Scripts::Data::CategoryProcessor' );
+
+my $keep_punctuation = 0;
+
+# 1 - read input file
+my @entries = grep { scalar( @{ $_ } ); } map { my @fields = split /\t/ , $_; $summary_processor->generate_sequence( $fields[ 1 ] ); } uniq read_file( $category_file , chomp => 1 );
+if ( scalar( @entries ) == 1 ) {
+    print STDERR "Single entry category >> will not process >> $category_file\n";
+}
+
+# 2 - process each entry independently
+my @category_stats;
+for ( my $i = 0; $i <= $#entries ; $i++ ) {
+    my $entry_stats = _template_stats( \@entries , $i );
+    push @category_stats , $entry_stats;
+}
+
+if ( $category_aggregate ) {
+
+    # 3 - generate category stats
+    my $lcs_mean = mean( @category_stats );
+    my $lcs_stddev = stddev( @category_stats );
+    print join( "\t" , $category_file , $lcs_mean , $lcs_stddev ) . "\n";
+
+}
+else {
+
+    my ( $category_level , $all_categories ) = DMOZ::TemplateAnalysis::_list_all_categories( $category_file );
+    my $top_level_category = $all_categories->[ scalar( @{ $all_categories } ) - 2 ]->[ 0 ];
+
+    map {
+	print join( "\t" , $top_level_category , $category_level , $_ ) . "\n";
+    } @category_stats;
+
+}
+
+sub _template_stats {
+
+    my $entries = shift;
+    my $index = shift;
+
+    my $n_entries = scalar( @{ $entries } );
+
+    # reference is the index-th entry
+    ###my $reference_summary = $entries->[ $index ];
+    my $reference_summary_sequence = $entries->[ $index ];
+    ###my $reference_summary_sequence = $summary_processor->generate_sequence( $reference_summary );
+
+    my $closest_summary_index = undef;
+    my $closest_summary_lcs = -1;
+    for ( my $i = 0 ; $i < $n_entries ; $i++ ) {
+	
+	if ( $i == $index ) {
+	    next;
+	}
+
+	# compute LCS between reference summary and current entry
+	#my $current_summary = $entries->[ $i ];
+	#my $current_summary_sequence = $summary_processor->generate_sequence( $current_summary );
+	my $current_summary_sequence = $entries->[ $i ];
+	my $current_summary_lcs = Similarity->lcs_similarity( $reference_summary_sequence , $current_summary_sequence );
+
+	if ( $current_summary_lcs > $closest_summary_lcs ) {
+	    $closest_summary_index = $i;
+	    $closest_summary_lcs = $current_summary_lcs;
+	}
+
+    }
+
+    return $closest_summary_lcs;
+
+}
+
+1;

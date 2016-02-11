@@ -1,0 +1,23 @@
+INSTANCES_BASE=instances
+INSTANCES_RAW=$(INSTANCES_BASE).raw
+INSTANCES_SVM=$(INSTANCES_BASE).svm
+
+APPEARANCE_BASE=appearance
+APPEARANCE_FEATURE_MAPPING=$(APPEARANCE_BASE).features.mapping
+APPEARANCE_MODEL=$(APPEARANCE_BASE).model
+
+EXPERIMENT_BASE_DIR=experiment
+
+default: $(APPEARANCE_MODEL)
+
+.DELETE_ON_ERROR:
+
+$(INSTANCES_RAW):
+	find ${EXPERIMENT_BASE_DIR}/generation/ -type f -name '*.err' | grep 'adaptation-oracle-category' | xargs -i{} cat {} | grep '__INSTANCE_APPEARANCE' > $@
+
+$(INSTANCES_SVM) $(APPEARANCE_FEATURE_MAPPING): $(INSTANCES_RAW)
+	cat $< | cut -f4- | perl $(BINDIR_DATA)/target-adapter-appearance-feature-mapper $(APPEARANCE_FEATURE_MAPPING) > $(INSTANCES_SVM)
+
+$(APPEARANCE_MODEL): $(INSTANCES_SVM)
+	cat $< | $(BINDIR_DATA)/target-adapter-appearance-trainer --model_filename $@
+#--test

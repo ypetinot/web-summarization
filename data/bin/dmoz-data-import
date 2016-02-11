@@ -1,0 +1,135 @@
+#!/usr/bin/env perl
+
+# load url-summary pairs in mongodb store
+# Note : this is the founding step of the process, i.e. the summaries that are indexed, retrieved, etc, are all based on the data that we are importing here.
+# Note : The data should be imported using the URL ids defined by the webgraph.
+
+package Scripts::DMOZ::DataImporter;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Category::UrlData;
+use Service::Web::UrlNormalizer;
+
+use Moose;
+use namespace::autoclean;
+
+with( 'Logger' );
+with( 'MooseX::Getopt::Dashes' );
+
+# expect category
+has 'expect_category' => ( is => 'ro' , isa => 'Bool' , default => 1 );
+
+# preload content
+has 'preload_content' => ( is => 'ro' , isa => 'Bool' , default => 1 );
+
+# preload anchortext
+has 'preload_anchortext' => ( is => 'ro' , isa => 'Bool' , default => 0 );
+
+# TODO : provide as a role ?
+# CURRENT : should the normalization algorithm be accessible by scripts ?
+has '_url_normalizer' => ( is => 'ro' , isa => 'Service::Web::UrlNormalizer' , init_arg => undef , lazy => 1 , builder => '_url_normalizer_builder' );
+sub _url_normalizer_builder {
+    my $this = shift;
+    return new Service::Web::UrlNormalizer;
+}
+
+__PACKAGE__->meta->make_immutable;
+
+1;
+
+my $importer = __PACKAGE__->new_with_options;
+
+my $count = 0;
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+
+    my @fields = split /\t/ , $line;
+    my $url = shift @fields;
+    my $url_normalized = shift @fields;
+    my $summary = shift @fields;
+    my $category = shift @fields;
+
+    # we ignore empty lines as well as URLs without a valid summary
+    if ( ! $url || ! $url_normalized || ! $summary ) {
+	next;
+    }
+
+    if ( $importer->expect_category && ! defined( $category ) ) {
+	# TODO : this should actually be handled by the importer object
+	$importer->logger->info( "Missing category field for : $url_normalized" );
+	next;
+    }
+
+=pod
+    if ( ! ( $count++ % 1000 ) ) {
+	print STDERR "[dmoz-data-import $$] processing $count\n";
+    }
+=cut
+
+    # 0 - store url normalization mapping
+    # CURRENT : can we do this while still allowing the cache to be updated during regular usage ?
+    $importer->_url_normalizer->update_cache( $url , $url_normalized );
+
+    # 1 - instantiate URL object
+    my $url_object = Category::UrlData->load_url_data( $url_normalized ,
+						       # Note : we preload fields now to avoid concurrent requests (and thus potentially wasted computation) during execution
+						       # TODO : add service to centralize data generation ? ( which would lead to a better handling of similultaneous requests for the same URL ?)
+						       # TODO : add parameters/options to specify which fields should be preloaded
+						       load_content => $importer->preload_content,
+						       load_anchortext => $importer->preload_anchortext
+	);
+    if ( ! $url_object ) {
+	next;
+    }
+
+    # 2 - check if we already have a summary for this URL
+    foreach my $dmoz_field_entry ( [ 'summary' , $summary ] , [ 'category' , $category ] ) {
+	
+	my $dmoz_field_key = $dmoz_field_entry->[ 0 ];
+	my $dmoz_field_value = $dmoz_field_entry->[ 1 ];
+
+	if ( ! defined( $dmoz_field_value ) ) {
+	    $importer->logger->info( "Missing $dmoz_field_key for : $url_normalized" );
+	    next;
+	}
+
+	my $has_dmoz_field = $url_object->has_field( $dmoz_field_key , namespace => 'dmoz' );
+	if ( $has_dmoz_field ) {
+	    # TODO : should we allow storing more than one summary for any given URL ? => yes, but in this case we would need to store the category alongside the summary
+	    #        => dmoz collection should store an array of dmoz records indexed on the target URL
+	    #        => problem: how do we handle precomputed fields ? => what if we index all dmoz data using (url,category) ?
+	    
+	    # Note : since we do nothing here, this currently guarantees idenpotency, however I need to avoid replication of the same (url,summary) pairs if we support multiple summaries per URL.	    
+	}
+	else {
+	    # set summary
+	    # CURRENT : set_dmoz_field / get_dmoz_field ? (to abstract the category handling) => or equivalently set of rules associated with dmoz namespace ?
+	    #           or id => [] additional parameter to build a composite id => can Function::Parameters handle dynamic parameter requirements ? => need category provided if dmoz namespace
+	    $url_object->set_field( $dmoz_field_key , $dmoz_field_value , namespace => 'dmoz' );
+	}
+	
+    }
+
+    # 3 - make sure the summary field is loadable / not completely filtered out
+    if ( ! defined( $url_object->summary_modality->utterance ) ) {
+	next;
+    }
+    
+    # output URL
+    print "$line\n";
+
+}
+
+exit( 0 );
+
+1;

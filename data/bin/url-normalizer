@@ -1,0 +1,93 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Service::Web::UrlNormalizer;
+
+use threads;
+use Thread::Queue;
+use Getopt::Long;
+use Pod::Usage;
+
+# Note : by default no side effects
+my $update_cache = 0;
+my $use_cache = 0;
+
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure qw(bundling pass_through);
+GetOptions('use-cache' => \$use_cache ,
+	   'update-cache' => \$update_cache ,
+	   'help|?' => \$help, man => \$man) or pod2usage(2);
+pod2usage(1) if ( $help );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+$|=1;
+
+my $url_normalizer = new Service::Web::UrlNormalizer( use_cache => $use_cache );
+
+my $queue = Thread::Queue->new();
+
+my $max_threads = 20;
+my @threads = map {
+    my $thr = threads->create(
+	sub {
+	    while (my $data = $queue->dequeue()) {
+		process_url( $data );
+		sleep 0.1;
+	    }
+	});
+} ( 1 .. $max_threads );
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+
+    my $url = shift @fields;
+
+    # we ignore empty lines as well as URLs without a valid summary
+    if ( ! defined( $url ) ) {
+	next;
+    }
+
+    $queue->enqueue( [ $url , \@fields ] );
+
+}
+
+map {
+    $queue->enqueue( undef );
+} @threads;
+
+foreach my $thread (@threads) {
+    $thread->join();
+}
+
+# CURRENT/TODO : potential issue with exit process ? => review size of normalized blocks
+
+sub process_url {
+
+    my $data = shift;
+    my ( $url , $fields ) = @{ $data };
+
+    # normalize URL
+    my $url_normalized = $url_normalizer->normalize( $url , update_cache => $update_cache );
+
+    if ( ! $url_normalized ) {
+	print STDERR "Skipping invalid url: $url\n";
+    }
+    else {
+	print join( "\t" , $url , $url_normalized , @{ $fields } ) . "\n";
+    }
+
+}
+
+1;

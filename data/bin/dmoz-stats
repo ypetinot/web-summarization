@@ -1,0 +1,90 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../data/src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Statistics::Basic qw/mean/;
+
+my $entry_count = 0;
+
+my %categories;
+my %word_count2count;
+
+while ( <STDIN> ) {
+
+      chomp;
+      my $line = $_;
+
+      my @fields = split /\t/ , $line;
+      my $url = shift @fields;
+      my $title = shift @fields;
+      my $summary = shift @fields;
+      my $category = shift @fields;
+
+      # update total entry count
+      $entry_count++;
+      
+      # word count (approximation)
+      my $word_count = scalar( split /\s+/ , $summary );
+
+      # keep track of per-category entry counts
+      $categories{ $category }++;
+      $word_count2count{ $word_count }++;
+
+}
+
+# compute statistics
+my $category_count = scalar( keys( %categories ) );
+my $average_entries_per_category = mean( values( %categories ) );
+# TODO : could this be computed using a standard function ? => this is a form of expected value but not based directly on the input distribution
+my $average_number_of_words_per_summary = _compute_average_number_of_words_per_summary( \%word_count2count );
+my @target_entry_counts = ( 5, 10 , 50 , 100 );
+my %number_of_categories_with_at_least_count;
+# TODO : is there away to use some for of label/namespace on $_ ?
+foreach my $target_entry_count (@target_entry_counts) {
+    $number_of_categories_with_at_least_count{ $target_entry_count } = scalar( grep { $_ >= $target_entry_count } values( %categories ) );
+}
+
+# output statistics
+_output_line( "Total \# of entries" , $entry_count );
+_output_line( "Total \# of categories" , $category_count );
+_output_separation();
+_output_line( "Average \# of entries per category" , $average_entries_per_category );
+_output_line( "Average \# of words per summary" , sprintf( "%.2f" , $average_number_of_words_per_summary ) );
+_output_separation();
+foreach my $entry_count (@target_entry_counts) {
+    _output_line( "Total \# of categories with at least $entry_count entries" , $number_of_categories_with_at_least_count{ $entry_count } );
+}
+
+sub _compute_average_number_of_words_per_summary {
+
+    my $distribution = shift;
+
+    my $numerator = 0;
+    my $denominator = 0;
+    map {
+	my $word_count = $_;
+	my $entry_count = $word_count2count{ $word_count };
+	$numerator += $word_count * $entry_count;
+	$denominator += $entry_count;
+    } keys( %{ $distribution } );
+
+    my $average_number_of_words_per_summary = $numerator / $denominator;
+    return $average_number_of_words_per_summary;
+
+}
+
+sub _output_separation {
+    print '\hline \hline' . "\n";
+}
+
+sub _output_line {
+    print join( ' & ' , @_ ) . "\n";
+}
+
+1;

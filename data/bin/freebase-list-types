@@ -1,0 +1,5 @@
+# fully specified => 4518
+gunzip -c entity_types.mapping.gz | cut -f2 | tr ',' '\n' | tr -d '["]' | grep -v '^common.topic$' | grep -v '^base.' | sort -u | wc -l
+
+# partial => 7006
+gunzip -c entity_types.mapping.gz | cut -f2 | tr ',' '\n' | tr -d '["]' | grep -v '^common.topic$' | grep -v '^base.' | perl -e 'while (<STDIN>) { chomp; my $full = $_; my @full_components = split /\./ , $full;  while ( scalar( @full_components ) ) { print join( "." , @full_components ) . "\n"; pop @full_components; } }' | sort -u | wc -l

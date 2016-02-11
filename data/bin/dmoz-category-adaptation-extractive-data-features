@@ -1,0 +1,57 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../../summarizers/graph-summarizer-4/src/";
+
+use TargetAdapter::Extractive::FeatureGenerator;
+
+use JSON;
+
+my $current_url = undef;
+my $current_instance = undef;
+
+my $features_mapping_filename = $ARGV[ 0 ];
+if ( ! defined( $features_mapping_filename ) ) {
+    die "Usage $0 <features-mapping-filename>";
+}
+
+my $extractive_adaptation_feature_generator = new TargetAdapter::Extractive::FeatureGenerator( binarize => 1 , feature_mapping_file => $features_mapping_filename , training => 1 );
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+
+    my $url = shift @fields;
+    my $summary = shift @fields;
+    my $from_token = shift @fields;
+    my $extractive_token = shift @fields;
+    my $ground_truth = shift @fields;
+
+    if ( ! defined( $current_url ) || ( $url ne $current_url ) ) {
+	$current_instance = Category::UrlData->load_url_data( $url );
+	$current_url = $url;
+    }
+
+    my $from_token_object = new Web::Summarizer::Token( surface => $from_token );
+    my $extractive_token_object = new Web::Summarizer::Token( surface => $extractive_token );
+
+    # generate features for extractive token
+    my $extractive_token_features = $extractive_adaptation_feature_generator->generate_features( $current_instance , $summary , $from_token_object , $extractive_token_object );
+
+    # output features
+    # Note : we simply print out instances since it will allow me to train a model outside of my framework
+    print join( "\t" , $url , $from_token , $extractive_token, $ground_truth , encode_json( $extractive_token_features ) ) . "\n";    
+}
+
+# write out feature mapping
+$extractive_adaptation_feature_generator->write_feature_mapping;
+
+1;

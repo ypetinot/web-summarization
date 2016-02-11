@@ -1,0 +1,122 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use DMOZ::GlobalData;
+
+use IO::Zlib;
+use Getopt::Long;
+use Pod::Usage;
+
+my $map_file = undef;
+my $count_file = undef;
+my $min_count = 0;
+
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure qw(bundling pass_through);
+
+GetOptions('map-file=s' => \$map_file,
+	   'count-file=s' => \$count_file,
+	   'min-count=i' => \$min_count,
+	   'help|?' => \$help, man => \$man) or pod2usage(2);
+pod2usage(1) if ( $help || !defined( $map_file ) );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+my %count_ok;
+my $do_count_filtering = 0;
+if ( $min_count && defined( $count_file ) ) {
+
+    $do_count_filtering = 1;
+    my $count_file_fh = new IO::Zlib;
+
+    if ( $count_file_fh->open($count_file, "rb") ) {
+
+	while ( <$count_file_fh> ) {
+	    chomp;
+	    my $line = $_;
+	    my @fields = split /\t/ , $line;
+	    my $key = $fields[ 0 ];
+	    my $count = $fields[ 1 ];
+	    if ( $count > $min_count ) {
+		$count_ok{ $key } = 1;
+	    }
+	}
+
+	$count_file_fh->close;
+	
+    }
+    else {
+	die "Unable to open count file ($count_file): $!";
+    }
+
+}
+
+my %feature2id;
+my %feature2count;
+my $feature_count = 0;
+
+while ( <STDIN> ) {
+
+    chomp;
+    my $line = $_;
+
+    my @fields = split /\t/ , $line;
+    my $key = shift @fields;
+
+    eval {
+
+	my @feature_entries = map { join( ":" , @{ $_ } ); }
+	sort { $a->[ 0 ] <=> $b->[ 0 ] }
+	map { _map_feature( @{ $_ } ); }
+	grep { !$do_count_filtering || defined( $count_ok{ $_->[ 0 ] } ) }
+	map {
+	    # TODO : ultimatily this should be the format used to encode feature key/value pairs
+	    # $_ =~ m/^(.*):([^\:]+)$/si
+	    if ( $_ =~ m/^(.*)\s(.*)$/si ) { [ $1 , $2 ] } else { print STDERR "Unexpected feature format ($line): $_\n"; }
+	} @fields;
+	
+	# TODO : the generation of the category/url key must be shared with the other scripts
+	if ( scalar( @feature_entries ) ) {
+	    print join( "\t" , $key , @feature_entries ) . "\n";
+	}
+
+    };
+    if ( $@ ) {
+	print STDERR "Feature mapping problem: $@\n";
+    }
+
+}
+
+# output feature map
+open FEATURE_MAP, ">$map_file" or die "Unable to create feature map file ($map_file): $!";
+foreach my $feature_key (keys( %feature2id )) {
+    my $feature_id = $feature2id{ $feature_key };
+    my $feature_count = $feature2count{ $feature_id };
+    print FEATURE_MAP join( "\t" , $feature_key , $feature_id , $feature_count ) . "\n";
+}
+close FEATURE_MAP;
+
+sub _map_feature {
+
+    my $feature_key = shift;
+    my $feature_value = shift;
+
+    if ( ! defined( $feature2id{ $feature_key } ) ) {
+	$feature2id{ $feature_key } = ++$feature_count;
+    }
+    my $feature_id = $feature2id{ $feature_key };
+    $feature2count{ $feature_id }++;
+
+    return [ $feature_id , $feature_value ];
+
+}
+
+1;

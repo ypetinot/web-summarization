@@ -1,0 +1,36 @@
+#DMOZ_MAKEFILE_DIR:=$(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+#include $(DMOZ_MAKEFILE_DIR)/../../bin/makefile.common
+
+# http://www.dmoz.org/docs/en/rdf.html
+DMOZ_ARCHIVE_URL=http://rdf.dmoz.org/rdf/content.rdf.u8.gz
+DMOZ_ARCHIVE=$(notdir $(DMOZ_ARCHIVE_URL))
+
+DMOZ_INSTANCES_FULL=instances.full.gz
+DMOZ_REPOSITORY=dmoz-repository
+DMOZ_CATEGORY_LIST=categories.full
+
+default: $(DMOZ_INSTANCES_FULL) $(DMOZ_CATEGORY_LIST)
+
+$(DMOZ_ARCHIVE):
+	wget -q -O $@ $(DMOZ_ARCHIVE_URL)
+
+$(DMOZ_CATEGORY_LIST): $(DMOZ_INSTANCES_FULL)
+	gunzip -c $< | cut -f4 | uniq > $@
+
+$(DMOZ_INSTANCES_FULL): $(DMOZ_ARCHIVE)
+	gunzip -c $< | $(BINDIR_DIST)/dmoz-produce-description-data | gzip -c > $@
+
+$(DMOZ_REPOSITORY): $(DMOZ_INSTANCES_FULL)
+	gunzip -c $< | $(BINDIR_DATA)/dmoz-build-repository $@.tmp
+	gunzip -c $< | awk -F"\t" '{ print $$0 >> "$@/" $4 ".summary" }'
+	mv $@.tmp $@
+
+#perl -d $(BINDIR_DIST)/dmoz-prepare-render
+#| $(BINDIR_DIST)/dmoz-prepare-explode $@.tmp
+
+#gunzip -c instances.full.gz | grep 'Top/Sports/Cricket/ICC/Full_Members/England/Clubs/C' > category_1.full
+#gunzip -c instances.full.gz | grep 'Top/News/Colleges_and_Universities/Magazines_and_E-zines/North_America/United_States' > category_2.full
+#gunzip -c instances.full.gz | grep 'Top/Regional/Europe/United_Kingdom/Transport/Couriers_and_Messengers/Regional_and_Same_Day' > category_3.full
+#gunzip -c instances.full.gz | grep 'Top/News/Colleges_and_Universities/Newspapers/United_States/New_York' > category_4.full
+
+#cat category_1.full | cut -f1,3-4 | awk -F"\t" '{ print $1 "\t" $0 }' > category_1.instances.full

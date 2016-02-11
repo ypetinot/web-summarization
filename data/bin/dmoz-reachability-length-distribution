@@ -1,0 +1,54 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../src/";
+
+use DMOZ::Reachability;
+
+use JSON;
+
+my %summary_lengths;
+
+# TODO : shared code for loop execution ?
+while ( <STDIN> ) {
+    
+    chomp;
+    
+    my $line = $_;
+    my @fields = split /\t/ , $_;
+
+    my $url = shift @fields;
+    my $url_normalized = shift @fields;
+    my $ground_truth_summary = shift @fields;
+    my $category = shift @fields;
+
+    # TODO : to be removed once URL filtering is properly in place
+    if ( ! defined( $category ) ) {
+	next;
+    }
+
+    # compute summary length
+    my $summary_length = DMOZ::Reachability->summary_length( $ground_truth_summary );
+
+    # compute category of interest
+    my $parent_category = DMOZ::Reachability->parent_category( $category , 2 );
+
+    # update stats
+    if ( ! defined( $summary_lengths{ $parent_category } ) ) {
+	$summary_lengths{ $parent_category } = {};
+    }
+    $summary_lengths{ $parent_category }{ $summary_length }++;
+
+}
+
+foreach my $category (keys( %summary_lengths )) {
+    my $category_entry = $summary_lengths{ $category };
+    print join( "\t" , $category , encode_json( $category_entry ) ) . "\n";
+}
+
+1;

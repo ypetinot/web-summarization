@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# TODO : rename to dmoz-corpus-field
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../dist.rc
+
+FOLD_ID=$1; shift;
+FIELDS=$@;
+
+# TODO : unify with dmoz-category-fold's interface ?
+if [[ -z "${FOLD_ID}" || -z "${FIELDS}" ]]; then
+    echo "Usage: $0 <fold-id> <field>"
+    exit 1;
+fi
+
+FIELDS_FILTERED=`echo ${FIELDS} | tr ' ' '\n' | grep -v '^_' | tr '\n' ' '`
+
+# CURRENT / TODO : use run-data-generation as an iterator ? or add a generation flag to dmoz-category-fold ?
+# TODO : turn --train into a parameter ?
+# Note : data processing level 3, meaning that we do not attempt to download anything, simply preprocess available data
+# Note : for now we choose not to distribute the execution of dmoz-category-fold => (1) reference paths are local; (2) fairly cheap operation (file reading) that might not justify the transfer overhead
+
+# Note : there is no need to achieve distributed execution, so this is ok
+if [ ! -d ${DMOZ_REPOSITORY_BASE} ]; then
+    # CURRENT : have dmoz-category-fold ssh to the machine where the repository is located ?
+    echo "Invalid repository base : ${DMOZ_REPOSITORY_BASE} ..." 1>&2;
+    exit 1;
+fi
+
+# Note : we index both training and testing data (will allow to audit the retrieval/ranking components)
+${BINDIR}/run-data-generation --level=3 --sync --filter-mode ${FIELDS_FILTERED} 2> /dev/null | perl ${BINDIR_DIST}/dmoz-category-fold --train --test --global-data-base=${ROOTDIR_DATA} --repository-base=${DMOZ_REPOSITORY_BASE} ${FOLD_ID} --fields=${FIELDS}
+
+###${BINDIR}/run-data-generation --level=3 ${FIELDS_FILTERED} | ${BINDIR_PARALLEL}/parallel -j1 --no-notice --halt-on-error 2 --sshloginfile ${SERVERS_LIST} --pipe perl ${BINDIR_DIST}/dmoz-category-fold --train --global-data-base=${ROOTDIR_DATA} --repository-base=${DMOZ_REPOSITORY_BASE} ${FOLD_ID} --fields=${FIELDS}
+# CURRENT : the point is to reuse data-generation's distributed execution
+###${BINDIR}/run-data-generation --level=3 ${FIELDS_FILTERED} --exec "echo {} | ${BINDIR_DIST}/dmoz-category-fold --train --global-data-base=${ROOTDIR_DATA} --repository-base=${DMOZ_REPOSITORY_BASE} ${FOLD_ID} --fields=${FIELDS}"

@@ -1,0 +1,75 @@
+#!/usr/bin/env perl
+
+# TODO : promote shared code with Scripts::DBPedia::DataImporter
+
+package Scripts::Freebase::DataImporter;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Getopt::Long;
+use JSON;
+use List::MoreUtils qw/uniq/;
+use Pod::Usage;
+use URI::Escape;
+
+use Moose;
+use namespace::autoclean;
+
+with( 'Freebase' );
+
+my $debug = 0;
+my $help  = 0;
+my $man   = 0;
+my $types_domain = undef;
+my $types_domain_default = 0;
+
+GetOptions('help|?' => \$help, man => \$man,
+	   'types-domain-default' => \$types_domain_default,
+	   'types-domain=s' => \$types_domain,
+	   'debug|d' => \$debug
+    ) or pod2usage(2);
+
+if ( $types_domain_default ) {
+    $types_domain = 'types';
+}
+elsif ( ! $types_domain ) {
+    die "Must specify a valid types domain ...";
+}
+
+# CURRENT : allow the specification of an alternate types_domain
+my $data_importer = new Scripts::Freebase::DataImporter( key_normalization => ( ( $types_domain eq 'types' ) ? 0 : 1 ) );
+
+my $current_resource;
+my @current_resource_buffer;
+while( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    if ( $line =~ m/^\#/ ) {
+	next;
+    }
+
+    my @fields = split /\t/ , $line;
+    my ( $key , $ids_json ) = @fields;
+
+    my $ids = decode_json( $ids_json );
+
+    # load data to mongodb
+    if ( $types_domain eq 'types' ) {
+	$data_importer->set_types( $key , $ids );
+    }
+    else {
+	$data_importer->set_surfaces( $key , $ids );
+    }
+
+}
+
+__PACKAGE__->meta->make_immutable;
+
+1;

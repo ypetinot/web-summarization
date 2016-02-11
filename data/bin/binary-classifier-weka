@@ -1,0 +1,62 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../dist.rc
+
+MODEL_CLASS=$1
+MODE=$2
+ARFF_FILE=$3
+MODEL_FILE=$4
+OUT_FILE=$5
+#LABELS_FILE=$6
+
+if [[ -z ${MODE} || -z ${ARFF_FILE} || -z "${MODEL_FILE}" ]]; then
+    echo "Usage: $0 <mode> <arff-file> <model-file>"
+    exit
+fi
+
+#MODEL_CLASS=weka.classifiers.$( echo "${MODEL_FILE}" | sed 's/.model$//' )
+# TODO: try an entropy-based classifier ?
+#MODEL_CLASS=weka.classifiers.bayes.NaiveBayes
+
+BINDIR=`dirname $0`;
+
+#_N_ARFF_LENGTH=`wc -l ${ARFF_FILE} | awk '{ print $1 }'`
+#_N_DATA_START=`cat -n ${ARFF_FILE} | grep '@DATA' | awk '{ print $1 }'`
+#N_CROSS_VALIDATION=$(( ${_N_ARFF_LENGTH} - ${_N_DATA_START} ))
+
+WEKA_OPTIONS_TRAINING="-Xmx3g"
+WEKA_OPTIONS="-cp ${WEKA_ROOT}/weka.jar"
+#:${MEKA_ROOT}/meka.jar:${MULAN_ROOT}/mulan.jar:${MULAN_ROOT}/"
+#WEKA_CLASSIFIER_OPTIONS="-x ${N_CROSS_VALIDATION}"
+#-C 0.9 -A -M 5"
+#WEKA_CLASSIFIER_OPTIONS="-no-cv"
+#WEKA_CLASSIFIER_OPTIONS="-C 8 -L 0.0010 -P 1.0E-12 -N 0 -V -1 -W 1 -K \"weka.classifiers.functions.supportVector.RBFKernel -C 250007 -G 0.01\""
+#WEKA_CLASSIFIER_OPTIONS=''
+
+function dump {
+    if [[ -z "${OUT_FILE}" ]]; then
+	cat - 
+    else
+	cat - > ${OUT_FILE}
+    fi
+}
+
+if [[ ${MODE} == "train" ]]; then
+    #java ${WEKA_OPTIONS} ${MODEL_CLASS} -C 8.0 -L 0.0010 -P 1.0E-12 -N 0 -V -1 -W 1 -K "weka.classifiers.functions.supportVector.PolyKernel -C 250007 -E 1.0" ${WEKA_CLASSIFIER_OPTIONS} -t ${ARFF_FILE} -d ${MODEL_FILE} | dump
+    #prior to meka:
+    java ${WEKA_OPTIONS} ${WEKA_OPTIONS_TRAINING} ${MODEL_CLASS} ${WEKA_CLASSIFIER_OPTIONS} -t ${ARFF_FILE} -d ${MODEL_FILE} | dump
+    #java ${WEKA_OPTIONS} weka.classifiers.multilabel.meta.FastBaggingML -I 50 -D -t ${ARFF_FILE} -d ${MODEL_FILE} -W weka.classifiers.multilabel.CC -- -D -W weka.classifiers.functions.SMO | dump
+    #java ${WEKA_OPTIONS} weka.core.Store results.meka P -D -t ${ARFF_FILE} -d ${MODEL_FILE} -W weka.classifiers.multilabel.CC -- -D -W weka.classifiers.functions.SMO | dump
+#    java ${WEKA_OPTIONS} MulanExp1 -arff ${ARFF_FILE} -xml ${LABELS_FILE} -model ${MODEL_FILE} | dump
+elif [[ ${MODE} == "combine" ]]; then
+    java ${WEKA_OPTIONS} ${MODEL_CLASS} -i -D -S 1 -R AVG ${MODEL_FILE} -t ${ARFF_FILE} -no-cv -d ${OUT_FILE}
+elif [[ ${MODE} == "diag" ]]; then
+    java ${WEKA_OPTIONS} ${MODEL_CLASS} -p 1 -T ${ARFF_FILE} -l ${MODEL_FILE} | awk '{ if ( NF >= 4 ) { print $0 } }' | dump
+#| grep -v -i predict | dump
+#| awk '{ print $3 }' | awk -F":" '{ print $2 }' | dump
+#-i
+else
+    java ${WEKA_OPTIONS} ${MODEL_CLASS} -T ${ARFF_FILE} -l ${MODEL_FILE} | dump 
+#-i
+fi

@@ -1,0 +1,280 @@
+#!/usr/bin/env perl
+
+# Note : we are just changing the retrieval component here, the ranking analysis is probably still valid
+
+# find /local/nlp/ypetinot/data-raw/dmoz-repository/ -type f -name '*.summary'| sed 's/.summary$//' | while read BASE_FILE; do CATEGORY_ID=`head -n1 ${BASE_FILE} | cut -f2`; echo -e "${CATEGORY_ID}\t${BASE_FILE}"; done | /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/data/bin/dmoz-category-profile-generator
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../data/src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use StringNormalizer;
+
+use Data::PowerSet;
+use File::Slurp;
+use Getopt::Long;
+use Graph::Undirected;
+use JSON;
+use List::MoreUtils qw/uniq/;
+use Pod::Usage;
+
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure qw(bundling pass_through);
+GetOptions('help|?' => \$help, man => \$man) or pod2usage(2);
+pod2usage(1) if ( $help );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+my $mode = 'cliques';
+my $category_count = 0;
+
+my $output_directory = $ARGV[ 0 ];
+if ( ! defined( $output_directory ) || ! -d $output_directory ) {
+    pod2usage(2);
+}
+
+my %token2id;
+my %id2token;
+my %edge2id;
+
+my $output_file_category_profiles = join( "/" , $output_directory , 'category.profiles' );
+open CATEGORY_PROFILES , "> $output_file_category_profiles" or die "Unable to open category profiles file ($output_file_category_profiles): $!";
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+    my $category_id = $fields[ 0 ];
+    my $category_base = $fields[ 1 ];
+
+    $category_count++;
+
+    my %category_tokens;
+
+    # 1 - read in summaries
+    my @entries = map {
+
+	my @fields = split /\t/ , $_;
+	my $url = $fields[ 0 ];
+	my $summary = $fields[ 1 ];
+	
+	[ $url , $summary ];
+
+    } read_file( join( '.' , $category_base , 'summary' ) , chomp => 1 );
+    
+    my @entries_tokenized  = map {
+
+	my $url = $_->[ 0 ];
+	my $summary = $_->[ 1 ];
+
+	# TODO : ratio supported vs unsupported ?
+
+        # TODO : remove entities and index type instead => how to do this efficiently ? 
+	#my $summary_object = new Web::Summarizer::Sentence( surface => $summary , object => ... );
+
+	# TODO : remove adjectives/adverbs as well ?
+
+	my %entry_tokens;
+
+	if ( defined( $summary ) ) {
+	    map {
+		$entry_tokens{ $_ }++;
+		$category_tokens{ $_ }++;
+	    } uniq split /(?:\s|\p{PosixPunct})+/ , StringNormalizer::_normalize( $summary );
+	}
+
+	\%entry_tokens;
+
+    } @entries;
+
+    my $n_entries = scalar( @entries_tokenized );
+    
+    # 2 - compute profile
+    my $category_profile = _generate_category_profile( $n_entries , \@entries_tokenized , \%category_tokens );
+
+    # 3 - category post processing
+    _category_post_processing( $category_id , $category_profile , \@entries , \@entries_tokenized );
+
+    # 3 - output profile
+    _output_category_profile( $category_id , $n_entries , $category_profile );
+
+}
+
+close CATEGORY_PROFILES;
+
+# write out mappings
+my $mapping_file = join( "/" , $output_directory , 'tokens_mapping.json' );
+write_file( $mapping_file , encode_json( \%token2id ) );
+
+sub _category_post_processing {
+   
+    my $category_id = shift;
+    my $category_profile = shift;
+    my $category_entries = shift;
+    my $category_entries_tokenized = shift;
+
+    if ( $mode ne 'cliques' ) {
+	return;
+    }
+    
+    # CURRENT : generate raw list of clique occurrences for each summary => the notion of clique is indicated by the host cluster/category, but we for generality purposes we do not attach summaries to clusters => this is equivalent to some form of template detection/matching
+    
+    # TODO : we need to have access to each URL ?
+    # TODO : do we have to give a special treatment to cliques involving stop-words ?
+
+    # CURRENT : use node from dependency parse as initial set of nodes to list out cliques ?
+
+    my $n_entries = scalar( @{ $category_entries } );
+    for ( my $i = 0 ; $i < $n_entries ; $i++ ) {
+	my $category_entry = $category_entries->[ $i ];
+	my $category_entry_tokenized = $category_entries_tokenized->[ $i ];
+	my $summary_url = $category_entry->[ 0 ];
+	my $summary = $category_entry->[ 1 ];
+	my $summary_cliques = _generate_cliques( $category_profile , $category_entry_tokenized );
+	foreach my $summary_clique (@{ $summary_cliques }) {
+	    print join( "\t" , $summary_clique , $summary_url , $summary ) . "\n";
+	}
+    }
+
+}
+
+sub _generate_cliques {
+
+    my $category_profile = shift;
+    my $category_entry_tokenized = shift;
+
+    my @cliques;
+
+    # Note : in terms of amount of data generated this would be no different than a skip n-gram model
+    # Note : a clique is a fully connected component in the "filtered" category profile
+    # Note : any sub-set of nodes associated with this entry leads to a clique (since all tokens necessarily cooccur), so our goal is to filter the n
+    my @category_entry_nodes = keys( %{ $category_entry_tokenized } );
+    my @clique_nodes = sort { $a cmp $b } grep { $category_profile->degree( $_ ) } @category_entry_nodes;
+
+    # CURRENT : find cliques involving the clique_nodes ?
+    my $ps = Data::PowerSet->new( { min => 2 , join => '-' } , @clique_nodes );
+    while ( my $element = $ps->next ) {
+	push @cliques , $element;
+    }
+
+=pod
+    my @strongly_connected_components = $category_profile->strongy
+    for ( my $i = 0 ; $i <= $#clique_nodes ; $i++ ) {
+	my $clique_node = $clique_nodes[ $i ];
+	my $component_index = $category_profile->strongly_connected_component_by_vertex( $clique_node );
+	
+    }
+=cut
+
+    return \@cliques;
+
+}
+
+sub _output_category_profile {
+
+    my $category_id = shift;
+    my $n_entries = shift;
+    my $category_profile = shift;
+
+    if ( $mode eq 'vector' ) {
+	print CATEGORY_PROFILES join( "\t" , $category_id , $n_entries , encode_json( $category_profile ) ) . "\n";
+    }
+    elsif ( $mode eq 'graph' ) {
+
+	my $vertex_count = 0;
+
+	# output graph information
+	print CATEGORY_PROFILES join( ' ' , 't' , '#' , $category_count , -1 , $category_id ) . "\n";
+
+	# output vertex information
+	map {
+	    my $vertex_label_string = $_;
+	    if ( ! defined( $token2id{ $vertex_label_string } ) ) {
+		$token2id{ $vertex_label_string } = scalar( keys( %token2id ) ) + 1;
+	    }
+	    my $vertex_label_id = $token2id{ $vertex_label_string };
+	    print CATEGORY_PROFILES join( ' ' , 'v' , ++$vertex_count , $vertex_label_id ) . "\n";
+	} $category_profile->vertices;
+	
+	# output edge information
+	map {
+	    my @edge = @{ $_ };
+	    my $edge_label_string = join( ':::' , @edge );
+	    if ( ! defined( $edge2id{ $edge_label_string } ) ) {
+		$edge2id{ $edge_label_string } = scalar( keys( %edge2id ) ) + 1;
+	    }
+	    my $edge_label_id = $edge2id{ $edge_label_string };
+	    print CATEGORY_PROFILES join( ' ' , 'e' , ( map { $token2id{ $_ } } @edge ) , $edge_label_id ) . "\n";
+	} $category_profile->edges;
+
+	print CATEGORY_PROFILES "\n";
+
+    }
+
+}
+
+sub _generate_category_profile {
+
+    my $n_entries = shift;
+    my $entries_tokenized = shift;
+    my $category_tokens = shift;
+
+    my $category_profile = undef;
+
+    if ( $mode eq 'vector' ) {
+
+	my %selected_category_tokens;
+	map {
+	    my $token_count = int( $category_tokens->{ $_ } );
+	    my $appearance_ratio = $token_count / $n_entries;
+	    if ( $token_count > 2 ) {
+		$selected_category_tokens{ $_ } = $appearance_ratio;
+	    }
+	} keys( %{ $category_tokens } );
+
+	$category_profile = \%selected_category_tokens;
+
+    }
+    elsif ( $mode eq 'graph' || $mode eq 'cliques' ) {
+
+	$category_profile = new Graph::Undirected;
+	map {
+	    my @tokens = keys( %{ $_ } ); 
+	    for ( my $i = 0; $i <= $#tokens ; $i++ ) {
+		my $token_i = $tokens[ $i ];
+		for ( my $j = 0; $j < $i ; $j++ ) {
+		    my $token_j = $tokens[ $j ];
+		    my $current_weight = $category_profile->get_edge_weight( $token_i , $token_j ) || 0;
+		    $category_profile->set_edge_weight( $token_i , $token_j , $current_weight + 1 );
+		}
+	    }
+
+	} @{ $entries_tokenized };
+
+	# remove edges that have a weight of 1
+	map {
+	    $category_profile->delete_edge( @{ $_ } );
+	} grep { $category_profile->get_edge_weight( @{ $_ } ) < 2 } $category_profile->edges;
+
+	map {
+	    $category_profile->delete_vertex( $_ );
+	} $category_profile->successorless_vertices;
+
+    }
+    else {
+	die "Category profile mode is not supported: $mode";
+    }
+
+    return $category_profile;
+
+}
+
+# TODO : move to clusters instead of full categories ? => recluster DMOZ ?
+
+1;

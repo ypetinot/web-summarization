@@ -1,0 +1,30 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+my %attribute_to_category_count;
+
+while ( <STDIN> ) {
+
+    my $line = $_;
+
+    my @fields = split /\t/ , $line;
+
+    my $attribute = $fields[ 0 ];
+    my $category = $fields[ 1 ];
+    my $category_count = $fields[ 2 ];
+
+    $attribute_to_category_count{ $attribute }++;
+
+}
+
+map {
+    my $attribute = $_;
+    my $attribute_category_count = $attribute_to_category_count{ $attribute };
+    if ( $attribute_category_count >= 3 ) {
+	print join( "\t" , $attribute , $attribute_category_count ) . "\n";
+    }
+} keys( %attribute_to_category_count );
+
+1;

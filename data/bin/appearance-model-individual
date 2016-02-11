@@ -1,0 +1,336 @@
+#!/usr/bin/env perl
+
+# This script is used to generate a conditional appearance model - if data for several terms is provided on stdin, then the model learn is a joint model ...
+# CURRENT : model that could accomodate both the individual and joint setting ?
+# Naive Bayes ? ==> no ? p(C|D) = p(D|C) * p(C) / p(D) \prop p(D|C) = \prod{ p(f_i|C) } ==> for each feature in the training set, we compute the number of times this feature appears positively with the term == matrix N_terms * number of features (sparse) ==> manageable if I have a decent (sparse representation) matrix library ==> serialize matrix, this is the model ==> probability ?
+# Log linear model trained using Perceptron ? ==> more decision boundary ==> discriminative model ==> each feature has a weight 
+
+# Structured perceptron ==> do able if I have an online implementation
+# Instead of feeding term records, feed individual learning examples, then the system can readily model all the labels that have been seen during training. 
+
+# SVM multi-labels ?
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use AppearanceModel;
+use DMOZ::GlobalData;
+use NPModel::BinaryClassifier;
+
+use Algorithm::LibLinear;
+use Digest::MD5 qw/md5_hex/;
+use File::Path qw/mkpath/;
+use File::Slurp qw/read_file/;
+use Getopt::Long;
+use IO::Zlib;
+use JSON;
+use List::MoreUtils qw/uniq/;
+use List::Util qw/shuffle/;
+use Pod::Usage;
+
+#my $global_data_base = undef;
+#my $repository_base = undef;
+
+my $do_train = 0;
+my $models_list = undef;
+my $training_sample_size = 0;
+
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure qw(bundling);
+GetOptions(
+    #'global-data-base=s' => \$global_data_base ,
+    #'repository-base=s' => \$repository_base ,
+    'models-list=s' => \$models_list ,
+    'max-training-samples=i' => \$training_sample_size ,
+    'train' => \$do_train ,
+    'help|?' => \$help, man => \$man) or pod2usage(2);
+#pod2usage(1) if ( $help || !defined( $global_data_base ) || !defined( $repository_base ) );
+pod2usage(2) if ( ! $do_train && ! defined( $models_list ) );
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+if ( scalar(@ARGV) < 1 ) {
+    die "Usage: $0 <target-model-directory> [<term-data-file-1> [<term-data-file-2] ...]";
+}
+
+#my $fold_id = shift @ARGV;
+my $model_base_directory = shift @ARGV;
+
+my @term_entries;
+if ( $do_train ) {
+    @term_entries = map { _load_term_data( $_ , $training_sample_size ); } @ARGV;
+}
+else {
+    @term_entries = _load_term_models( $models_list );
+}
+
+#my $global_data = new DMOZ::GlobalData( data_directory => $global_data_base );
+#my $category_repository = new DMOZ::CategoryRepository( global_data => $global_data , repository_root => $repository_base );
+
+my $model_meta_data_filename = "term-model.meta";
+
+# 1 - read in featurized entries
+my $active = scalar( @term_entries );
+my %prediction;
+while ( <STDIN> ) {
+
+##    my $features_file_fh = new IO::Zlib;
+##    $features_file_fh->open( $features_file , 'rb' ) or die "Unable to open features file ($features_file): $!";
+##    while ( <$features_file_fh> ) {
+##    open FEATURES_FILE , $features_file || die "Unable to open features file ($features_file): $!";
+##    while ( <FEATURES_FILE> ) {
+
+    chomp;
+    my @fields = split /\t/ , $_;
+    my $key = shift @fields;
+
+    # do we keep this instance ?
+    my $instance_features = undef;
+    foreach my $term_entry (@term_entries) {
+
+	my $term_surface = $term_entry->{ 'term_surface' };
+
+	my $process = 1;
+	if ( $do_train ) {
+	    
+	    if ( ! $active ) {
+		last;
+	    }
+
+	    if ( $term_entry->{ 'instances_ok' } ) {
+		next;
+	    }
+	    
+	    if ( ! defined( $term_entry->{ 'instances' }->{ $key } ) ) {
+		
+		my $term_instances_positive_remaining = \ $term_entry->{ 'instances_positive_remaining' };
+		my $term_instances_negative_remaining = \ $term_entry->{ 'instances_negative_remaining' };
+		
+		if ( defined( $term_entry->{ 'instances_positive' }->{ $key } ) ) {
+		    $$term_instances_positive_remaining--;
+		}
+		elsif ( $$term_instances_negative_remaining ) {
+		    $$term_instances_negative_remaining--;
+		}
+		else {
+		    $process = 0;
+		}
+				
+		if ( ! $$term_instances_positive_remaining && ! $$term_instances_negative_remaining ) {
+		    my $term_surface = $term_entry->{ 'term_surface' };
+		    print STDERR ">> reached target instance count for [$term_surface] ...\n";
+		    $term_entry->{ 'instances_ok' } = 1;
+		    $active--;
+		}
+		
+	    }
+	    
+	}
+
+	if ( ! $process ) {
+	    next;
+	}
+
+	# parse instance features if we haven't done so already
+	if ( ! defined( $instance_features ) ) {
+	    $instance_features = +{};
+	    map { my ($feature_key,$feature_id) = split /:/ , $_; $instance_features->{ $feature_key } = $feature_id; } @fields;
+	}
+	
+	if ( $do_train ) {
+	    
+	    $term_entry->{ 'instances' }->{ $key } = $instance_features;
+	    
+	}
+	# TODO : should this be moved to the second-pass loop ? (right now I'm think that no, but it might be cleaner to do so)
+	else {
+
+#	    $prediction{ $term_surface } = _evaluate_term_model( $term_entry , $instance_features );
+	    
+	}
+	
+##    close FEATURES_FILE;
+##    $features_file_fh->close;
+	
+    }
+
+}
+
+# train indididual term models (if required)
+foreach my $term_entry (@term_entries) {
+
+    my $term_id = $term_entry->{ 'term_id' };
+    my $term_surface = $term_entry->{ 'term_surface' };
+
+    # instantiate NPModel (rename ?) and train
+    my $term_model_directory = join( "/" , $model_base_directory , "${term_id}.model" );
+    mkpath( $term_model_directory );
+    my $term_model_file = join( "/" , $term_model_directory , "model" );
+    my $term_model_meta_data = join( "/" , $term_model_directory , $model_meta_data_filename );
+
+=pod
+    map { $_->[ 0 ]->prepare_data; } values( %instances );
+    map { push @_instances , $_->[ 0 ]; push @_instances_label , [ $_->[ 1 ] ]; } values( %instances );
+=cut
+
+    my $learner = Algorithm::LibLinear->new(
+	cost => 1,
+	epsilon => 0.01,
+	solver => 'L2R_L2LOSS_SVC_DUAL',
+	weights => [
+	    +{ label => 1, weight => 1, },
+	    +{ label => -1, weight => 1, },
+	],
+	);
+
+    # Loads a training data set from DATA filehandle
+    my @term_data = map { +{ feature => $term_entry->{ 'instances' }->{ $_ } , label => defined( $term_entry->{ 'instances_positive' }->{ $_ } ) ? 1 : -1 } } keys( %{ $term_entry->{ 'instances' } } );
+    my $data_set = Algorithm::LibLinear::DataSet->new( data_set => \@term_data );
+
+    # Executes cross validation.
+    my $accuracy = $learner->cross_validation(data_set => $data_set, num_folds => 5);
+    print STDERR "[$term_id/$term_surface] $accuracy\n";
+
+    # Executes training.
+    my $classifier = $learner->train(data_set => $data_set);
+
+    # Write out classifier
+    $classifier->save( filename => $term_model_file );
+
+    print join( "\t" , "__MODEL__" , $term_surface , $term_id , $term_model_file ) . "\n";
+
+    my %contingency;
+    foreach my $data_entry (@term_data) {
+
+	my @prediction = $classifier->predict_values( feature => $data_entry->{ 'feature' } );
+	
+	my $_true = $data_entry->{ 'label' };
+	my $_prediction = $prediction[ 0 ][ 0 ];
+
+	print STDERR join( "\t" , "instance" , encode_json( { 'true' => $data_entry->{ 'label' } , 'prediction' => \@prediction } ) ) . "\n";
+
+	if ( $_true > 0 ) {
+	    if ( $_prediction >= 0 ) {
+		$contingency{ '11' }++;
+	    }
+	    else {
+		$contingency{ '10' }++;
+	    }
+	}
+	else {
+	    if ( $_prediction >= 0 ) {
+		$contingency{ '01' }++;
+	    }
+	    else {
+		$contingency{ '00' }++;
+	    }
+	}
+
+    }
+
+    print STDERR join( "\t" , "contingency" , encode_json( \%contingency ) ) . "\n";
+    
+=pod
+
+    my @instances_labels = map { [ defined( $term_entry->{ 'instances_positive' } ) || 0 ] } @instances_keys;
+
+    # CURRENT : abstract out Weka at this point
+
+    # TODO : needed ? / clean this up ?
+    my $feature_set = undef;
+    my $term_model = new NPModel::BinaryClassifier(
+	id => $term_id,
+	base_directory => $term_model_directory,
+	bin_root => $FindBin::Bin,
+	contents_featurized => \@instances_features,
+	description => join( " / " , "binary-classification-model" , $term_surface ),
+	);
+
+    # initialize model
+    $term_model->initialize();
+
+    # train model
+    $term_model->train( \@instances_labels );
+
+    # finalize model
+    $term_model->finalize();
+
+    # write out model configuration / feature set / etc
+    $term_model->write_out( $term_model_meta_data );
+=cut
+
+}
+
+sub _load_term_data {
+
+    my $filename = shift;
+    my $instance_limit = shift;
+
+    my $term_file_content = read_file( $filename );
+    my @term_file_fields = split /\t/ , $term_file_content;
+    my $term_surface = shift @term_file_fields;
+    my $term_id = shift @term_file_fields;
+    my $term_entry_json = shift @term_file_fields;
+    my $term_entry = decode_json( $term_entry_json );
+
+    # TODO : duplicate with abstractive-label-exploder
+    my $instance_ids = $term_entry->{ 'instance_id::list' };
+    my $appears_in_summaries = $term_entry->{ '+appears_in_summary::list' };
+    my @check_list = ( $instance_ids , $appears_in_summaries );
+    my $reference_count = scalar( @{ $check_list[ 0 ] } );
+    for ( my $i = 1; $i <= $#check_list; $i++ ) {
+	my $current_count = scalar( @{ $check_list[ $i ] } );
+	if ( $reference_count != $current_count ) {
+	    die "[$term_surface] entry count mismatch : $current_count / $reference_count";
+	}
+    }
+
+    my %instances_positive;
+    my $instance_count_positive = 0;
+    for ( my $i = 0; $i < $reference_count; $i++ ) {
+	my $instance_id = $instance_ids->[ $i ];
+	my $appears_in_summary = $appears_in_summaries->[ $i ];
+	if ( $appears_in_summary ) {
+	    $instance_count_positive++;
+	    $instances_positive{ $instance_id } = 1;
+	}
+	# TODO : what if all positive instances are from the same category ? ==> require category diversity to be considered abstractive ?
+    }
+
+
+    # read in feature data
+    # on the way, collect negative instances (i.e. balance out training set)
+    # TODO :use entries from the same category ==> should provide samples that are sufficiently close to the positive set ?
+
+=pod
+    my @candidate_categories = uniq map { $_->[ 0 ]->category_data } values( %instances ); 
+    my @candidate_instances_negative = shuffle grep { ! defined( $instances{ $_->url } ) } map { @{ $_->get_fold( $fold_id )->fold_data } } @candidate_categories;
+    for ( my $i=0; $i<$urls_positive_count; $i++ ) {
+	my $instance = $candidate_instances_negative[ $i ];
+	$instances{ $instance->url } = [ $instance , 0 ];
+    }
+=cut
+
+    my $instance_target_count = $instance_limit || $instance_count_positive;
+    return {
+	'term_id' => $term_id ,
+	'term_surface' => $term_surface ,
+	'instances' => {} ,
+	'instances_ok' => 0 ,
+	'instances_positive' => \%instances_positive ,
+	'instances_positive_remaining' => $instance_target_count ,
+	'instances_negative_remaining' => $instance_target_count
+    };
+
+}
+
+# 2 - if multiple entries are provided, we will attempt to train a joint model
+# TODO
+
+1;

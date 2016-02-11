@@ -1,0 +1,15 @@
+#!/bin/bash
+
+CATEGORY_BASE=$1
+
+if [[ ! -f "${CATEGORY_BASE}" ]]; then
+    echo "Usage: $0 <category-base>";
+    exit;
+fi
+
+CATEGORY_BASE_DIR=`dirname ${CATEGORY_BASE}`
+CATEGORY_BASE_NAME=`basename ${CATEGORY_BASE}`
+
+NGRAM_FIELDS=`find ${CATEGORY_BASE_DIR}/ -type f -name "${CATEGORY_BASE_NAME}.*.ngrams.*" | grep -v mapping | sort | tr '\n' '\t'`
+
+echo -e "${CATEGORY_BASE}\t${NGRAM_FIELDS}"

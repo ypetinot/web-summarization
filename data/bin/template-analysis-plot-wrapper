@@ -1,0 +1,16 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+INPUT_FILE=$1
+
+if [ -z "${INPUT_FILE}" ]; then
+    echo "Usage: $0 <input-file>"
+    exit 1;
+fi
+
+# generate plots
+###R --slave --vanilla < ${BINDIR}/template-analysis-plot.R --args ${INPUT_FILE}
+R --slave --vanilla < ${BINDIR}/template-analysis-plot-2.R --args ${INPUT_FILE}
+
+#| tr -d '"' | awk '{ print $2 "\t" $3 "\t" $4 }'

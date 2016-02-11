@@ -1,0 +1,230 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+# TODO : this dependency means we should either move this script somewhere else or promote the TargetAdapter::Extractive::Analyzer to the main src directory
+use lib "${FindBin::Bin}/../../summarizers/graph-summarizer-4/src/";
+
+use Category::UrlData;
+use TargetAdapter::Extractive::Analyzer;
+
+use Algorithm::Diff qw(
+        LCS LCS_length LCSidx
+        diff sdiff compact_diff
+        traverse_sequences traverse_balanced );
+use File::Slurp;
+use JSON;
+use List::Util qw/max/;
+use List::MoreUtils qw/uniq/;
+use Text::Trim;
+
+# TODO : turn these into parameters
+my $threshold = 0.7;
+my $appearance_threshold = 2;
+
+# extractive analyzer
+my $extractive_analyzer = new TargetAdapter::Extractive::Analyzer;
+
+# each URL is considered only once
+# TODO : can we filter upstream instead ?
+my %url2seen;
+
+sub _load_url_data {
+    my $url = shift;
+    my $url_data = Category::UrlData->load_url_data( $url );
+    if ( ! defined( $url_data ) ) {
+	if ( ! defined( $url_data ) ) {
+	    print STDERR "Unable to load data for $url ...\n";
+	}
+	$url2seen{ $url }++;
+    }
+    return $url_data;
+}
+
+my $OPERATION_SUBSTITUTION = 's';
+my $OPERATION_DELETION = 'd';
+my $OPERATION_INSERTION = 'i';
+
+my $EPSILON_DELETION = '[[__EPSILON_DELETION__]]';
+my $EPSILON_INSERTION = '[[__EPSILON_INSERTION__]]';
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+
+    my $target_url = shift @fields;
+    my $reference_url = shift @fields;
+    my $overlap = shift @fields;
+    my $target_summary = shift @fields;
+    my $reference_summary = shift @fields;
+
+    # TODO : to be replaced with code from DiffAnalysis
+
+    # Note : we look at any URL at most once => the attention is to avoid overfitting to certain kind of pairings
+    if ( $overlap < $threshold || defined( $url2seen{ $target_url } ) || defined( $url2seen{ $reference_url } ) ) {
+	next;
+    }
+
+    # load instances
+    my ( $target_object , $reference_object ) = map { _load_url_data( $_ ) } ( $target_url , $reference_url );
+    if ( ( ! defined( $target_object ) ) || ( ! defined( $reference_object ) ) ) {
+	next;
+    }
+
+    # mark both URLs as seen
+    map { $url2seen{ $_ }++ } ( $target_url , $reference_url );
+
+    # extractive analysis => get sorted list of extractive terms for instance_i wrt. instance_j
+    # CURRENT : make sure the current (reference) filler can be identified using the same heuristic => if so the reference filler can be used to generate a whole family of features for the potential replacement
+    my $extractive_tokens = $extractive_analyzer->analyze( $target_object , $reference_object , $reference_summary , threshold => $appearance_threshold );
+    my $n_extractive_tokens = scalar( @{ $extractive_tokens } );			
+    my @extractive_candidates = map { $extractive_tokens->[ $_ - 1 ]->[ 0 ] } uniq grep { $_ > 0 } ( 1 , int( $n_extractive_tokens / 2 ) , $n_extractive_tokens );
+    
+    # CURRENT : learning instance < target_object , reference_object , reference_summary , reference_summary_term , target_summary_term , ground_truth >
+
+    # TODO : could probably include the serialized LCS in the incoming stream
+    # TODO : use Berkeley Aligner for alignment ?
+    my ( $lcs , $diff ) = _compute_lcs( $reference_summary , $target_summary );
+
+    # TODO : should we consider all tokens ?
+    foreach my $diff_entry ( @{ $diff } ) {
+
+	my @buffer_inserts;
+	my @buffer_deletes;
+
+	# Note: for now we only look for replacements
+	map {
+
+	    my $edit_type = $_->[ 0 ];
+	    my $edit_index = $_->[ 1 ];
+	    my $edit_token = $_->[ 2 ];
+	    
+	    my $buffer = ( $edit_type eq '-' ) ? \@buffer_inserts : \@buffer_deletes ;
+	    push @{ $buffer } , $edit_token ;
+
+	} @{ $diff_entry };
+
+	my $from_string = join( " " , @buffer_inserts );
+	my $to_string   = join( " " , @buffer_deletes );
+
+	my $has_inserts = length( $from_string );
+	my $has_deletes = length( $to_string   );
+
+	my $operation = undef;
+	if ( $has_inserts && $has_deletes ) {
+
+	    # TODO : improve LCS computation
+	    if ( lc( $from_string ) eq lc( $to_string ) ) {
+		next;
+	    }
+
+	    # CURRENT : improve segmentation, a lot of instances are due to punctuation characters ...
+	    # CURRENT : add comparison features : first characters overlap
+	    # CURRENT : add comparison features : last characters overlap
+
+	    # substitution
+	    $operation = $OPERATION_SUBSTITUTION;
+
+	}
+	elsif ( $has_inserts ) {
+
+	    # insertion => equivalent to replacing an \epsilon with a new token
+	    $operation = $OPERATION_INSERTION;
+	    
+	    # CURRENT : produce data for this operation as well => what would a unified adaptation model look like ?
+	    $from_string = $EPSILON_INSERTION;
+
+	}
+	else {
+
+	    # deletion => equivalent to replacing a token with an \epsilon
+	    $operation = $OPERATION_DELETION;
+
+	    # CURRENT : maybe this would be a good time to limit the number of tokens that are produced for negative instances
+	    # ==> always include [[EPSILON]] ? (do we need a seperate epsilon for deletion and insertion ?)
+	    $to_string = $EPSILON_DELETION;
+
+	}
+
+	my @to_string_candidates;
+
+	# add ground truth to list of candidates
+	# Note : we will still have to make sure that this ground truth is present in the target
+	push @to_string_candidates , [ 1 , $to_string ];
+	push @to_string_candidates , map { [ 0 , $_->surface ] } @extractive_candidates;
+	# TODO : also add instances for $EPSILON_DELETION and $EPSILON_INSERTION if not present ?
+
+	# list of instances, both positive (only one) and negative (how many) associated with the current edit
+	my @instances;
+
+	# only generate 2/3 instances => 1 for the most frequent extractive term, 1 for the extractive term corresponding to the median frequency, and finally 1 for the least frequent extractive term
+	# (all of these above a certain threshold of appearance)
+	# CURRENT : insertion is a more complex phenomenon ?
+	#           => extractive target adaptation can be considered as jointly performing: (1) substitution - ok ; (2) deletion (using an epsilon replacement) - ok ; (3) insertion => problem that means assuming an epsilon in-between existing tokens => possible be need to change infrastructure
+
+	# generate all possible instances for the current edit
+	my $has_positive_ground_truth = 0;
+
+	for my $to_string_candidate (@to_string_candidates) {
+
+	    # generate instances
+	    # TODO : could allow instead for a max number of extractive candidates => not of a huge importance I believe as long as we have both strong and weak candidates
+
+	    # get ground truth => whether target extractive token matches the edit's source
+	    # TODO : what is the best way to match ?
+            ###my $ground_truth = ( $summary_i =~ $extractive_token->as_regex ) || 0;
+	    my $ground_truth = $to_string_candidate->[ 0 ];
+	    $has_positive_ground_truth += $ground_truth;
+	    
+	    # CURRENT : we also need to make sure that the ground truth appears in a valid alignment
+	    #           => post-process lcs to generate a mapping between extractive terms => this gives the original filler => problem : shouldn't the original filler be identified using the Analyzer's algorithm => yes and I think it is the case actually => to be verified
+	    
+	    push @instances , [ $from_string , $to_string_candidate->[ 1 ] , $ground_truth , $operation ];
+	    
+	}
+	
+	# Note : we require at least one positive instance to consider this pair of URLs are a learning instance
+	if ( $has_positive_ground_truth ) {
+	    
+	    map {
+		# TODO : should we be outputting token indices instead of actual strings ?
+		print join( "\t" , $target_url , $reference_url , @{ $_ } , $target_summary , $reference_summary , $overlap , encode_json( $lcs ) , encode_json( $diff ) ) . "\n";
+	    } @instances;
+	    
+	}
+	
+    }
+
+}
+
+# TODO : replace by a call to Similarity::lcs_similarity ? or at least promote the lcs/diff computation code
+sub _compute_lcs {
+
+    my $summary_1 = shift;
+    my $summary_2 = shift;
+
+    # Note : this should be moved back to the raw data generation step
+    my ( $seq_1 , $seq_2 ) = map {
+	my $summary = $_;
+	$summary =~ s/\s+/ /sgi;
+	$summary = trim( $summary );
+	my @tokens = split /\s+|\p{Punct}+/ , $summary;
+	\@tokens;
+    } ( $summary_1 , $summary_2 );
+
+    my @lcs = LCS( $seq_1 , $seq_2 );
+    my @diff = diff( $seq_1 , $seq_2 );
+
+    return ( \@lcs , \@diff );
+
+}
+
+1;

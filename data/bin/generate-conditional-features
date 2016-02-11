@@ -1,0 +1,231 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use DMOZ::GlobalData;
+
+use Getopt::Long;
+use Pod::Usage;
+
+my $joint_counts_threshold = 0;
+
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure qw(bundling pass_through);
+
+GetOptions('joint-counts-threshold=i' => \$joint_counts_threshold, 'help|?' => \$help, man => \$man) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if ( $man );
+
+if ( scalar(@ARGV) < 1 ) {
+    die "Usage: $0 <global-data-directory>";
+}
+
+my $global_data_directory = shift @ARGV;
+my $field = shift @ARGV;
+
+# central generaion and then make available on all machines (server/copy ?)
+
+# 0 - generate feature files for ALL ODP categories [running]
+# Done through run-data-generation
+
+# 1 - generate reference features (1/2/3-grams) and get counts for these => only consider reference features appearing at least N=5/10 ? times
+# 2 - for every ODP gist term count co-occurrence with these reference features
+# --> paste summarry + all ngram files
+# --> feed to perl script and count
+
+# 3 - make available in an efficient manner
+
+# instantiate DMOZ::GlobalData object
+my $global_data = new DMOZ::GlobalData( data_directory => $global_data_directory );
+
+my $current_reference_entry = undef;
+my $current_reference_entry_key = undef;
+my $current_reference_entry_count = 0;
+my $current_reference_entry_count_binary = 0;
+my $current_reference_entry_data = [];
+my $current_reference_entry_field = undef;
+
+my $current_entry = undef;
+my $current_entry_key = undef;
+my $current_entry_count = 0;
+my $current_entry_count_binary = 0;
+
+my %instance_counts;
+
+while ( <STDIN> ) {
+    
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $field = shift @fields;
+
+    if ( $field =~ m/^__/so ) {
+	my $actual_field = shift @fields;
+	my $ngram_order = shift @fields;
+	my $count = shift @fields;
+	if ( ! defined( $instance_counts{ $actual_field } ) ) {
+	    $instance_counts{ $actual_field } = {};
+	}
+	$instance_counts{ $actual_field }{ $ngram_order } += $count;
+	next;
+    }
+
+    my $ngram_order = shift @fields;
+    my $summary_object = shift @fields;
+    my $content_ngram = shift @fields;
+    my $count = shift @fields;
+    my $count_binary = shift @fields;
+
+    if ( ! $count || ! $count_binary ) {
+	die "We have a problem : $count / $count_binary";
+    }
+
+    my $reference_entry_key = join( "::" , $field , $ngram_order , $summary_object );
+    my $entry_key = join( "::" , $reference_entry_key , $content_ngram );
+
+    if ( defined( $current_reference_entry_key ) && ( $current_reference_entry_key ne $reference_entry_key ) ) {
+	
+	# process entry
+	_process_entry( $current_reference_entry_field , $current_reference_entry , $current_reference_entry_data ,
+			$current_reference_entry_count ,
+			$current_reference_entry_count_binary, $joint_counts_threshold );
+	
+	# reinitialize current reference entry data
+	$current_entry = undef;
+	$current_reference_entry_count = 0;
+	$current_reference_entry_count_binary = 0;
+	$current_reference_entry_data = [];
+
+    }
+    elsif ( defined( $current_entry_key ) && ( $current_entry_key ne $entry_key ) ) {
+
+	# buffer current entry
+	push @{ $current_reference_entry_data } , [ $current_entry , $current_entry_count , $current_entry_count_binary ];
+
+	# reinitialize current entry data
+	$current_entry_count = 0;
+
+    }
+       
+    # 1 - accumulate current reference entry
+    $current_reference_entry = [ $field , $ngram_order , $summary_object ];
+    $current_reference_entry_key = $reference_entry_key;
+    $current_reference_entry_count += $count;
+    $current_reference_entry_count_binary += $count_binary;
+    $current_reference_entry_field = $field;
+
+    # 2 - accumulate current entry
+    $current_entry = [ $field , $ngram_order , $summary_object , $content_ngram ];
+    $current_entry_key = $entry_key;
+    $current_entry_count += $count;
+    $current_entry_count_binary += $count_binary;
+
+}
+
+# last one (is there a way to avoid this ?)
+if ( $current_entry ) {
+    _process_entry( $field , $current_reference_entry , $current_reference_entry_data ,
+		    $current_reference_entry_count ,
+		    $current_reference_entry_count_binary , $joint_counts_threshold );
+}
+
+sub _process_entry {
+
+    my $field = shift;
+    my $reference_entry = shift;
+    my $reference_entry_data = shift;
+    my $reference_entry_count = shift;
+    my $reference_entry_count_binary = shift;
+    my $joint_counts_threshold = shift;
+
+    # now iterate over all data entries
+    foreach my $joint_entry (@{ $reference_entry_data }) {
+
+	my $entry = $joint_entry->[ 0 ];
+	my $entry_count = $joint_entry->[ 1 ];
+
+	if ( $entry->[ 0 ] ne $reference_entry->[ 0 ] ||
+	     $entry->[ 1 ] != $reference_entry->[ 1 ] ||
+	     $entry->[ 2 ] ne $reference_entry->[ 2 ] ) {
+	    die "We have a problem !";
+	}
+
+	# process entry if above threshold
+	if ( $entry_count > $joint_counts_threshold ) {
+	    
+	    my $joint_feature_key_field = $field;
+	    if ( $joint_feature_key_field ne $entry->[ 0 ] ) {
+		die "We have another problem !";
+	    }
+	    my $joint_feature_key_ngram_order = $entry->[ 1 ];
+	    my $joint_feature_key_summary_object = $entry->[ 2 ];
+	    my $joint_feature_key_data_feature = $entry->[ 3 ];
+	    
+	    my $n = $global_data->total_occurrences( $joint_feature_key_field , $joint_feature_key_ngram_order );
+	    
+	    # global data summary object count
+	    # TODO : support higher-order summary n-grams ?
+	    my $global_data_summary_object_count = $global_data->global_count( 'summary' , 1 , $joint_feature_key_summary_object );
+
+	    # global data feature count
+	    my $global_data_feature_count = $global_data->global_count( $joint_feature_key_field , $joint_feature_key_ngram_order , $joint_feature_key_data_feature );
+	    
+	    # Chi-square computation
+	    # TODO: use binary counts (?) --> need binary LM
+	    my $n_s1d1 = ( $entry_count );
+	    my $n_s0d1 = ( $global_data_feature_count - $n_s1d1 );
+	    my $n_s1d0 = ( $global_data_summary_object_count - $n_s1d1 );
+	    my $n_s0d0 = ( $n - $n_s0d1 - $n_s1d1  - $n_s1d0 );
+	    
+	    if ( $n_s1d0 < 0 ) {
+		print STDERR "We have a probem in the computation of the Chi square for [ $joint_feature_key_summary_object / $joint_feature_key_data_feature ] ...\n";
+		next;
+	    }
+	    
+=pod
+                my $p_s1 = ( $n_s1d0 + $n_s1d1 ) / $this->instance_count();
+		my $p_s0 = 1 - $p_s1;
+		my $p_d1 = ( $n_s0d1 + $n_s1d1 ) / $this->instance_count();
+		my $p_d0 = 1 - $p_d1;
+
+		my $e_s1d1 = $this->instance_count() * $p_s1 * $p_d1;
+		my $e_s0d1 = $this->instance_count() * $p_s0 * $p_d1;
+		my $e_s0d0 = $this->instance_count() * $p_s0 * $p_d0;
+		my $e_s1d0 = $this->instance_count() * $p_s1 * $p_d0;
+		
+		my $chi_square_score = ( ( $n_s1d1 - $e_s1d1 )**2 / $e_s1d1 ) +
+		    ( ( $n_s0d1 - $e_s0d1 )**2 / $e_s0d1 ) +
+		    ( ( $n_s0d0 - $e_s0d0 )**2 / $e_s0d0 ) +
+		    ( ( $n_s1d0 - $e_s1d0 )**2 / $e_s1d0 );
+=cut
+
+	    my $chi_square_nominator = ( $n_s1d1 + $n_s1d0 + $n_s0d1 + $n_s0d0 ) * ( $n_s1d1 * $n_s0d0 - $n_s1d0 * $n_s0d1 );
+	    my $chi_square_denominator = ( ( $n_s1d1 + $n_s0d1 ) * ( $n_s1d1 + $n_s1d0 ) * ( $n_s1d0 + $n_s0d0 ) * ( $n_s0d1 + $n_s0d0 ) ) + 0.00000001;
+	    my $chi_square_score = $chi_square_nominator / $chi_square_denominator;
+	    
+	    # Should not eliminate any case exhibiting some kind of dependency
+	    if ( $chi_square_score < 0.001 ) {
+		next;
+	    }
+
+	    my $conditional_probability = $n_s1d1 / $n;
+	    
+	    print join( "\t" , $joint_feature_key_summary_object , $joint_feature_key_field , $joint_feature_key_ngram_order , $joint_feature_key_data_feature , $n_s1d1 , $chi_square_score , $conditional_probability ) . "\n";
+	    
+	}
+
+    }
+    
+# Nice to have : per-modality vs. in any modality --> how do we enable this ?
+
+}
+
+1;
