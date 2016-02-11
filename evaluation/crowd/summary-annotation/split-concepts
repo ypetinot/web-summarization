@@ -1,0 +1,405 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+#my $dist_base = "/proj/nlp/users/ypetinot/ocelot/svn-research/trunk/";
+#use lib qw|\Q${dist_base}\E/src/perl/|;
+#use lib qw|${dist_base}/third-party/local/lib/|;
+
+use lib '/proj/nlp/users/ypetinot/ocelot/svn-research/trunk/src/perl/';
+use lib '/proj/nlp/users/ypetinot/ocelot/svn-research/trunk/third-party/local/lib/';
+
+use Lingua::StopWords qw( getStopWords );
+use Text::Trim;
+
+my $en_stopwords = getStopWords( 'en' );
+
+my @buffer;
+my %counts;
+
+while ( <STDIN> ) {
+
+    chomp;
+    
+    my $line = $_;
+    my @fields = split /\t/, $line;
+    my $url = shift @fields;
+    my $summary = shift @fields;
+    my $summary_parsed = shift @fields;
+
+##    my $summary_chunked = shift @fields;
+##    my @summary_tokens = grep { defined( $_ ) && length( $_ ) } split / /, $summary_chunked;
+
+    my @summary_tokens = @fields;
+
+    _update_stats( \@summary_tokens );
+
+    push @buffer, [ $url , $summary , $summary_parsed , \@summary_tokens ];
+
+}
+
+sub _normalize {
+
+    my $string = shift;
+
+    my $normalized_string = lc( $string );
+    
+    return $normalized_string;
+
+}
+
+sub _update_stats {
+
+    my $tokens = shift;
+
+    foreach my $token (@{ $tokens }) {
+	$counts{ _normalize( $token ) }++;
+    }
+
+}
+
+foreach my $buffer_entry ( @buffer ) {
+    
+    my $url = $buffer_entry->[ 0 ];
+    my $summary = $buffer_entry->[ 1 ];
+    my $summary_parsed = $buffer_entry->[ 2 ];
+    my $tokens = $buffer_entry->[ 3 ];
+
+##    # -1 - split summary info sentences
+##    my $summary_sentences = _get_sentences( $summary_parsed );
+
+##    # 0 - split summary into phrases
+##    my $summary_phrases = _get_phrases( $summary_parsed );
+
+    # 1 - split summary into components
+    my $summary_components = _get_components( $tokens );
+###    my $summary_components = _get_components_2( $tokens );
+
+    # 2 - clean up components
+    my @summary_components_cleaned = grep { length( $_ ) > 2; } map { _clean_component( $_ ); } @{ $summary_components };
+    if ( ! scalar( @summary_components_cleaned ) ) {
+	next;
+    }
+
+    # 3 - output
+    print join( "\t" , $url , $summary , $summary_parsed , @summary_components_cleaned ) . "\n";
+
+}
+
+sub _get_sentences {
+
+    my $summary_parsed = shift;
+    
+    my @sentences;
+
+    my @elements = split /(\s|\))/, $summary_parsed;
+
+    while ( scalar(@elements) ) {
+	
+	my $current_element = shift @elements;
+	if ( $current_element eq '(S' ) {
+
+	    my @sentence_buffer;
+	    my $balanced = 1;
+
+	    while ( ( $balanced != 0 ) && scalar(@elements) ) {
+
+		$current_element = shift @elements;
+		if ( $current_element =~ /^\(/ ) {
+		    $balanced++;
+		}
+		elsif ( $current_element eq ')' ) {
+		    $balanced--;
+		}
+		 
+		push @sentence_buffer, $current_element;
+
+	    }
+
+	    push @sentences, join( '' , @sentence_buffer );
+
+	}
+
+    }
+    
+    return \@sentences;
+
+}
+
+sub _get_phrases {
+
+    my $summary_parsed = shift;
+    my $phrase_set = shift || [];
+
+    my @elements = split /(\s|\))/, $summary_parsed;
+    my $head = shift @elements;
+    my $tail = pop @elements;
+    my $remainder = join( '' , @elements );
+
+    if ( $head eq 'NP' || $head eq 'PP' ) {
+
+	
+
+    }
+    else {
+	return _get_phrases( $remainder , $phrase_set );
+    }
+
+}
+
+sub _clean_component {
+
+    my $component = shift;
+
+    my @cleaned_elements;
+
+    my @component_parts = split /\t/ , $component;
+    
+    for ( my $i=0; $i<scalar(@component_parts); $i++ ) {
+
+	my $component_part = $component_parts[ $i ];
+	my @elements = split /\//, $component_part;
+
+	my $surface = $elements[ 0 ];
+	my $pos = $elements[ 1 ];
+	my $sequence = $elements[ 2 ];
+	my $word_graph_status = $elements[ 3 ];
+
+	if ( $surface eq 'Offers' || $surface eq 'Provides' ) {
+	    # we skip ...
+	}
+	elsif ( ( ! $i ) && $pos =~ m/DT$/ ) {
+	    # we skip ...
+	}
+	elsif ( $surface =~ m/^\d+$/ ) {
+	    # we skip ...
+	}
+	else {
+	    # we keep ...
+	    push @cleaned_elements, $surface;
+	}
+
+    }
+
+    return join( " " , @cleaned_elements );
+
+}
+
+sub _distance_2_next {
+
+    my $array = shift;
+    my $current_index = shift;
+    my $target_object = shift;
+
+    my $distance = 0;
+    for (my $i=$current_index + 1; $i<scalar(@$array); $i++) {
+
+	$distance++;
+
+	my $current_object = $array->[ $current_index ];
+	if ( $current_object =~ m/\Q$target_object\E/ ) {
+	    last;
+	}
+	
+    }
+
+    return $distance;
+
+}
+
+# Focus on components for which segmentation is unambiguous
+sub _get_components_2 {
+
+    my $tokens = shift;
+    
+    my @components;
+    my $max = scalar( @{ $tokens } );
+    my $punctuation_leading = 0;
+    my $punctuation_trailing = 0;
+
+    for (my $i = 0; $i < $max; $i++) {
+	
+	my @component_buffer;
+
+	if ( $tokens->[ $i ] =~ m/^\p{Punct}/ ) {
+	    $punctuation_leading = 1;
+	}
+
+	my $break = 0;
+	while ( $i < $max && $tokens->[ $i ] =~ m/NP/ && $tokens->[ $i ] !~ m/CC/ && !$break ) {
+
+	    my @current_token_fields = split /\// , $tokens->[ $i ];
+
+	    if ( scalar( @current_token_fields ) == 3 ) {
+
+		my $current_token_surface = shift @current_token_fields;
+		my $current_token_pos = shift @current_token_fields;
+		my $current_token_sequence = shift @current_token_fields;
+
+		# We trust the input chunking and split on punctuation
+		if ( $current_token_surface =~ m/^\p{Punct}+/ ) {
+		    $break = 1;
+		}
+		else {
+		    #push @component_buffer , $current_token_surface;
+		    push @component_buffer, $tokens->[ $i ];
+		}
+		
+	    }
+
+	    $i++;
+
+	}
+
+	if ( scalar( @component_buffer ) ) {
+
+	    if ( $i < $max - 1 ) {
+		$punctuation_trailing = ( $tokens->[ $i ] =~ m/^\p{Punct}/ );
+	    }
+	    elsif ( $i == $max ) {
+		$punctuation_trailing = 1;
+	    }
+
+	    if ( $punctuation_leading && $punctuation_trailing ) {
+		push @components , join( "\t" , @component_buffer );
+	    }
+
+	}
+
+    }
+
+    return \@components;
+
+}
+
+sub _get_components {
+
+    my $tokens = shift;
+    
+    my @components;
+    my $max = scalar( @{ $tokens } );
+    for (my $i = 0; $i < $max; $i++) {
+	
+	my @component_buffer;
+	my $has_np = 0;
+
+	my $break = 0;
+	while ( $i < $max && $tokens->[ $i ] =~ m/NP/ && $tokens->[ $i ] !~ m/CC/ && !$break ) {
+
+	    my @current_token_fields = split /\// , $tokens->[ $i ];
+
+	    my $current_token_surface = shift @current_token_fields;
+	    my $current_token_pos = shift @current_token_fields;
+	    my $current_token_sequence = shift @current_token_fields;
+	    my $current_token_word_graph_status = shift @current_token_fields;
+	    
+	    # We trust the input chunking and split on punctuation
+	    if ( $current_token_surface =~ m/^\p{Punct}+/ ) {
+		$break = 1;
+	    }
+	    else {
+		#push @component_buffer , $current_token_surface;
+		push @component_buffer, $tokens->[ $i ];
+	    }
+	    
+	    $has_np += ( $tokens->[ $i ] !~ m/SLOT_/ );
+
+	    $i++;
+
+	}
+
+	if ( scalar( @component_buffer ) && $has_np ) {
+	    push @components , join( "\t" , @component_buffer );
+	}
+
+    }
+
+    return \@components;
+
+}
+
+=pod
+sub _get_components {
+
+    my $tokens = shift;
+
+    my @components;
+    my @component_buffer;
+    for (my $i = 0; $i < scalar(@{ $tokens }); $i++) {
+
+	my $current_component = $tokens->[ $i ];
+	my $can_split = 0;
+	my $can_include = 1;
+
+	my $final = ( $i == scalar(@{ $tokens }) - 1 );
+
+	if ( $current_component eq 'and' && (_distance_2_next( $tokens , $i , ',' ) > 2 ) ) {
+	    $can_split = 1;
+	    $can_include = 0;
+	}
+	elsif ( ( $current_component eq '.' ) && ( ( _distance_2_next( $tokens , $i , '.' ) > 2 ) || $final ) ) {
+	    $can_split = 1;
+	    $can_include = 0;
+	}
+#	elsif ( ( $current_component eq '-' ) ) { # we don't split on -
+#	    $can_split = 0;
+#	    $can_include = 1;
+#	}
+	elsif ( $current_component =~ m/^\p{Punct}+$/ && ( _distance_2_next( $tokens , $i , '.' ) > 2 ) ) {
+	    $can_split = 1;
+	    $can_include = 0;
+	}
+	elsif ( $current_component =~ m/^\p{Punct}+$/ ) {
+	    $can_split = 1;
+	    $can_include = 0;
+	}
+
+	# covers the last token ( if it's not a punctuation marker )
+	if ( $final ) { 
+	    $can_split = 1;
+	}
+	
+	if ( $can_include ) {
+	    push @component_buffer, $current_component;
+	}
+	     
+	if ( $can_split && scalar( @component_buffer ) ) {
+
+	    # Filter stop words at the beginning and end of the component
+	    my $filtered_component_buffer = _trim_stopwords( \@component_buffer );
+
+	    my $component_string = join( " " , @{ $filtered_component_buffer } );
+	    push @components, $component_string;
+	    @component_buffer = ();
+
+	}
+
+    }
+
+    return \@components;
+
+}
+=cut
+
+sub _trim_stopwords {
+
+    my $buffer = shift;
+
+    my @output_buffer = @{ $buffer };
+   
+    # filter leading stopwords
+    while ( $en_stopwords->{ $output_buffer[ 0 ] } ) {
+	shift @output_buffer;
+    }
+
+    # filter trailing stopwords
+    while ( $en_stopwords->{ $output_buffer[ $#output_buffer ] } ) {
+	pop @output_buffer;
+    }
+
+    return \@output_buffer;
+
+}
+
+1;

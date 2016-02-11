@@ -1,0 +1,80 @@
+#!/usr/bin/env perl
+
+#TODO : find a way of combining with generate examples ?
+
+use strict;
+use warnings;
+
+my @line_buffer;
+while ( <STDIN> ) {
+
+    chomp;
+    my $line = $_;
+
+    if ( ! length( $line ) ) {
+	if ( scalar( @line_buffer ) ) {
+	    _generate_example( \@line_buffer );
+	    @line_buffer = ();
+	}
+	next;
+    }
+
+    push @line_buffer , $line;
+
+}
+
+# TODO : how can we avoid this ? => binary flag to force one more pass => turn while loop into infinite loop
+if ( scalar( @line_buffer ) ) {
+    _generate_example( \@line_buffer );
+}
+
+sub _generate_example {
+
+    my $buffer = shift;
+
+    if ( scalar( @{ $buffer } ) != 4 ) {
+	die "Invalid record ...";
+    }
+
+    my $url = $buffer->[ 0 ];
+    my $output = $buffer->[ 1 ];
+    my $original = $buffer->[ 2 ];
+    my $ground_truth = $buffer->[ 3 ];
+
+    _add_line( '% ' . $output . ' / ' . $original ); 
+    _add_line( '\begin{exampleblock}{' . $url . '}' );
+
+    my ( $output_type , $output_string ) = _parse_system_string( $output );
+    _add_line( "adaptation ($output_type) : $output_string" );
+
+    my ( $original_type , $original_string ) = _parse_system_string( $original );
+    _add_line( "original ($original_type) : $original_string" );
+
+    my ( $ground_truth_type , $ground_truth_string ) = _parse_system_string( $ground_truth );
+    _add_line( "gold : $ground_truth_string" );
+
+    _add_line( '\end{exampleblock}' );
+    _add_line( '' );
+    
+}
+
+sub _parse_system_string {
+
+    my $system_string = shift;
+    my @components = split /\s+/ , $system_string;
+
+    my $type = shift @components;
+    $type =~ s/^.*-([^-]+)$/$1/sgi;
+
+    my $string = join( ' ' , @components );
+    
+    return ( $type , $string );
+
+}
+
+sub _add_line {
+    my $line = shift;
+    print "$line\n";
+}
+
+1;

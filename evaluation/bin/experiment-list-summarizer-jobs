@@ -1,0 +1,22 @@
+#!/bin/bash
+
+SUMMARIZERS_DEFINITION_FILE=$1
+
+if [[ -z "${SUMMARIZERS_DEFINITION_FILE}" || ! -f ${SUMMARIZERS_DEFINITION_FILE} ]]; then
+    echo "Usage: $0 <summarizers-definition-file>"
+    exit 1;
+fi
+
+IFS_OLD=${IFS}
+IFS=$'\n' SUMMARIZERS=( $(cat ${SUMMARIZERS_DEFINITION_FILE} | grep -v '^\#') )
+IFS=${IFS_OLD}
+
+#load_summarizers;
+cat - | while read TARGET_DATA_ENTRY; do
+    
+    let i=0
+    while (( ${#SUMMARIZERS[@]} > i )); do
+	echo -e "${TARGET_DATA_ENTRY}\t${SUMMARIZERS[i++]}"
+    done
+    
+done;

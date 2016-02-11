@@ -1,0 +1,49 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+EXPERIMENT_FULL=$1
+EXPERIMENT_SYSTEMS=$2
+OUTPUT_DIRECTORY=$3
+STEP_SIZE=$4
+
+if [[ ! -f ${EXPERIMENT_FULL} || ! -f ${EXPERIMENT_SYSTEMS} || ! -d ${OUTPUT_DIRECTORY} ]]; then
+    echo "Usage: $0 <experiment-full> <experiment-systems> <output-directory> [<step-size>]"
+    exit 1;
+fi
+
+INSTANCE_COUNT=`cat ${EXPERIMENT_FULL} | wc -l`
+SYSTEM_COUNT=`cat ${EXPERIMENT_SYSTEMS} | wc -l`
+    
+if [[ -z "${STEP_SIZE}" ]]; then
+    STEP_SIZE=50
+fi
+
+STEP_SIZE_INSTANCES=$(( ${STEP_SIZE} * ${SYSTEM_COUNT} ))
+
+CURRENT_COUNT=0;
+iteration=0;
+
+OUTPUT_FILE_BASE_MARKER=data
+OUTPUT_BASE="${OUTPUT_DIRECTORY}/${OUTPUT_FILE_BASE_MARKER}-"
+HEADER=`head -n1 ${EXPERIMENT_FULL}`
+
+while [[ ${CURRENT_COUNT} -lt ${INSTANCE_COUNT} ]]; do
+    
+    TARGET_COUNT=$(( ${CURRENT_COUNT} + ${STEP_SIZE_INSTANCES} ))
+    if [[ ${TARGET_COUNT} -gt ${INSTANCE_COUNT} ]]; then
+	TARGET_COUNT=${INSTANCE_COUNT};
+	LABEL="all"
+    else
+	LABEL=${TARGET_COUNT}
+    fi
+    
+    OUTPUT_FILE="${OUTPUT_BASE}${STEP_SIZE}-${LABEL}.tsv"
+    
+    echo -e "${HEADER}" > ${OUTPUT_FILE}
+    cat ${EXPERIMENT_FULL} | tail -n +2 | head -n ${TARGET_COUNT} | sort -R >> ${OUTPUT_FILE}
+    
+    # update current count
+    CURRENT_COUNT=${TARGET_COUNT};
+    
+done;

@@ -1,0 +1,28 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+# find examples for which the output of system A is better than that of system B with respect to a specific metric
+EXPERIMENT_DIRECTORY=$1
+SYSTEM_A=$2
+SYSTEM_B=$3
+METRIC=$4
+
+if [[ ! -d ${EXPERIMENT_DIRECTORY} || -z "${SYSTEM_A}" || -z "${SYSTEM_B}" || -z "${METRIC}" ]]; then
+    echo "Usage: $0 <experiment-base-directory> <system-a> <system-b> <metric>"
+    exit 1;
+fi
+
+EXPERIMENT_GENERATION_DIRECTORY=${EXPERIMENT_DIRECTORY}/generation/
+find ${EXPERIMENT_GENERATION_DIRECTORY}/ -mindepth 1 -maxdepth 1 -type d | while read INSTANCE_DIRECTORY; do
+
+    SYSTEM_A_SUMMARY_FILE=`find ${INSTANCE_DIRECTORY}/ -type f -name '*.summary' | grep "/${SYSTEM_A}.summary"`
+    SYSTEM_B_SUMMARY_FILE=`find ${INSTANCE_DIRECTORY}/ -type f -name '*.summary' | grep "/${SYSTEM_B}.summary"`
+    if [[ ! -f "${SYSTEM_A_SUMMARY_FILE}" || ! -f "${SYSTEM_B_SUMMARY_FILE}" ]]; then
+	echo "Missing file : ${SYSTEM_A_SUMMARY_FILE} / ${SYSTEM_B_SUMMARY_FILE}"
+	exit 2;
+    fi
+    
+    perl ${BINDIR}/find-example-single ${SYSTEM_A_SUMMARY_FILE} ${SYSTEM_B_SUMMARY_FILE} ${METRIC}
+
+done;

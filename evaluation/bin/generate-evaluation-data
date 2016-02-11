@@ -1,0 +1,54 @@
+#!/bin/bash
+
+SUMMARY_DIRECTORIES_INPUT=summary_directories.txt
+OUTPUT_FILE=evaluation_data.csv
+SIMILARITY_VS_CONTEXT_SIZE=similarity_vs_context_size.csv
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 ROOT";
+    exit;
+fi
+
+ENVIRONMENT_ROOT=$1;
+REFERENCE_SUMMARIZER="dmoz-summarizer"
+FROM_DIR=$PWD
+
+echo -e "generating evaluation data for environment: ${ENVIRONMENT_ROOT}" 1>&2
+
+# cd to ENVIRONMENT_ROOT
+if [ ! -d ${ENVIRONMENT_ROOT} ]; then
+    echo "not a valid directory: ${ENVIRONMENT_ROOT}"
+    exit;
+fi
+cd ${ENVIRONMENT_ROOT}
+
+# create evaluation directory
+EVALUATION_DIR_BASE=evaluation-
+EVALUATION_DATE_SUFFIX=$( date +%m%d%y-%H%M%S )
+EVALUATION_DIR=${EVALUATION_DIR_BASE}${EVALUATION_DATE_SUFFIX}
+mkdir ${EVALUATION_DIR}
+
+# copy all necessary files from ENVIRONMENT_ROOT to the evaluation directory
+find . \( -name '*.summary' \) -and -not -wholename "./${EVALUATION_DIR_BASE}*" | cpio -p -d ${EVALUATION_DIR}
+
+# cd to EVALUATION_DIR
+cd ${EVALUATION_DIR}
+
+# find all input directories
+find . -name '*.summary' | xargs -i{} dirname {} | sort -u > ${SUMMARY_DIRECTORIES_INPUT}
+
+# run pseudo-summarizers
+cat ${SUMMARY_DIRECTORIES_INPUT} | run-pseudo-summarizers ${REFERENCE_SUMMARIZER}
+
+# now generate the files needed by ROUGE, etc.
+cat ${SUMMARY_DIRECTORIES_INPUT} | generate-evaluation-data-rouge ${REFERENCE_SUMMARIZER} | generate-evaluation-data-stats > ${OUTPUT_FILE}
+
+# generate global ROUGE scores for all summarizers
+echo "generating global ROUGE scores ..." 1>&2
+find . -maxdepth 1 -name '*.spl' | sed 's/\.spl//' | xargs -i{} sh -c 'set -- {}; run-rouge $1.spl > $1.result'
+
+# now generate specific plotting information
+cat ${OUTPUT_FILE} | similarity-vs-context-size > ${SIMILARITY_VS_CONTEXT_SIZE}
+
+# go back to original directory
+cd ${FROM_DIR}

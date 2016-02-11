@@ -1,0 +1,80 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+my $adaptation_system_id = 'adaptation';
+my $add_separator = 0;
+while( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+
+    my @line_components = split /\t/ , $line;
+    my $system_id_full = $line_components[ 0 ];
+    my $score = $line_components[ 1 ];
+    my $namespace = $line_components[ 2 ];
+
+    # system_id_minimal
+    my $system_id_minimal = _generate_system_id_minimal( $system_id_full );
+
+    # namespace_corrected
+    my $namespace_corrected = _generate_namespace_corrected( $namespace );
+    if ( $namespace_corrected eq 'adaptation' ) {
+	$namespace_corrected = 'retrieval';
+    }
+    elsif ( $namespace_corrected eq 'baseline' ) {
+	$add_separator = 1;
+    }
+
+    if ( $add_separator ) {
+	print '\hline' . "\n";
+    }
+    print join( ' & ' , $namespace_corrected , $system_id_minimal , $score ) . " \\\\ \n";
+    if ( $add_separator ) {
+	print '\hline' . "\n";
+	$add_separator = 0;
+    }
+
+}
+
+sub _generate_namespace_corrected {
+
+    my $namespace = shift;
+    
+    my @namespace_components = split /-/ , $namespace;
+
+    if ( scalar( @namespace_components ) > 1 ) {
+	shift @namespace_components;
+    }
+
+    my $namespace_corrected = join( '-' , @namespace_components );    
+
+    return $namespace_corrected;
+
+}
+
+sub _generate_system_id_minimal {
+
+    my $system_id_full = shift;
+
+    my @system_id_full_components = split /:::|@/ , $system_id_full;
+    my $system_id_full_components_count = scalar( @system_id_full_components );
+
+    if ( $system_id_full_components_count == 1 ) {
+	return $system_id_full;
+    }
+    elsif ( $system_id_full_components_count == 2 ) {
+	return $adaptation_system_id;
+    }
+    elsif ( $system_id_full_components_count == 3 ) {
+	return join( '@' , $adaptation_system_id , $system_id_full_components[ 2 ] );
+    }
+    else {
+	die "This should never happen !";
+    }
+
+}
+
+1;

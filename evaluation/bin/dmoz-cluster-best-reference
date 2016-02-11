@@ -1,0 +1,23 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+# Note : good indicator of target category => cat clusterable-0-5.clean.data | awk -F"\t" '{ if ( $2 >= 50 && $4 > 0.5 ) { print $0 } }' | sort -R -k1 | less
+# Characterization: businesses / official homepages (expected content => less noise) => anything that can be attached to a location ?
+# TODO : filter by average presence of named entities in summaries ?
+my @categories = ( [ '/local/nlp/ypetinot/data/dmoz-repository/Top/News/Colleges_and_Universities/Newspapers/1aad33fe426b4e64e4be9222258e2419.summary' , 'Top/News/Colleges_and_Universities/Newspapers/United_Kingdom/England' ],
+		   [ '/local/nlp/ypetinot/data/dmoz-repository/Top/Health/Animal/Veterinary_Medicine/b9a30531d5825aa4d4b1e426af05a878' , 'Top/Health/Animal/Veterinary_Medicine/Veterinarians/United_States/Michigan' ],
+		   [ '/local/nlp/ypetinot/data/dmoz-repository/Top/Sports/Golf/Courses/0a138a5917c724764a2fb3ce8a289a06.summary' , 'Top/Sports/Golf/Courses/North_America/United_States/Massachusetts' ] ,
+		   [ '/local/nlp/ypetinot/data/dmoz-repository/Top/Arts/Music/Instruments/1bc79a5c30da02f223cc682dc89ff8e3.summary' , 'Top/Arts/Music/Instruments/Stringed/Guitar/Electric/Manufacturers' ] ,
+		   [ '/local/nlp/ypetinot/data/dmoz-repository/Top/Computers/Internet/Web_Design_and_Development/bf445a0ca95b62b815dfd66371bda61c.summary' , 'Top/Computers/Internet/Web_Design_and_Development/Designers/Full_Service/B' ] ,
+		   [ '/local/nlp/ypetinot/data/dmoz-repository/Top/Business/Textiles_and_Nonwovens/Industrial_Yarns_and_Sewing_Threads/d8fc460069822178e4bad0e19aa2379f.summary' , 'Top/Business/Textiles_and_Nonwovens/Industrial_Yarns_and_Sewing_Threads/Sewing_and_Embroidery_Threads' ] ,
+		   [ '/local/nlp/ypetinot/data/dmoz-repository/Top/Society/Death/Death_Care/48dbc1d9d77510880cd08cd70bac8dc2.summary' , 'Top/Society/Death/Death_Care/Funeral_Services/North_America/United_States/Massachusetts' ] );
+
+# TODO : order by support => take base with maximum support => maximum template length
+
+# CURRENT :
+# 1 - manually look up URL
+# 2 - manually decide on best reference => what criteria do I use ?
+# 3 - manually mark slots in reference
+# 4 - manually identify slot replacements => what criteria do I use ?

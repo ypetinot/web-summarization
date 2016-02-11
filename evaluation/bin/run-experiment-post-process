@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# Run post processing based on the macro/micro stats that were generated during the previous stage
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <post-processing-dir>"
+    exit 1;
+fi
+
+BINDIR=`dirname $0`
+POST_PROCESSING_DIR=$1
+
+MACRO_DIR="${POST_PROCESSING_DIR}/macro/"
+MICRO_DIR="${POST_PROCESSING_DIR}/micro/"
+
+MACRO_AGGREGATE_DATA="${MACRO_DIR}/aggregate.out"
+
+# Aggregate results
+find ${MACRO_DIR}/ -type f -name '*.macro' | ${BINDIR}/run-experiment-aggregate --subtype=Average_F > ${MACRO_AGGREGATE_DATA}
+
+# Statistical significance
+MEASUREMENT_TYPES=`find ${MICRO_DIR}/ -type f -name '*.micro.*' | sed 's/^.*.micro.//' | sort -u`
+
+for measurement_type in ${MEASUREMENT_TYPES}; do
+
+    echo "Testing significance of ${measurement_type} results ..."
+
+    MEASUREMENT_FILES=( `find ${MICRO_DIR}/ -type f -name "*.micro.${measurement_type}"` )
+    for (( i = 0 ; i < ${#MEASUREMENT_FILES[@]} ; i++ )); do
+	measurement_file_a=${MEASUREMENT_FILES[$i]};
+	for (( j = $i+1 ; j < ${#MEASUREMENT_FILES[@]} ; j++ )); do
+
+	    measurement_file_b=${MEASUREMENT_FILES[$j]};
+
+	    SIGNIFICANCE_TEST=`${BINDIR}/run-experiment-significance-test-wrapper ${measurement_file_a} ${measurement_file_b}`
+	    echo -e "${measurement_type}\t${measurement_file_a}\t${measurement_file_b}\t${SIGNIFICANCE_TEST}"
+
+	done;
+    done;
+
+    echo
+
+done;

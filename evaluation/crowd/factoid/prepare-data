@@ -1,0 +1,46 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+PHASE1_DATA_FILE=$1
+SUMMARIZERS_DATA_DIR=$2
+OUTPUT_DIR=$3
+TARGET_KEY=$4
+
+if (( $# < 3 )); then
+    echo "Usage: $0 <phase-1-data> <summarizers-output-dir> <output-dir>";
+    exit 1;
+fi
+
+if [[ -z "${PHASE1_DATA_FILE}" ]]; then
+    echo "Please provide input data file ...";
+    exit 2;
+fi
+
+if [[ ! -d ${SUMMARIZERS_DATA_DIR} ]]; then
+    echo "Please provide directory containing summarizer data ...";
+    exit 3;
+fi
+
+SUMMARIZERS_OUTPUT=`find ${SUMMARIZERS_DATA_DIR}/ -type f -name '*.out'`
+
+#if [[ -d ${OUTPUT_DIR} ]]; then
+#    echo "Output directory already exists ...";
+#    exit 4;
+#fi
+
+mkdir -p ${OUTPUT_DIR}
+
+OUTPUT_URL_FACTOIDS=${OUTPUT_DIR}/url_factoids.tsv
+OUTPUT_URL_FACTOIDS_SELECTED=${OUTPUT_DIR}/url_factoids.selected.tsv
+OUTPUT_URL_FACTOIDS_READY=${OUTPUT_DIR}/url_factoids.ready.tsv
+
+# 1 - generate URL factoids
+cat ${PHASE1_DATA_FILE} | ${BINDIR}/extract-url-factoids ${PHASE1_DATA_FILE} ${TARGET_KEY} > ${OUTPUT_URL_FACTOIDS}
+
+# 2 - select factiods
+cat ${OUTPUT_URL_FACTOIDS} | awk -F'\t' '{ if ( NF == 3 || $3 > 2 * $5 ) { print $0 } }' > ${OUTPUT_URL_FACTOIDS_SELECTED}
+cat ${OUTPUT_URL_FACTOIDS_SELECTED} | awk -F'\t' '{ print $1 FS $2 }' > ${OUTPUT_URL_FACTOIDS_READY}
+
+# 2 - map URL factoids to question data
+cat ${SUMMARIZERS_OUTPUT} | perl ${BINDIR}/generate-summary-questions ${OUTPUT_URL_FACTOIDS_READY} > ${OUTPUT_SUMMARY_QUESTIONS}

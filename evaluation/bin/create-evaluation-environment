@@ -1,0 +1,137 @@
+#!/usr/bin/env perl
+
+# generates evaluation environment
+# read DMOZ data one line at a time
+
+my $NUMBER_OF_WORKER_THREADS = 20;
+
+use threads;
+use threads::shared;
+use Thread::Queue;
+
+use Evaluation::Environment;
+
+use Carp;
+use Getopt::Long;
+use Pod::Usage;
+use URI;
+use URI::Escape;
+use File::Path;
+use IO::File;
+
+# options holders
+my $man = 0;
+my $help = 0;
+my $action = 'noop';
+my $level = 0;
+my $debug = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man, 'action=s' => \$action, 'level=i' => \$level, 'debug|d' => \$debug) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+pod2usage(-exitstatus => 0) if ( $#ARGV != 0 );
+
+my $environment_root = $ARGV[0];
+
+if ( ! -d $environment_root ) {
+    mkdir $environment_root;
+}
+
+# create new environment object
+my $evaluation_environment = new Evaluation::Environment($environment_root);
+
+# create queue
+my $queue :shared;
+$queue = Thread::Queue->new();
+
+# select operation and data based on requested action
+my $operation = undef;
+my @data;
+if ( $action eq 'dmoz' ) {
+    $operation = \&add_references;
+    @data = <STDIN>;
+}
+elsif ( $action eq 'refresh' ) {
+    $operation = \&refresh;
+    @data = @{$evaluation_environment->getAllURLs()};
+}
+else {
+    croak "Unsupported action: $action";
+}
+
+# create worker threads
+for (my $i=0; $i<$NUMBER_OF_WORKER_THREADS; $i++) {
+    threads->create($operation);
+}
+
+my $count = 0;
+foreach my $data (@data) {
+
+    if ( ! $data ) {
+	next;
+    }
+
+    $count++;
+    if ( !($count % 1000) ) {
+	print STDERR "[$0] processing line \# $count ...\n";
+    } 
+    
+    # push to the queue
+    $queue->enqueue($data);
+    
+}
+
+# enqueue a *show-stopper* for every thread
+for (my $i=0; $i<$NUMBER_OF_WORKER_THREADS; $i++) {
+    $queue->enqueue(undef);
+}
+
+# Loop through all the threads
+foreach my $thr (threads->list()) {
+    $thr->join();
+}
+
+# refresh data for existing URLs
+sub refresh {
+
+    while (my $url = $queue->dequeue()) {
+	
+	# first retrieve URL object
+	# my $url_obj = $evaluation_environment->getURL($url);
+
+	# $url_obj->refresh_info($level);
+	my $encoded_url = Evaluation::URL->url2uid($url);
+	my $input = $evaluation_environment->get_root() . "/" . $encoded_url . "/" . $encoded_url . ".url";
+	my $destination = $evaluation_environment->get_root() . "/" . $encoded_url . "/" . $encoded_url . ".full-context.xml";
+	print "$url --> $input --> $destination\n";
+	my $result = `get-context-anchortext --mode=full --output=xml '$url' $input > $destination`;
+        print ">> done with " . $url . " to level $level\n";
+
+	# just in case
+	# $url_obj->DESTROY();
+
+    }
+
+}
+
+# add reference summary to the evaluation environment
+sub add_references {
+    
+    while (my $data = $queue->dequeue()) {
+
+	chomp $data;
+	
+	# parse line
+	my ($url, $title, $description, $topic) = split(/\t/,$data);
+	
+	$evaluation_environment->add_summary($url, "dmoz", $description, { title => $title, topic => $topic });
+
+	print ">> done with $url\n";
+	
+    }
+
+}
+
+1;

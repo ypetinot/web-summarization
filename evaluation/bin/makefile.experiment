@@ -1,0 +1,224 @@
+# Base makefile for all experiment makefiles
+
+# no default - need to make specific targets
+default:
+
+# TODO: can I clean this up a little ?
+MAKEFILE_DIR:=$(dir $(lastword $(MAKEFILE_LIST)))
+ROOT_DIST:=$(MAKEFILE_DIR)/../../
+BINDIR_DIST:=$(ROOT_DIST)/bin/
+include $(BINDIR_DIST)/makefile.common
+
+ROOT_EVALUATION:=$(ROOT_DIST)/evaluation/
+EVALUTION_CONF:=$(ROOT_EVALUATION)/conf/
+BINDIR_EXPERIMENT:=$(ROOT_EVALUATION)/bin/
+
+# CURRENT : turn into parameter - how to still allow for shareable definitions ? => base configurations with multiple levels of inheritances => any CPAN module supporting this ?
+# CURRENT : flexible json-based configuration file format ?
+META_SUMMARIZERS_CONF:=$(EVALUTION_CONF)/summarizers-meta.conf
+
+ifndef FOLD_ID
+$(error $(LINE_HEADING) No fold id provided, cannot proceed ...)
+else
+$(warning $(LINE_HEADING) Fold id: $(FOLD_ID))
+endif
+
+ifndef EXPERIMENT_DIRECTORY
+$(error $(LINE_HEADING) No experiment directory provided, cannot proceed ...)
+else
+$(warning $(LINE_HEADING) Experiment directory: $(EXPERIMENT_DIRECTORY))
+endif
+
+# TODO: should this become a list of URLs in the future ? Or a fold-id plus a limit on the number of URLS + maybe distributional characteristics for those URLs
+ifndef INSTANCE_LIST
+$(error $(LINE_HEADING) No repository category list provided, cannot proceed ...)
+else
+$(info $(LINE_HEADING) Instance list: $(INSTANCE_LIST))
+endif
+
+# one directory per URL
+# TODO : parallel usage ratio should be configurable (?)
+# TODO : over-network dependencies possible ?
+# Troubleshooting: cat experiment-data-constructs/supporting_contructs.log | awk -F"\t" '{ if ( $7 != 0 ) { print $0 } }'
+EXPERIMENT_TEST_INSTANCES=$(EXPERIMENT_DIRECTORY)/instances
+EXPERIMENT_TEST_INSTANCES_REQUEST=$(EXPERIMENT_TEST_INSTANCES).request
+EXPERIMENT_TEST_INSTANCES_FILTERED=$(EXPERIMENT_TEST_INSTANCES).filtered
+EXPERIMENT_TEST_INSTANCES_LIST=$(EXPERIMENT_TEST_INSTANCES).list
+EXPERIMENT_TEST_INSTANCES_INPUT=$(EXPERIMENT_DIRECTORY)/instances.input
+EXPERIMENT_TEST_JOBS_LIST=$(EXPERIMENT_TEST_INSTANCES).jobs
+
+EXPERIMENT_DIRECTORY_DEPENDENCY:=$(filter-out $(wildcard $(EXPERIMENT_DIRECTORY)), $(EXPERIMENT_DIRECTORY))
+
+$(EXPERIMENT_TEST_INSTANCES_REQUEST): $(INSTANCE_LIST) $(EXPERIMENT_DIRECTORY_DEPENDENCY)
+	cp $< $@
+
+# import data prior to processing to ensure that all target URLs are available (and filtered if need be)
+${EXPERIMENT_TEST_INSTANCES_FILTERED}: $(EXPERIMENT_TEST_INSTANCES_REQUEST)
+	# TODO : implement block list mechanism ?
+	cat $< | $${PARALLEL_COMMAND} --joblog $@.job.log --progress --no-notice --resume-failed --env _ 'echo {} | $(BINDIR_DATA)/dmoz-data-import 2>> $@.log' > $@
+
+$(EXPERIMENT_TEST_INSTANCES_INPUT): $(EXPERIMENT_TEST_INSTANCES_FILTERED)
+	mkdir -p $@
+	cat $< | awk -F"\t" '{ print $$0 > "$(EXPERIMENT_TEST_INSTANCES_INPUT)/" NR }'  
+
+$(EXPERIMENT_TEST_INSTANCES_LIST): $(EXPERIMENT_TEST_INSTANCES_INPUT)
+	find $< -type f | sed 's#$</*##' > $@
+
+# generic parallelized job
+# TODO
+
+SUMMARIZERS_FILENAME=summarizers.list
+# CURRENT : list of all fully defined summarizers ==> can be used for postprocessing ?
+EXPERIMENT_DIRECTORY_SUMMARIZERS:=$(abspath $(EXPERIMENT_DIRECTORY)/$(SUMMARIZERS_FILENAME))
+EXPERIMENT_DIRECTORY_EVALUATION:=$(EXPERIMENT_DIRECTORY)/evaluation
+EXPERIMENT_DIRECTORY_GENERATION:=$(EXPERIMENT_DIRECTORY)/generation
+EXPERIMENT_DIRECTORY_GENERATION_LIST:=$(EXPERIMENT_DIRECTORY)/experiment.out
+
+EXPERIMENT_DIRECTORY_EVALUATION_RAW:=$(EXPERIMENT_DIRECTORY_EVALUATION)/raw.out
+EXPERIMENT_DIRECTORY_EVALUATION_RAW_SYSTEM_FILTERED:=$(EXPERIMENT_DIRECTORY_EVALUATION)/raw.system_filtered.out
+EXPERIMENT_DIRECTORY_EVALUATION_RAW_PER_SYSTEM:=$(EXPERIMENT_DIRECTORY_EVALUATION)/raw.per_system
+EXPERIMENT_DIRECTORY_EVALUATION_INSTANCE_ANNOTATIONS:=$(EXPERIMENT_DIRECTORY_EVALUATION)/raw.annotated.out
+EXPERIMENT_DIRECTORY_EVALUATION_ANNOTATIONS:=$(EXPERIMENT_DIRECTORY_EVALUATION)/annotations.out
+EXPERIMENT_DIRECTORY_EVALUATION_AGGREGATE:=$(EXPERIMENT_DIRECTORY_EVALUATION)/aggregate.out
+EXPERIMENT_DIRECTORY_EVALUATION_COMPARISON:=$(EXPERIMENT_DIRECTORY_EVALUATION)/comparison
+EXPERIMENT_DIRECTORY_EVALUATION_SYSTEM_GROUPS:=$(EXPERIMENT_DIRECTORY_EVALUATION)/system-groups
+EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED:=$(EXPERIMENT_DIRECTORY_EVALUATION)/systems.filtered
+EXPERIMENT_DIRECTORY_EVALUATION_PER_ANNOTATION:=$(EXPERIMENT_DIRECTORY_EVALUATION)/annotations
+EXPERIMENT_DIRECTORY_EVALUATION_PER_ANNOTATION_BREAKDOWN:=$(EXPERIMENT_DIRECTORY_EVALUATION)/annotations-breakdown.tex
+EXPERIMENT_DIRECTORY_EVALUATION_AGGREGATE_TABLE=$(EXPERIMENT_DIRECTORY_EVALUATION)/aggregate.tex
+EXPERIMENT_DIRECTORY_EVALUATION_HUMAN_ANALYSES=$(EXPERIMENT_DIRECTORY_EVALUATION)/human-analyses/
+EXPERIMENT_DIRECTORY_EVALUATION_HUMAN_ANALYSIS_INTRINSIC_ANALYSIS_DATA=$(EXPERIMENT_DIRECTORY_EVALUATION_HUMAN_ANALYSES)/1-intrinsic
+EXPERIMENT_DIRECTORY_EVALUATION_HUMAN_ANALYSIS_COMPARATIVE_ANALYSIS_DATA=$(EXPERIMENT_DIRECTORY_EVALUATION_HUMAN_ANALYSES)/2-comparative
+EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS=$(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED).pairings
+EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS_FULL=$(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS).full
+
+EXPERIMENT_MANAGER_OPTIONS=--allow-unspecified-parameters $(META_SUMMARIZERS_CONF) $(EXPERIMENT_DEFINITION) $(EXPERIMENT_REQUESTED_SYSTEM_GROUPS)
+
+.PHONY: run-experiment run-servers-setup
+run-experiment: $(EXPERIMENT_DIRECTORY_EVALUATION_AGGREGATE_TABLE) $(EXPERIMENT_DIRECTORY_EVALUATION_COMPARISON) $(EXPERIMENT_DIRECTORY_EVALUATION_PER_ANNOTATION_BREAKDOWN) $(EXPERIMENT_DIRECTORY_EVALUATION_HUMAN_ANALYSIS_INTRINSIC_ANALYSIS_DATA) $(EXPERIMENT_DIRECTORY_EVALUATION_HUMAN_ANALYSIS_COMPARATIVE_ANALYSIS_DATA)
+
+$(EXPERIMENT_DIRECTORY):
+	mkdir -p $@
+
+# Note: this is the list of "requested" summarizers
+# Note: this file is made only if a custom file has not been provided
+ifndef SUMMARIZERS
+$(EXPERIMENT_DIRECTORY_SUMMARIZERS): $(META_SUMMARIZERS_CONF) $(EXPERIMENT_DIRECTORY_DEPENDENCY)
+	$(BINDIR_EXPERIMENT)/experiment-manager --generate-summarizers $(EXPERIMENT_MANAGER_OPTIONS) | sort -u > $@
+else
+$(warning $(LINE_HEADING) Summarizers: $(SUMMARIZERS))
+$(EXPERIMENT_DIRECTORY_SUMMARIZERS): $(SUMMARIZERS) $(EXPERIMENT_DIRECTORY_DEPENDENCY)
+	cat $< | sort -u > $@
+endif
+
+$(EXPERIMENT_TEST_JOBS_LIST): $(EXPERIMENT_TEST_INSTANCES_LIST) $(EXPERIMENT_DIRECTORY_SUMMARIZERS)
+	cat $(EXPERIMENT_TEST_INSTANCES_LIST) | sort -R | $(BINDIR_EXPERIMENT)/experiment-list-summarizer-jobs $(EXPERIMENT_DIRECTORY_SUMMARIZERS) | sort -R > $@
+
+# TODO : replace experiment-list-summarizer-jobs with something that's based on the Experiment driver
+# CURRENT : allow certain kind of failure (=> 0 exist code) but then how do we filter afterwards ?
+# CURRENT : do not request each job to write to an output/error file >> first step toward using more hosts
+$(EXPERIMENT_DIRECTORY_GENERATION): $(EXPERIMENT_TEST_JOBS_LIST)
+	mkdir -p $@.temp
+	# TODO : use --ungroup option since everything is being written to files ?
+	cat $< | $${PARALLEL_COMMAND} --joblog $(EXPERIMENT_DIRECTORY)/experiment_parallel.log --progress --resume-failed $(BINDIR_EXPERIMENT)/experiment-run-summarizer-job --log $(EXPERIMENT_TEST_INSTANCES_INPUT)/ $@.temp/ 1 {}
+# CURRENT : not possible ? => {} has no meaning beyond a command boundary (>) ?
+#	cat $< | $${PARALLEL_COMMAND} --joblog $(EXPERIMENT_DIRECTORY)/experiment_parallel.log --progress --resume-failed '$(BINDIR_EXPERIMENT)/experiment-run-summarizer-job --log $(EXPERIMENT_TEST_INSTANCES_INPUT)/ $@.temp/ 1 {}' 2> $@.temp/{}.summarizers/{3}.$$$$ > $@.temp/{}.summarizers/{3}.summary
+	mv $@.temp $@
+
+# CURRENT : how to reduce the number of files ?
+# => STDOUT of each process should go to a single file
+
+# TODO : list of failing URLs ? => *.failed file ? => or simply do not create .summary file (but we still need to filter)
+$(EXPERIMENT_DIRECTORY_GENERATION_LIST): $(EXPERIMENT_DIRECTORY_GENERATION)
+	find ${EXPERIMENT_DIRECTORY_GENERATION}/ -type f -name '*.summary' > $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION): $(EXPERIMENT_DIRECTORY_GENERATION_LIST)
+	mkdir -p $@
+
+# TODO : salvage run-evaluation-metrics
+#	run-evaluation-metrics
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEM_GROUPS): $(EXPERIMENT_DIRECTORY_EVALUATION_RAW)
+	mkdir -p $@.temp
+	cat $< | awk -F"\t" '{ print $$2 }' | tail -n +2 | sort -u | awk -F':::' '{ print $$0 >> "$@.temp/" $$1 }'
+	mv $@.temp $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_COMPARISON): $(call folder_dependency,$(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEM_GROUPS))
+	mkdir -p $@.temp
+	# TODO : use appropriate automatic variable
+	find $</ -type f | xargs -i{} $(BINDIR_EXPERIMENT)/compare-systems-wrapper $(EXPERIMENT_DIRECTORY_EVALUATION_RAW) {} $@.temp/
+	mv $@.temp $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_AGGREGATE): $(EXPERIMENT_DIRECTORY_EVALUATION_RAW)
+	cat $< | $(BINDIR_EXPERIMENT)/experiment-manager --post-process $(EXPERIMENT_MANAGER_OPTIONS) > $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_INSTANCE_ANNOTATIONS): $(EXPERIMENT_TEST_INSTANCES_FILTERED)
+	cat $< | $(BINDIR_EXPERIMENT)/generate-annotations > $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_ANNOTATIONS): $(EXPERIMENT_DIRECTORY_EVALUATION_INSTANCE_ANNOTATIONS)
+	cat $< | awk -F"\t" '{ print $$2 }' | sort -u > $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_PER_ANNOTATION): $(EXPERIMENT_DIRECTORY_EVALUATION_RAW) $(EXPERIMENT_DIRECTORY_EVALUATION_ANNOTATIONS) $(EXPERIMENT_DIRECTORY_EVALUATION_INSTANCE_ANNOTATIONS)
+	mkdir -p $@.temp
+	$(BINDIR_EXPERIMENT)/experiment-category-analysis $(EXPERIMENT_DIRECTORY_EVALUATION_RAW) $(EXPERIMENT_DIRECTORY_EVALUATION_ANNOTATIONS) $(EXPERIMENT_DIRECTORY_EVALUATION_INSTANCE_ANNOTATIONS) "$(EXPERIMENT_MANAGER_OPTIONS)" $@.temp
+	mv $@.temp $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_PER_ANNOTATION_BREAKDOWN): $(EXPERIMENT_DIRECTORY_EVALUATION_PER_ANNOTATION)
+	find $< -type f | $(BINDIR_EXPERIMENT)/generate-tables --with-table-context > $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_AGGREGATE_TABLE): $(EXPERIMENT_DIRECTORY_EVALUATION_AGGREGATE)
+	echo $(EXPERIMENT_DIRECTORY_EVALUATION_AGGREGATE) | $(BINDIR_EXPERIMENT)/generate-tables > $@
+
+# TODO : is the dependency on the evaluation directory needed ? can i clean this up a little ?
+$(EXPERIMENT_DIRECTORY_EVALUATION_RAW): $(EXPERIMENT_DIRECTORY_GENERATION_LIST) $(call folder_dependency,$(EXPERIMENT_DIRECTORY_EVALUATION))
+	echo "building raw evaluation data ..."
+	# TODO : there is no reason to rely on parallel here
+	head -n1 $< | $${PARALLEL_COMMAND_LOCAL} head -n1 {} > $@.header.temp
+	cat $< | $${PARALLEL_COMMAND_LOCAL} -j1 tail -n +2 {} > $@.body.temp
+	cat $@.header.temp $@.body.temp > $@
+	rm $@.*.temp
+
+DMOZ_SYSTEM_ID=dmoz
+$(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED): $(EXPERIMENT_DIRECTORY_EVALUATION_AGGREGATE)
+	cat $< | cut -d '&' -f 1 | grep -v hline | grep -v textbf > $@
+	echo $(DMOZ_SYSTEM_ID) >> $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_RAW_SYSTEM_FILTERED): $(EXPERIMENT_DIRECTORY_EVALUATION_RAW) $(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED)
+	# TODO : can we avoid creating temporary files here ?
+	cat $(EXPERIMENT_DIRECTORY_EVALUATION_RAW) | $(BINDIR_DIST)/filter-column --column=2 --filter=$(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED) | cut -f 1-3 | tee $@.temp.full | tail -n +2 > $@.temp.body.systems
+	cat $(EXPERIMENT_DIRECTORY_EVALUATION_RAW) | tail -n +2 | awk -F"\t" '{ print $$1 "\t$(DMOZ_SYSTEM_ID)\t" $$4 }' | sort -u > $@.temp.body.ground-truth
+	cat $@.temp.body.* | sort -k1 > $@.temp.body
+	head -n1 $@.temp.full > $@.temp.header
+	cat $@.temp.header $@.temp.body > $@
+	rm $@.temp.*
+
+# TODO : to be removed/salvaged
+###	$(BINDIR_EXPERIMENT)/run-experiment-evaluation-wrapper $< $@
+
+ROOTDIR_EVALUATION_CROWD=$(ROOTDIR_EVALUATION)/crowd/
+BINDIR_EVALUATION_CROWD=$(ROOTDIR_EVALUATION_CROWD)/bin/
+$(EXPERIMENT_DIRECTORY_EVALUATION_HUMAN_ANALYSIS_INTRINSIC_ANALYSIS_DATA): $(EXPERIMENT_DIRECTORY_EVALUATION_RAW_SYSTEM_FILTERED) $(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED)
+	mkdir -p $@.temp
+	$(BINDIR_EVALUATION_CROWD)/prepare-data $(EXPERIMENT_DIRECTORY_EVALUATION_RAW_SYSTEM_FILTERED) $(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED) $@.temp
+	mv $@.temp $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_RAW_PER_SYSTEM): $(EXPERIMENT_DIRECTORY_EVALUATION_RAW_SYSTEM_FILTERED)
+	mkdir -p $@.temp
+	cat $< | $(BINDIR_EVALUATION)/split-with-header --split-field=2 --output-directory=$@.temp
+	mv $@.temp $@
+
+# Note : intermediate script to determine which systems should be compared => configurable ?
+# Note : use systems.filtered as global system ordering
+ROOTDIR_EVALUATION_CROWD_HUMAN_ANALYSIS_COMPARATIVE_ANALYSIS=$(ROOTDIR_EVALUATION_CROWD)/2-relative-quality/
+$(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS): $(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED)
+	$(ROOTDIR_EVALUATION_CROWD_HUMAN_ANALYSIS_COMPARATIVE_ANALYSIS)/generate-pairings $< > $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS_FULL): $(EXPERIMENT_DIRECTORY_EVALUATION_RAW_PER_SYSTEM) $(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS)
+	echo -e "url\tsystem_1\tsummary_1\tsystem_2\tsummary_2" > $@.temp
+	cat $(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS) | while read SYSTEM_1 SYSTEM_2; do join -t$$'\t' -j1 $(EXPERIMENT_DIRECTORY_EVALUATION_RAW_PER_SYSTEM)/$${SYSTEM_1} $(EXPERIMENT_DIRECTORY_EVALUATION_RAW_PER_SYSTEM)/$${SYSTEM_2}; done | sort -k1 -u | grep -v '^url' >> $@.temp
+	mv $@.temp $@
+
+$(EXPERIMENT_DIRECTORY_EVALUATION_HUMAN_ANALYSIS_COMPARATIVE_ANALYSIS_DATA): $(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS_FULL) $(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS)
+	mkdir -p $@.temp
+	$(ROOTDIR_EVALUATION_CROWD)/bin/prepare-data $(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS_FULL) $(EXPERIMENT_DIRECTORY_EVALUATION_SYSTEMS_FILTERED_PAIRINGS) $@.temp
+	mv $@.temp $@

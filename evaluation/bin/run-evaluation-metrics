@@ -1,0 +1,135 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use File::Slurp;
+
+use Web::Summarizer::SentenceAnalyzer;
+use Web::Summarizer::SentenceBuilder;
+
+my $mode_strict = 1;
+
+# sentence builder
+my $sentence_builder = new Web::Summarizer::SentenceBuilder();
+
+# sentence analyzer
+my $sentence_analyzer = new Web::Summarizer::SentenceAnalyzer();
+
+# run all requested metrics for the current experiment
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+   
+    my @fields = split /\t/ , $line;
+    my $data_base = shift @fields;
+    my $fold_id = shift @fields;
+    my $system_id = shift @fields;
+    my $system_output = shift @fields;
+
+    # 1 - load reference sentence
+    my $reference_sentence_file = join( "." , $data_base , 'summary' );
+    my $reference_sentences = _produce_system_sentences( $reference_sentence_file );
+
+    # 2 - load generated sentence
+    my $output_sentences = _produce_system_sentences( $system_output );
+
+    # 3 - compute statistics
+    foreach my $url ( keys( %{ $reference_sentences } ) ) {
+	
+	my $reference_sentence = $reference_sentences->{ $url };
+	my $output_sentence = $output_sentences->{ $url };
+
+	if ( ! defined($output_sentence) ) {
+	    my $message = "Missing output sentence for system $system_id : $system_output";
+	    if ( $mode_strict ) {
+		die $message;
+	    }
+	    else {
+		print STDERR "$message\n";
+		next;
+	    }
+	}
+
+	my $sentence_analysis = $sentence_analyzer->analyze( $reference_sentence , $output_sentence );
+
+	# output analysis data
+	_output_analysis_data( $url , $system_id , $reference_sentence , $output_sentence , $sentence_analysis );
+
+    }
+
+}
+
+my $header_fields = undef;
+sub _output_analysis_data {
+
+    my $url = shift;
+    my $system_id = shift;
+    my $reference_sentence = shift;
+    my $output_sentence = shift;
+    my $analysis_data = shift;
+
+    if ( ! defined( $header_fields ) ) {
+	my @sorted_fields = sort { $a cmp $b } keys( %{ $analysis_data } );
+	$header_fields = \@sorted_fields;
+	print join( "\t" , "url" , "system" , "reference" , "output" , @sorted_fields ) . "\n";
+    }
+
+    print join( "\t" , $url , $system_id , ( map { $_->verbalize(); } ( $reference_sentence , $output_sentence ) ) , map { $analysis_data->{ $_ } } @{ $header_fields } ) . "\n";
+
+}
+
+sub _produce_system_sentences {
+
+    my $filename = shift;
+
+    # 1 - load summary file
+    my $url_2_sentences = read_summary_data_file( $filename );
+
+    # 2 - map summaries to sentence objects
+    my %url_2_objects;
+    map { $url_2_objects{ $_ } = _construct_sentence( $url_2_sentences->{ $_ } ); } keys( %{ $url_2_sentences } );
+
+    return \%url_2_objects;
+
+}
+
+sub _construct_sentence {
+
+    my $sentence_data = shift;
+
+    my $sentence_string = $sentence_data->[ 0 ];
+    my $sentence_object = $sentence_builder->build( $sentence_string );
+
+    return $sentence_object;
+
+}
+
+sub read_summary_data_file {
+
+    my $filename = shift;
+    
+    my %data;
+    map {
+	
+	chomp;
+
+	my $line = $_;
+	my @fields = split /\t/ , $line;
+	
+	my $url = shift @fields;
+	$data{ $url } = \@fields;
+
+    } read_file( $filename );
+
+    return \%data;
+
+}
+
+1;

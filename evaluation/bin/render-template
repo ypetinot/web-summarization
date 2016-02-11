@@ -1,0 +1,112 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+#my $template = 'A:f League:f affiliated:s with:f the:f USA:f Cricket:f Association:f promoting:s Cricket:f in:f South:0 Florida:0 .:s Includes:a information:a about:f teams:f ,:s rules:f ,:s statistics:a ,:s schedule:a and:f contact:f information:a .:s';
+
+#my $template_type = 'Raw';
+#my $template = 'Weekly:a student:f newspaper:a of:f Stevens:0 Institute:0 of:f Technology:1 .:s';
+
+my $template_type = 'Post-processed';
+# TODO : fix template log function to properly mark abstractive slot locations
+my $template = 'Weekly:a student:f newspaper:a of:f Stevens:0 Institute:0 of:0 Technology:0 .:s';
+
+my @template_entries = split /\s+/ , $template;
+my @template_elements;
+my $entry_status = undef;
+foreach my $template_entry (@template_entries) {
+
+    my @fields = split /:/ , $template_entry;
+
+    my $entry_surface = $fields[ 0 ];
+    my $entry_status  = $fields[ 1 ];
+
+    my %term_entry;
+    $term_entry{ 'surface' } = $entry_surface;
+    $term_entry{ 'status'  } = $entry_status;
+
+    push @template_elements , \%term_entry;
+
+}
+
+my $n_elements = scalar( @template_elements );
+
+# ************************************************************************************************************************************************
+# * Header
+
+##_header_tikz();
+_header_table( $n_elements );
+
+# ************************************************************************************************************************************************
+
+# ************************************************************************************************************************************************
+
+##_body_tikz( \@template_elements );
+_body_table( \@template_elements );
+
+# ************************************************************************************************************************************************
+
+# ************************************************************************************************************************************************
+# * Footer
+
+##print _footer_tikz();
+_footer_table();
+
+# ************************************************************************************************************************************************
+
+sub _header_tikz {
+    return '\begin{tikzpicture}[txt/.style={anchor=base, shape=rectangle, inner sep=0pt, minimum height=1cm}]' . "\n";
+}
+
+sub _header_table {
+    my $n_columns = shift;
+    _add_line( '\begin{tabular}{|' . join( '|' , map { ' c ' } ( 1 .. $n_columns ) ) . '|}' );
+}
+
+sub _footer_tikz {
+    return '\end{tikzpicture}' . "\n";
+}
+
+sub _footer_table {
+    _add_line('\end{tabular}');
+    _add_line( '\caption{' . $template_type . ' summary template for \url{http://www.thestute.com} using \url{http://www.dailytargum.com} as target. \emph{a} marks abstractive locations, \emph{f} marks function terms, \emph{s} marks target-supported terms, while numerical ids indicate extractive locations.}' );
+}
+
+sub _body_tikz {
+
+    my $_template_elements = shift;
+    my @template_elements = @{ $_template_elements };
+
+    my @node_ids;
+    for ( my $i = 0 ; $i <= $#template_elements ; $i++ ) {
+
+	my $template_element = $template_elements[ $i ];
+	my $node_id = join( '' , 'word' , $i );
+	push @node_ids , $node_id;
+	
+	_add_line( '\node[anchor=base,txt' . ( ($i > 0) ? ',right of=' . $node_ids[ $i - 1 ] : '' ) . '] (' . $node_id . ') {' . $template_element->{ 'surface' } . '};' );
+	_add_line( '\node[below] at (' . $node_id . '.south) {\footnotesize{' . $template_element->{ 'status' } . '}};' );
+
+    }
+
+}
+
+sub _body_table {
+
+    my $_template_elements = shift;
+    my @template_elements = @{ $_template_elements };
+    
+    my @node_ids;
+    _add_line( join( ' & ' , map { $_->{ 'surface'} } @template_elements  ) . '\\\\' );
+    _add_line( '\\hline' );
+    _add_line( join( ' & ' , map { $_->{ 'status'} } @template_elements  ) . '\\\\' );
+
+}
+
+sub _add_line {
+    my $line = shift;
+    print "$line\n";
+}
+
+1;

@@ -1,0 +1,379 @@
+#!/usr/bin/env perl
+
+# Note - original mode of execution
+# 1d => perl /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/evaluation/crowd/1-intrinsic-quality/analyze-results ./a778031.csv ./systems.filtered.pairings
+
+# perl /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/evaluation/crowd/1-intrinsic-quality/analyze-results-combined-table-generator ../1-temp/a783432.analysis.data.filtered.sorted analysis-out/full-analysis/analysis.out
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/";
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../../../src/perl";
+
+use Carp::Assert;
+use File::Slurp;
+use Statistics::Basic qw(:all);
+use Text::CSV::Slurp;
+
+use Experiment::Table::HeaderAdapter;
+use Significance;
+
+# TODO : to be shared with the analysis code for the 3d experiment
+my $namespace_baseline = 'baseline';
+
+my $key_system_id_full = 'system_id_full';
+my $key_system_namespace = 'system_namespace';
+my $prefix_1d = '1d';
+my $prefix_3d = '3d';
+
+# TODO: technically this could/should be handled by the Experiment::Manager class ?
+# How ? 
+my $data_file_1d = $ARGV[ 0 ];
+my $data_file_3d = $ARGV[ 1 ];
+my $systems_pairings_file = $ARGV[ 2 ];
+my $output_directory = $ARGV[ 3 ];
+
+if ( ! defined( $data_file_1d ) || ! -f $data_file_1d ||
+     ! defined( $data_file_3d ) || ! -f $data_file_3d ||
+     ! defined( $systems_pairings_file ) || ! -f $systems_pairings_file ||
+     ! defined( $output_directory ) || ! -d $output_directory ) {
+    die "Usage: $0 <data-file-1d> <data-file-3d> <systems-pairings-file> <output-directory>";
+}
+
+if ( ! -f $data_file_1d ) {
+    die "Invalid data file for 1-d experiment: $data_file_1d";
+}
+
+if ( ! -f $systems_pairings_file ) {
+    die "Invalid systems pairing file: $systems_pairings_file";
+}
+
+my $run_significance = 0;
+my $key_relevance = join( '::' , $prefix_1d , 'relevance' );
+my $key_accuracy = '3d::accuracy';
+my $key_informativeness = '3d::informativeness';
+my $key_specificity = '3d::specificity';
+
+# 1 - perform raw analysis for each experiment
+my $data_1d = _load_data_1d( $data_file_1d );
+my $data_3d = _load_data_3d( $data_file_3d );
+
+# 2 - combine data entries
+my %data_entries = %{ $data_1d };
+my %namespaces_all;
+map {
+
+    my $entry_key = $_;
+    my $entry = $data_3d->{ $entry_key };
+    my $entry_namespace = $entry->{ $key_system_namespace };
+
+    # keep track of all namespaces
+    $namespaces_all{ $entry_namespace }++;
+
+    if ( ! defined( $data_1d->{ $entry_key } ) ) {
+	die "Found an entry for the 3-d analysis that does not exist for the 1-d analysis => $entry_key";
+    }
+
+    foreach my $field_key (keys( %{ $entry } )) {
+	my $new_value = $entry->{ $field_key };
+	my $current_value = $data_entries{ $entry_key }{ $field_key };
+	if ( ! defined( $current_value ) ) {
+	    $data_entries{ $entry_key }{ $field_key } = $new_value;
+	}
+	elsif ( $new_value ne $current_value ) {
+	    print STDERR "Field value mismatch: $field_key / $current_value / $new_value\n";
+	}
+    }
+
+} keys( %{ $data_3d } );
+
+# 3 - generate table based on results of one-dimensional experiment
+my @sorted_system_keys = sort {
+
+    my ( $data_entry_a , $data_entry_b ) = map { $data_entries{ $_ } } ( $a , $b );
+
+    my ( $relevance_1d_a , $relevance_1d_b ) = map {
+	$_->{ $key_relevance }
+    } ( $data_entry_a , $data_entry_b );
+    if ( $relevance_1d_a != $relevance_1d_b ) {
+	$relevance_1d_b <=> $relevance_1d_a
+    }
+    else {
+	my ( $accuracy_3d_a , $accuracy_3d_b ) = map {
+	    $_->{ $key_accuracy }
+	} ( $data_entry_a , $data_entry_b );
+	if ( $accuracy_3d_a != $accuracy_3d_b ) {
+	    $accuracy_3d_b <=> $accuracy_3d_a
+	}
+	else {
+	    die "This is unlikely to happen ?";
+	}
+    }
+
+} keys( %data_entries );
+
+my @systems_namespaces = grep {
+    # TODO : make this configurable
+    $_ !~ m/oracle-category/
+} grep { ! is_baseline_namespace( $_ ); } keys( %namespaces_all );
+foreach my $systems_namespace (@systems_namespaces) {
+
+    print STDERR ">> Generating table for: $systems_namespace\n";
+
+    my $output_file = join( '/' , $output_directory , join( '.' , $systems_namespace , 'tex' ) );
+    open OUTPUT_FILE , ">$output_file" or die "Unable to create output file ($output_file): $output_file";
+
+    my $current_namespace = undef;
+    foreach my $sorted_system_key (@sorted_system_keys) {
+	
+	my $system_entry = $data_entries{ $sorted_system_key };
+	my $system_namespace = $system_entry->{ $key_system_namespace };
+
+	if ( ! is_namespace_compatible( $systems_namespace , $system_namespace ) ) {
+	    next;
+	}
+
+	my $system_relevance = $system_entry->{ $key_relevance };
+	my $system_accuracy = $system_entry->{ $key_accuracy };
+	my $system_informativeness = $system_entry->{ $key_informativeness };
+	my $system_specificity = $system_entry->{ $key_specificity };
+
+	if ( defined( $current_namespace ) && ( $system_namespace ne $current_namespace ) ) {
+	    print OUTPUT_FILE '\\hline' . "\n";
+	}
+	
+	print OUTPUT_FILE join( ' & ' ,
+				Experiment::Table::HeaderAdapter->adapt( $sorted_system_key ) ,
+				$system_relevance ,
+				$system_accuracy ,
+				$system_informativeness ,
+				$system_specificity ) . '\\\\' . "\n";
+
+	$current_namespace = $system_namespace;
+	
+    }
+
+    close OUTPUT_FILE;
+
+}
+
+sub _load_data_1d {
+
+    my $data_file_1d = shift;
+
+    # 1 - perform raw analysis
+    #my $analysis_file_1d_entries = _read_file( $analysis_file_1d );
+    my $analysis_1d_entries = _raw_analysis_1d( $data_file_1d );
+
+    # 2 - generate analysis data
+    my %entries;
+    foreach my $system_id_full (keys( %{ $analysis_1d_entries })) {
+	my %entry_hash;
+	my $system_entry_1d = $analysis_1d_entries->{ $system_id_full };
+	$entry_hash{ $key_system_namespace } = $system_entry_1d->{ $key_system_namespace };
+	$entry_hash{ $key_relevance } = $system_entry_1d->{ $key_relevance };
+	if ( ! defined( $entries{ $system_id_full } ) ) {
+	    $entries{ $system_id_full } = \%entry_hash;
+	}
+	else {
+	    die "This should not happen ...";
+	}
+    }
+
+    return \%entries;
+
+}
+
+sub _raw_analysis_1d {
+
+    my $input_file = shift;
+
+    my $FIELD_KEY_EVALUATION = 'how_would_you_assess_the_relevance_of_this_summary_to_describe_underlinethe_purposepurpose_of_the_above_web_page';
+    my $FIELD_KEY_SYSTEM = 'system';
+    my $FIELD_KEY_URL = 'url';
+    my $FIELD_KEY_AGREEMENT = join( ':' , $FIELD_KEY_EVALUATION , 'confidence' );
+    
+    my %assessment2numerical = (
+	'judgement_completely_irrelevant' => 1,
+	'judgement_some_inacurracies' => 2,
+	'judgement_conveys_core_information' => 3,
+	'judgement_reasonably_good' => 4,
+	'judgement_very_good' => 5
+	);
+
+    # 1 - collect data for each system
+    my %system2entries;
+    
+    my $data = Text::CSV::Slurp->load( file => $input_file );
+
+    my $total_agreement = 0;
+    my $entry_count = 0;
+    foreach my $datum (@{ $data }) {
+	
+	my $system_id = $datum->{ $FIELD_KEY_SYSTEM };
+	my $url = $datum->{ $FIELD_KEY_URL };
+	my $agreement = $datum->{ $FIELD_KEY_AGREEMENT };
+	
+	# Note : update entry count (this is the number of annotation tasks, not the number of URLs considered)
+	$entry_count++;
+	
+	my $assessment_string = $datum->{ $FIELD_KEY_EVALUATION };
+	affirm { defined( $assessment_string ) && length( $assessment_string ) } 'Assessment string must be non-empty' if DEBUG;
+	
+	my $assessment_numerical = $assessment2numerical{ $assessment_string };
+	affirm { defined( $assessment_numerical ) } 'There has to exist a numerical mapping for the assessment string' if DEBUG;
+	
+	if ( ! defined( $system2entries{ $system_id } ) ) {
+	    $system2entries{ $system_id } = {};
+	}
+	$system2entries{ $system_id }{ $url } = $assessment_numerical;
+	
+	$total_agreement += $agreement;
+	
+    }
+
+    my $average_agreement = $total_agreement / $entry_count;
+    print STDERR "Average agreement: $average_agreement\n";
+    
+    my @systems = keys( %system2entries );
+    
+    if ( $run_significance ) {
+
+	my $significance_analyzer = new Significance;
+	my @systems_pairings = map {
+	    my @systems = split /\s+/ , $_;
+	    \@systems;
+	} read_file( $systems_pairings_file , { chomp => 1 } );
+	
+	foreach my $systems_pairing (@systems_pairings) {
+	    
+	    my $system_i = $systems_pairing->[ 0 ];
+	    my $system_i_distribution = _get_system_distribution( \%system2entries , $system_i );
+	    
+	    my $system_j = $systems_pairing->[ 1 ];
+	    my $system_j_distribution = _get_system_distribution( \%system2entries , $system_j );
+	    
+	    # test significance between system_i and system_j
+	    my ( $significance , $p_value , $test_id ) = $significance_analyzer->test_significance( $system_i_distribution , $system_j_distribution );
+	    
+	    print STDERR join( "\t" , $system_i , $system_j , $significance , $p_value ) . "\n";
+	    
+	}
+
+    }
+
+    # 2 - compute stats for each system
+    my %system2average;
+    foreach my $system_id (@systems) {
+	
+	my @assessment_numerical_values = values( %{ _get_system_distribution( \%system2entries , $system_id ) } );
+	my $assessment_average = mean( @assessment_numerical_values );
+	$system2average{ $system_id } = $assessment_average;
+	
+    }
+
+    # 2 - compute stats for each system
+    my %analysis_data_1d;
+    foreach my $system_id (@systems) {
+	
+	my $namespace = _extract_namespace( $system_id );
+	
+	# list significance to all comparable systems with lower assessment averages
+	my $assessment_average = $system2average{ $system_id };
+=pod
+    my @significances =  grep { $system2average{ $_ } < $assessment_average } _list_comparable_systems( $system_id );
+=cut
+	
+	#print join( "\t" , $system_id , $assessment_average , $namespace ) . "\n";
+	$analysis_data_1d{ $system_id } = {
+	    $key_relevance => $assessment_average,
+	    $key_system_namespace => $namespace
+	}
+
+    }
+   
+    return \%analysis_data_1d;
+
+}
+
+sub _get_system_distribution {
+    my $system2entries = shift;
+    my $system_id = shift;
+    my $distribution = $system2entries->{ $system_id };
+    return $distribution;
+}
+
+sub _extract_namespace {
+    my $system_id = shift;
+    my @system_id_components = split /:::/ , $system_id;
+    if ( scalar( @system_id_components ) > 1 ) {
+	return $system_id_components[ 0 ];
+    }
+    return $namespace_baseline;
+}
+
+sub _load_data_3d {
+    my $analysis_file_3d = shift;
+    my $analysis_file_3d_entries = _read_file( $analysis_file_3d );
+    my %entries;
+    foreach my $analysis_file_3d_entry (@{ $analysis_file_3d_entries }) {
+	my $system_id_full = $analysis_file_3d_entry->[ 1 ];
+	my $dimension = $analysis_file_3d_entry->[ 0 ];
+	if ( ! defined( $entries{ $system_id_full } ) ) {
+	    $entries{ $system_id_full } = {
+		$key_system_namespace => $analysis_file_3d_entry->[ 3 ]
+	    };
+	}
+	$entries{ $system_id_full }{ join( '::' , $prefix_3d , $dimension ) } = $analysis_file_3d_entry->[ 2 ];
+    }
+    return \%entries;
+}
+
+sub _read_file {
+    my $filename = shift;
+    my @file_entries = map {
+	my @fields = split /\t/ , $_;
+	\@fields;
+    } read_file( $filename , { chomp => 1 } );
+    return \@file_entries;
+}
+
+sub is_baseline_namespace {
+    my $namespace_string = shift;
+    if ( $namespace_string eq 'base' || $namespace_string eq $namespace_baseline ) {
+	return 1;
+    }
+    return 0;
+}
+
+sub is_namespace_compatible {
+    my $namespace_expected = shift;
+    my $namespace_current = shift;
+    if ( $namespace_expected eq $namespace_current ) {
+	return 1
+    }
+    return is_baseline_namespace( $namespace_current );
+}
+
+1;
+
+# Compute significance between systems (all pairs)
+# => rank systems and compute significance against most distant reference ?
+# => only compare systems in the same namespace => i.e. oracle-based within oracle space , non-oracle-base within non-oracle space
+# Output as table ?
+# Output as graph ?
+# Output as column-ordered matrix => can easily show all significance information
+
+=pod
+my $csv = Text::CSV_XS->new ({ binary => 1 , auto_diag => 1 });
+open my $fh, "<:encoding(utf8)", $input_file or die "Unable to open file ($input_file): $!";
+while (my $entry = $csv->getline ($fh)) {
+    print $entry;
+}
+close $fh;
+=cut

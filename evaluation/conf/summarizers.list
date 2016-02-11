@@ -1,0 +1,19 @@
+title title-summarizer/bin/run-summarizer
+#filippova-basic graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+#filippova-basic-ranking-target-similarity-no-filtering-1       graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+filippova-basic-ranking-target-similarity-no-filtering-2 graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+#filippova-improved graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+#filippova-improved-ranking-target-similarity-no-filtering-1    graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+filippova-improved-ranking-target-similarity-no-filtering-2 graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+graph4-filippova-conditioned graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+#graph4 graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+graph4-dev graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+graph4-energy graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+graph4-path-cost-normalized graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+#graph4-exact graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+wg-baseline-ranking-summary-relevance graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+wg-baseline-ranking-target-similarity graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+wg-baseline-ranking-target-similarity-max graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+wg-baseline-ranking-target-similarity-min graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+wg-baseline-ranking-weighted-summary-relevance graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json
+wg-baseline-ranking-combined-relevance graph-summarizer-4/bin/run-summarizer --system-configuration=conf/configuration.json

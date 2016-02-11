@@ -1,0 +1,35 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+my @binned_data;
+
+my %index2key;
+my %key2index;
+
+my $count = 0;
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+
+    if ( ! $count++ ) {
+	for ( my $i = 0 ; $i <= $#fields ; $i++ ) {
+	    my $key = $fields[ $i ];
+	    $index2key{ $i } = $key;
+	    $key2index{ $key } = $i;
+	}
+    }
+
+    my $url = shift @fields;
+    my $system_key = shift @fields;
+    
+
+    my $homogeneity_data = pop @fields;
+
+}
+
+
+1;

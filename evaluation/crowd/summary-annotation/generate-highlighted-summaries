@@ -1,0 +1,147 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use HTML::Entities;
+
+=pod
+use lib '/proj/nlp/users/ypetinot/ocelot/svn-research/trunk/third-party/local/lib/';
+use Data::SExpression;
+=cut
+
+my @header_labels = ( "URL" , "Description" , "Fragment" , "Highlighted Description" );
+print join( "\t" , @header_labels ) . "\n";
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+    my $description = _escaped( shift @fields );
+    my $description_parsed = shift @fields;
+
+    # Analyze description parse
+    my $description_structure = _analyze_structure( $description_parsed );
+
+    foreach my $element (@fields) {
+	my ($target_element,$description_highlighted) = _highlight( $description, $description_structure, $element );
+	print join( "\t" , $url , $description , $target_element , $description_highlighted ) . "\n";
+    }
+
+}
+
+sub _escaped {
+
+    my $string = shift;
+
+    return encode_entities( $string );
+
+}
+
+sub _analyze_structure {
+
+    my $string_parsed = shift;
+
+#    my @components = grep { length( $_ ) && $_ !~ m/^\s+$/ } split /(\(|\))/, $string_parsed;
+    my @components = grep { length( $_ ) && $_ !~ m/^\s+$/ } split /(\([^\s]+)\s|(\))/, $string_parsed;
+    my @structure;
+
+    my $level = 0;
+    my $scope = undef;
+    my $in_target = 0;
+    my $in_target_level = 0;
+    my @target;
+    while ( scalar(@components) ) {
+
+	my $component = shift @components;
+
+	if ( $component eq '(PP' ) {
+	    $in_target = 1;
+	    $in_target_level = $level;
+	}
+	elsif ( $in_target ) {
+
+	    if ( $level > $in_target_level ) {
+		if ( $component !~ m/^\(/ && $component !~ m/\)/ ) {
+		    push @target, $component;
+		}
+	    }
+	    else { # this is the end ?
+		$in_target = 0;
+		if ( scalar(@target) ) {
+		    if ( scalar(@target) > 2 && scalar(@target) < 5 ) {
+			my @target_copy = @target;
+			push @structure, \@target_copy;
+		    }
+		}
+		@target = ();
+	    }
+
+	}
+
+	if ( $component =~ m/^\(/ ) {
+	    $level++;
+	}
+	elsif ( $component eq ')' ) {
+	    $level--;
+	}
+
+    }
+
+    return \@structure;
+
+}
+
+=pod
+sub _analyze_structure {
+
+    my $string_parsed = shift;
+
+    my $ds = Data::SExpression->new;
+    $ds->read( $string_parsed );
+
+    return $ds;
+
+}
+=cut
+
+sub _highlight {
+
+    my $string = shift;
+    my $structure = shift;
+    my $target = shift;
+
+    my $highlighted_string = $string;
+
+=pod
+    my $match_at = -1;
+    for (my $i=0; $i<scalar(@{ $structure }); $i++) {
+	
+	if ( join(" ", @{ $structure->[ $i ] }) =~ m/\Q$target\E/sig ) {
+	    $match_at = $i;
+	    last;
+	}
+
+    }
+    if ( $match_at != -1 ) {
+	$target = '\W' . join('.*?', @{ $structure->[ $match_at ] }) . '\W';
+#	$target = qr/$target/;
+	splice @{ $structure }, 0, $match_at;
+	print STDERR ">> Updated target : $target\n";
+    }
+=cut
+
+    if ( $highlighted_string =~ s/(\Q$target\E)/<b>$1<\/b>/sig ) {
+
+    }
+    else {
+	print STDERR "Unable to match >> $target\n";
+    }
+
+    return ( $target , $highlighted_string );
+
+}
+
+1;

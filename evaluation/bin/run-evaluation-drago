@@ -1,0 +1,19 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+URLS="http://www.cs.columbia.edu/~mcollins/ http://www.cs.columbia.edu/~kathy/ http://www.stanford.edu/ http://www.princeton.edu/ http://www.pinterest.com/ http://www.facebook.com"
+SYSTEMS="graph4-baseline-ranking graph4-adaptation-extractive graph4-adaptation-extractive-reranked graph4-adaptation-abstractive graph4-adaptation-abstractive-reranked"
+
+for url in ${URLS}; do
+
+    OUTPUT_FILE_BASE=`echo ${url} | sed 's/\/\|:/_/g'`
+
+    for system in ${SYSTEMS}; do
+
+	OUTPUT_FILE_BASE_SYSTEM=${OUTPUT_FILE_BASE}.${system}
+	/proj/nlp/users/ypetinot/ocelot/svn-research/trunk/bin/run-summarizer-wrapper ${system} ${url} 2> ${OUTPUT_FILE_BASE_SYSTEM}.log > ${OUTPUT_FILE_BASE_SYSTEM}.summary
+
+    done;
+
+done;

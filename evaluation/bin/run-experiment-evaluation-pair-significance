@@ -1,0 +1,38 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+source ${BINDIR}/../../dist.rc
+source ${PARALLEL_JOB_RESOURCES}
+
+TARGET_FIELDS=$@
+if [[ -z "${TARGET_FIELDS}" ]]; then
+    echo "Usage: $0 <fields>";
+fi
+
+cat - | while read INPUT_DIR BASE_1 BASE_2; do
+
+    for field in ${TARGET_FIELDS}; do
+
+	# TODO : introduce function to handle the filename generation
+	file_1=${INPUT_DIR}/${BASE_1}.${field}
+	file_2=${INPUT_DIR}/${BASE_2}.${field}
+
+	if [[ ! -f ${file_1} || ! -f ${file_2} ]]; then
+	    echo "Missing file: ${file_1} / ${file_2} ...";
+	    exit 1;
+	fi
+
+	echo ${file_1} ${file_2}
+
+    done;
+
+done | while read arg_1 arg_2; do ${BINDIR}/run-experiment-significance-test-wrapper ${arg_1} ${arg_2}; done;
+
+# TODO : why ???
+###| sed -e 's#^./##g' | ${BINDIR_PARALLEL}/parallel -j50% --no-notice --silent --halt-on-error 2 --sshloginfile ${SERVERS_LIST} --colsep ' ' ls -lh {1//}
+
+###--eta
+#ls {1}
+#--nice 10
+
+#--joblog /experiment_parallel.log

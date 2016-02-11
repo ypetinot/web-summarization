@@ -1,0 +1,109 @@
+#!/usr/bin/env perl
+
+# generates evaluation environment
+# read DMOZ data one line at a time
+
+use threads;
+use threads::shared;
+use Thread::Queue;
+use IO::File;
+
+if ( $#ARGV <= 0 ) {
+    die "usage: $0 ROOT SUMMARIZER1 [SUMMARIZER2 [SUMMARIZER3 ...]]";
+}
+
+# create queue
+my $queue :shared;
+$queue = Thread::Queue->new();
+
+use Evaluation::Environment;
+
+my $ENVIRONMENT_PATH=shift @ARGV;
+my $evaluation_environment = new Evaluation::Environment($ENVIRONMENT_PATH);
+
+# the rest of the arguments are the summarizers to evaluate
+my @reference_summarizers = ('dmoz-summarizer');
+my @summarizers = @ARGV;
+
+print STDERR "[$0] will evaluate the following summarizers: " . join(":",@summarizers) . "\n";
+
+# get list of test URLs and their locations in the evaluation environment
+my $test_urls = $evaluation_environment->getAllURLs();
+
+# now process each URL, one at a time ~~
+foreach my $test_url (@{$test_urls}) {
+
+    # push to the queue
+    $queue->enqueue($test_url);
+
+}
+
+# create worker threads
+my $NUMBER_OF_WORKER_THREADS = 50;
+for (my $i=0; $i<$NUMBER_OF_WORKER_THREADS; $i++) {
+    threads->create(\&run_summarizer);
+}
+
+# Loop through all the threads
+foreach my $thr (threads->list()) {
+    $thr->join();
+}
+
+sub run_summarizer {
+
+    while (my $test_url = $queue->dequeue_nb()) {
+
+	# get root directory for this url
+	my $test_url_obj = Evaluation::URL->instantiate($test_url, $evaluation_environment);
+	
+	print "processing: " . $test_url_obj->url() . "\n";
+
+	# get data directory
+	my $data_directory = $test_url_obj->get_data_directory();
+
+	# get context data
+	my $context_data = $test_url_obj->get_context_file("filt");
+
+	# first task is to collect statistics about the target URL
+	my $statistics_data = `run-statistics $context_data 2> $data_directory/stats.err`;
+	my $statistics_file = $test_url_obj->write_file("statistics", $statistics_data);
+	
+	my $model_files = '';
+
+	# append summaries of the reference summarizers
+	foreach my $reference_summarizer (@reference_summarizers) {
+
+	    # generate summary
+            my $summary_data = `run-summarizer -s1 $reference_summarizer $context_data 2> $data_directory/$reference_summarizer.err`;
+
+            # write out summary
+            my $summary_file = $test_url_obj->write_file($reference_summarizer . ".summary", $summary_data);
+
+	    # TODO: support for multiple references
+	    # list all the static summary files already present in the environment
+	    #foreach my $reference_summary (@{$test_url_obj->get_summary_files($reference_summarizer)}) {
+	    #	$model_files .= "\t" . $reference_summary;
+	    #}
+
+	    $model_files .= "\t" . $summary_file;
+
+	}
+
+	# now run each of the specified summarizers
+	foreach my $summarizer (@summarizers) {
+	    
+	    # generate summary
+	    my $summary_data = `run-summarizer -s1 $summarizer $context_data 2> $data_directory/$summarizer.err`;
+
+	    # write out summary
+	    my $summary_file = $test_url_obj->write_file($summarizer . ".summary", $summary_data);
+
+	}
+        
+	print "[$0] done with : " . $test_url . "\n";
+
+    }
+
+}
+    
+1;

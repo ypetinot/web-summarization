@@ -1,0 +1,36 @@
+#!/bin/bash -x
+
+# wrapper to run lm-perplexity-experiment
+
+BINDIR=`dirname $0`
+LM_ROOT=${BINDIR}/../../topic-models/
+
+TEST_DATA_DIR=$1
+MODELS_DIR=$2
+OUTPUT_DIR=$3
+
+if [[ -z "${TEST_DATA_DIR}" || -z "${MODELS_DIR}" || -z "${OUTPUT_DIR}" ]]; then
+    echo "$0 <test-data-dir> <models-dir> <output-dir>";
+    exit 1;
+fi
+
+MODEL_1GRAM_OUT=${OUTPUT_DIR}/1-gram.prob
+MODEL_2GRAM_OUT=${OUTPUT_DIR}/2-gram.prob
+MODEL_3GRAM_OUT=${OUTPUT_DIR}/3-gram.prob
+
+paste -d"\t" ${TEST_DATA_DIR}/dmoz.rendered.url ${TEST_DATA_DIR}/dmoz.mapped.description ${TEST_DATA_DIR}/dmoz.rendered.category | \
+tee >( awk -F"\t" '{ print $2 }' | ${LM_ROOT}/n-gram/bin/ngram-probability --order=1 --model=${MODELS_DIR}/1-gram.model 2>/dev/null > ${MODEL_1GRAM_OUT} ) | \
+tee >( awk -F"\t" '{ print $2 }' | ${LM_ROOT}/n-gram/bin/ngram-probability --order=2 --model=${MODELS_DIR}/2-gram.model 2>/dev/null > ${MODEL_2GRAM_OUT} ) | \
+tee >( awk -F"\t" '{ print $2 }' | ${LM_ROOT}/n-gram/bin/ngram-probability --order=3 --model=${MODELS_DIR}/3-gram.model 2>/dev/null > ${MODEL_3GRAM_OUT} ) | \
+tee >( ${LM_ROOT}/confusius-tm/bin/confusius-tm-probability --model=${MODELS_DIR}/ 2>/dev/null > ${MODEL_3GRAM_OUT} ) | \
+cat > /dev/null
+
+# compute perplexities
+MODEL_1GRAM_PPL=`cat ${MODEL_1GRAM_OUT} | ${BINDIR}/compute-perplexity`;
+MODEL_2GRAM_PPL=`cat ${MODEL_2GRAM_OUT} | ${BINDIR}/compute-perplexity`;
+MODEL_3GRAM_PPL=`cat ${MODEL_3GRAM_OUT} | ${BINDIR}/compute-perplexity`;
+
+# output results
+echo "1-gram perplexity: ${MODEL_1GRAM_PPL}"
+echo "2-gram perplexity: ${MODEL_2GRAM_PPL}"
+echo "3-gram perplexity: ${MODEL_3GRAM_PPL}"

@@ -1,0 +1,41 @@
+#!/bin/bash
+
+SYSTEMS_DIR=$1
+RAWS_DIR=$2
+
+if [[ -z "${SYSTEMS_DIR}" || -z "${RAWS_DIR}" ]]; then
+    echo "Usage: $0 <systems-dir> <raws-dir>"
+    exit 1;
+fi
+
+# 1 - list system types/instances
+_SYSTEM_TYPES=`find ${SYSTEMS_DIR} -type f | tr '\n' ' '`
+read -a SYSTEM_TYPES <<< ${_SYSTEM_TYPES}
+
+function generate_pairs() {
+
+    FILE_1=$1
+    FILE_2=$2
+
+    list_1=`cat $FILE_1 | tr '\n' ' '`;
+    list_2=`cat $FILE_2 | tr '\n' ' '`;
+
+    for entry_1 in $list_1; do
+	for entry_2 in $list_2; do
+	    echo ${RAWS_DIR} $entry_1 $entry_2
+	done;
+    done;
+
+}
+
+# 2 - pair up system instances of difference types
+for (( i=0 ; i < ${#SYSTEM_TYPES[@]}; i++ )); do
+    for (( j=$i+1 ; j < ${#SYSTEM_TYPES[@]}; j++ )); do
+
+	system_type_1=${SYSTEM_TYPES[ $i ]};
+	system_type_2=${SYSTEM_TYPES[ $j ]};
+
+	generate_pairs ${system_type_1} ${system_type_2}
+
+    done;
+done;

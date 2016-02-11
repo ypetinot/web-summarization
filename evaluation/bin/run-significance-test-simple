@@ -1,0 +1,11 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+INPUT_FILE=$1
+
+# run significance test
+R --slave --vanilla < ${BINDIR}/significance.R --args ${INPUT_FILE} | tr -d '"' | awk '{ print $2 "\t" $3 "\t" $4 }'
+#R --slave --vanilla < ${BINDIR}/significance-2.R --args ${INPUT_FILE} | tr -d '"' | awk '{ print $2 "\t" $3 "\t" $4 }'
+# TODO : why ???
+#| cut -t' ' -s -f 1

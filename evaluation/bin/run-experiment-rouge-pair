@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# COMPUTE ROUGE scores for the two lists provided
+
+BINDIR=`dirname $0`
+
+ROUGE_BASE=${BINDIR}/../third-party/rouge/RELEASE-1.5.5
+ROUGE_SCRIPT=${ROUGE_BASE}/ROUGE-1.5.5.pl
+
+if [ $# -ne 2 ]; then
+    echo "Usage: $0 <system-1-file> <system-2-file>"
+    exit
+fi
+
+SYSTEM_1=$1
+SYSTEM_2=$2
+LABEL=$3
+
+# Note: is this really useful ?
+if [[ -z "${LABEL}" ]]; then
+    LABEL=""
+fi
+
+# 1 - create temporary file where the two systems are grouped
+EXPECTED_SIZE=
+for INPUT_FILE in ${SYSTEM_1} ${SYSTEM_2}; do
+    CURRENT_SIZE=`wc -l ${INPUT_FILE} | awk '{ print $1 }'`
+    if [ -z "${EXPECTED_SIZE}" ]; then
+	EXPECTED_SIZE=${CURRENT_SIZE};
+	echo "Size reference (${INPUT_FILE}): ${EXPECTED_SIZE}";
+    elif [[ ${CURRENT_SIZE} != ${EXPECTED_SIZE} ]]; then
+	echo "Size mismatch for generation results (${INPUT_FILE}): ${CURRENT_SIZE} / ${EXPECTED_SIZE}";
+    fi
+    
+done;
+
+# TODO : make this a parameter ?
+TARGET_SIZE=4
+
+INPUT_FILE=
+
+perl -I ${BINDIR}/../third-party/local/lib/ ${ROUGE_SCRIPT} -e ${ROUGE_BASE}/data/ -n ${TARGET_SIZE} -z SPL ${INPUT_FILE} ${LABEL}
+#>> ${SYSTEM_MACRO_ROUGE}

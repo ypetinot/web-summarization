@@ -1,0 +1,238 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/";
+use lib "${FindBin::Bin}/../../../src/perl";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Significance;
+
+use Carp::Assert;
+use File::Slurp;
+use Statistics::Basic qw(:all);
+use Text::CSV::Slurp;
+
+# TODO: technically this could/should be handled by the Experiment::Manager class ?
+# How ? 
+
+my $input_file = $ARGV[ 0 ];
+
+if ( ! defined( $input_file ) ) {
+    die "Usage: $0 <input-file>";
+}
+
+if ( ! -f $input_file ) {
+    die "Invalid input file: $input_file";
+}
+
+my $FIELD_KEY_EVALUATION = 'which_summary_strong_classabest_conveys_the_purposestrong_of_the_web_page_linked_to_above';
+my $FIELD_KEY_SYSTEM_1 = 'system_1';
+my $FIELD_KEY_SYSTEM_2 = 'system_2';
+my $FIELD_KEY_URL = 'url';
+my $FIELD_KEY_AGREEMENT = join( ':' , $FIELD_KEY_EVALUATION , 'confidence' );
+
+my %assessment2numerical = (
+    'a_more_than_b' => -1,
+    'b_more_than_a' => 1,
+    'a_equal_to_b' => 0
+    );
+
+# 1 - collect data for each pairing
+my %pairing2entries;
+
+my $data = Text::CSV::Slurp->load( file => $input_file );
+my $total_agreement = 0;
+my $entry_count = 0;
+foreach my $datum (@{ $data }) {
+
+    my $system_id_1 = $datum->{ $FIELD_KEY_SYSTEM_1 };
+    my $system_id_2 = $datum->{ $FIELD_KEY_SYSTEM_2 };
+    my $url = $datum->{ $FIELD_KEY_URL };
+    my $agreement = $datum->{ $FIELD_KEY_AGREEMENT };
+
+    # Note : update entry count (this is the number of annotation tasks, not the number of URLs considered)
+    $entry_count++;
+
+    my $assessment_string = $datum->{ $FIELD_KEY_EVALUATION };
+    affirm { defined( $assessment_string ) && length( $assessment_string ) } 'Assessment string must be non-empty' if DEBUG;
+
+    my $assessment_numerical = $assessment2numerical{ $assessment_string };
+    affirm { defined( $assessment_numerical ) } 'There has to exist a numerical mapping for the assessment string' if DEBUG;
+
+    my $pairing_id = join( "\t" , $system_id_1 , $system_id_2 );
+    if ( ! defined( $pairing2entries{ $pairing_id } ) ) {
+	$pairing2entries{ $pairing_id } = {};
+    }
+    $pairing2entries{ $pairing_id }{ $url } = $assessment_numerical;
+
+    $total_agreement += $agreement;
+
+}
+
+my $average_agreement = $total_agreement / $entry_count;
+print STDERR "Average agreement: $average_agreement\n";
+
+my @pairings = keys( %pairing2entries );
+
+sub _parse_system_id {
+    my $system_id = shift;
+    my @system_id_components = split /:::/ , $system_id;
+    if ( scalar( @system_id_components ) != 2 ) {
+	#return 'base';
+	return [ undef , $system_id ];
+    }
+    return \@system_id_components;
+}
+
+# TODO : significance => map each summary to a score : 0 / 0.5 / 1 => then compute significance compared to 0.5
+my $significance_analyzer = new Significance;
+
+my %namespaces;
+my @comparison_entries;
+
+foreach my $systems_pairing (@pairings) {
+
+    my @systems = split /\t/ , $systems_pairing;
+    my $entries = $pairing2entries{ $systems_pairing };
+
+    # 1 - keep track of all namespaces seen
+    # => how do we handle delort ? => should be in the default namespace
+    my @pairing_systems_parsed = map {
+	my $system_entry = _parse_system_id( $_ );
+	my $system_entry_namespace = $system_entry->[ 0 ];
+	if ( defined( $system_entry_namespace ) ) {
+	    $namespaces{ $system_entry_namespace }++;
+	}
+	$system_entry;
+    } @systems;
+
+    my $pairing_average = mean( values( %{ $entries } ) );
+    my %distribution_1;
+    my %distribution_2;
+    foreach my $entry_key ( keys( %{ $entries } ) ) {
+
+	my $entry_value = $entries->{ $entry_key };
+
+	my $distribution_1_value = undef;
+	my $distribution_2_value = undef;
+
+	if ( $entry_value == -1 ) {
+	    $distribution_1_value = 1;
+	    $distribution_2_value = 0;
+	}
+	elsif ( $entry_value == 1 ) {
+	    $distribution_1_value = 0;
+	    $distribution_2_value = 1;
+	}
+	elsif ( $entry_value == 0 ) {
+	    $distribution_1_value = 0.5;
+	    $distribution_2_value = 0.5;
+	}
+	else {
+	    die "This should never happen ...";
+	}
+
+	$distribution_1{ $entry_key } = $distribution_1_value;
+	$distribution_2{ $entry_key } = $distribution_2_value;
+
+    }
+
+    # test significance between system_1 and system_2
+    my ( $significance , $p_value , $test_id ) = $significance_analyzer->test_significance( \%distribution_1 , \%distribution_2 );
+    
+    #push @comparison_entries , [ @pairing_systems_parsed , $pairing_average , $significance , $p_value ];
+    print join( "\t" ,  @systems , $pairing_average , $significance , $p_value ) . "\n";
+
+    # CURRENT : generate per-baseline plots ?
+
+}
+
+exit 1;
+
+sub _print_table {
+
+    my $namespace = shift;
+
+    my @selected_entries = grep { 
+	my $namespace_1 = $_->[ 0 ]->[ 0 ];
+	my $namespace_2 = $_->[ 1 ]->[ 0 ];
+	( defined( $namespace_1 ) && ( $namespace_1 eq $namespace ) ) ||	    
+	    ( defined( $namespace_2 ) && ( $namespace_2 eq $namespace ) )
+    } @comparison_entries;
+
+    # 1 - generate system indices
+    my %system2index;
+    my @table;
+
+    my @systems_header;
+
+    map {
+
+	my @systems = ( $_->[ 0 ]->[ 1 ] , $_->[ 1 ]->[ 1 ] );
+	my $value = $_->[ 2 ];
+	my $significance = $_->[ 3 ];
+
+	# Note : register systems
+	my @coordinates;
+	foreach my $system (@systems) {
+	    if ( ! defined( $system2index{ $system } ) ) {
+		$system2index{ $system } = scalar( keys( %system2index ) );
+		push @systems_header , $system;
+	    }
+	    push @coordinates , $system2index{ $system };
+	}
+
+	if ( $value >= 0 ) {
+	    $table[ $coordinates[ 0 ] ][ $coordinates[ 1 ] ] = [ $value , $significance ];
+	}
+	else {
+	    $table[ $coordinates[ 1 ] ][ $coordinates[ 0 ] ] = [ $value , $significance ];
+	}
+
+
+    } @selected_entries;
+
+    my $n_systems = scalar( keys( %system2index ) );
+
+    print STDERR "# Generating table for : $namespace\n";
+
+    print '\begin{table}[h]' . "\n";
+    print '\centering' . "\n";
+    print '\begin{tabular}{' . join( '|' , map{ 'c' } ( 1 .. $n_systems ) ) . '}' . "\n";
+    print '\hline' . "\n";
+    
+    print join( ' & ' , '' , @systems_header ) . ' \\\\' . "\n";
+
+    for ( my $i = 0 ; $i < $n_systems ; $i++ ) {
+
+	my @row_cells = ( $systems_header[ $i ] );
+
+	for ( my $j = 0 ; $j < $n_systems ; $j++ ) {
+	    my $entry = $table[ $i ][ $j ];
+	    my $value = $entry->[ 0 ];
+	    my $significant = $entry->[ 1 ];
+	    #push @row_cells , '\cellcolor{gray!25}' . ( defined( $value ) ? $value : '' );
+	    push @row_cells , ( defined( $value ) ? $value : '' ) . ( $significant ? ' \\dag' : '' );
+	}
+
+	print join( ' & ' , @row_cells ) . ' \\\\' . "\n";
+	print '\hline' . "\n";
+
+    }
+
+    print '\end{tabular}' . "\n";
+    print '\end{table}' . "\n";
+
+}
+
+# create a table for each namespace
+foreach my $namespace (keys( %namespaces )) {
+    _print_table( $namespace );
+    print "\n\n";
+}
+
+1;

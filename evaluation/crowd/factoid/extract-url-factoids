@@ -1,0 +1,166 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Text::CSV_XS;
+
+my $raw_data_file = $ARGV[0];
+#my $target_key = $ARGV[1];
+
+if ( ! $raw_data_file || ! -f $raw_data_file ) {
+    die "Usage: $0 <raw-data>";
+}
+
+my $FIELD_UNIT_ID = '_unit_id';
+my $FIELD_CREATED_AT = '_created_at';
+my $FIELD_GOLDEN = '_golden';
+my $FIELD_CANARY = '_canary';
+my $FIELD_ID = '_id';
+my $FIELD_MISSED = '_missed';
+my $FIELD_STARTED_AT = '_started_at';
+my $FIELD_TAINTED = '_tainted';
+my $FIELD_CHANNEL = '_channel';
+my $FIELD_TRUST = '_trust';
+my $FIELD_WORKER_ID = '_worker_id';
+my $FIELD_COUNTRY = '_country';
+my $FIELD_REGION = '_region';
+my $FIELD_CITY = '_city';
+my $FIELD_IP = '_ip';
+my $FIELD_QUESTION = 'the_highlighted_text_describescharacterizes_choose_the_uclosestu_fit_';
+my $FIELD_DESCRIPTION = 'description';
+my $FIELD_FRAGMENT = 'fragment';
+my $FIELD_HIGHLIGHTED_DESCRIPTION = 'highlighted_description';
+my $FIELD_QUESTION_GOLD = 'the_highlighted_text_describescharacterizes_choose_the_uclosestu_fit__gold';
+my $FIELD_URL = 'url';
+
+my @rows;
+my $csv = Text::CSV_XS->new ({ binary => 1, auto_diag => 1 });
+
+my %field2index;
+my %index2field;
+my $count = 0;
+
+my %factoid_data_grouped;
+my %factoid_2_count;
+
+# 1 - read in phase-1 data
+open my $fh, "<:encoding(utf8)", $raw_data_file or die "Unable to open raw data file ($raw_data_file): $!";
+while (my $row = $csv->getline ($fh)) {
+
+    my %entry;
+
+    for ( my $i=0; $i<scalar( @{ $row } ); $i++ ) {
+
+	if ( ! $count ) {
+	    $field2index{ $row->[ $i ] } = $i;
+	    $index2field{ $i } = $row->[ $i ];
+	}
+	else {
+	    $entry{ $index2field{ $i } } = $row->[ $i ];
+	}
+
+    }
+
+    if ( $count ) {
+
+	# Join judgementd by (URL,fragment) tuples --> stats computed for these clusters (make sense)
+	my $factoid_key_grouped = join( "::" , $entry{ $FIELD_URL } , $entry{ $FIELD_FRAGMENT } );
+	my $factoid_key_split = join( "::" , $entry{ $FIELD_QUESTION } );
+
+	if ( ! defined( $factoid_data_grouped{ $factoid_key_grouped } ) ) {
+	    $factoid_data_grouped{ $factoid_key_grouped } = {};
+	}
+	if ( ! defined( $factoid_data_grouped{ $factoid_key_grouped }->{ $factoid_key_split } ) ) {
+	    $factoid_data_grouped{ $factoid_key_grouped }->{ $factoid_key_split } = [];
+	}
+
+	push @{ $factoid_data_grouped{ $factoid_key_grouped }->{ $factoid_key_split } } , \%entry;
+	$factoid_2_count{ $factoid_key_grouped }++;
+
+    }
+
+    $count++;
+
+}
+close $fh;
+
+# generate a ranked list of labels for a given factoid
+sub _compute_factoid_stats {
+
+    my $factoid_group = shift;
+
+    # Stats: agreement / weighted agreement (based on trust in user / distance to second-best (both regular and weighted)
+    # Agreement on each option --> rank by descending agreement --> distance stats
+
+    # compute per-split stats
+    my @label_stats = map { _compute_split_stats( $factoid_group->{ $_ } ); } keys ( %{ $factoid_group } );
+
+    # sort / average / distance ...
+    # sort by number of picks (weighted by trust), then compare distance
+    my @sorted_label_stats = sort { $b->{ 'weighted_trust'} <=> $a->{ 'weighted_trust' } } @label_stats;
+
+    return \@sorted_label_stats;
+
+}
+
+sub _compute_split_stats {
+
+    my $split = shift;
+
+    my %split_stats;
+
+    # 1 - count;
+    my $count = scalar( @{ $split } );
+
+    my $pick = undef;
+    
+    # 1 - process each entry
+    foreach my $split_entry (@{ $split }) {
+
+	my $entry_pick = $split_entry->{ $FIELD_QUESTION };
+	if ( ! defined( $pick ) ) {
+	    $split_stats{ 'pick' } = $entry_pick;
+	    $pick = $entry_pick;
+	}
+	elsif ( $pick ne $entry_pick ) {
+	    die "Split mismatch !";
+	}
+
+	my $entry_trust = $split_entry->{ $FIELD_TRUST };
+
+	if ( ! defined( $split_stats{ 'individual_trusts' } ) ) {
+	    $split_stats{ 'individual_trusts' } = [];
+	}
+	push @{ $split_stats{ 'individual_trusts' } } , $entry_trust;
+
+	$split_stats{ 'weighted_trust' } += $entry_trust;
+
+    }
+
+    # 2 - average
+    $split_stats{ 'average_trust' } = $split_stats{ 'weighted_trust' } / $count;
+
+    return \%split_stats;
+
+}
+
+# 2 - compute factoid stats and output
+foreach my $factoid_key ( keys( %factoid_data_grouped ) ) {
+
+    my $factoid_entry_grouped = $factoid_data_grouped{ $factoid_key };
+
+    # factoid stats should be a ranked list of labels
+    my $factoid_stats = _compute_factoid_stats( $factoid_entry_grouped );
+
+    # What do we want to have here ?
+    # --> ultimately for each factoid key, the associated label, and whether there is confidence in its value (margin compared to other labels)
+
+    print join( "\t" , $factoid_key , map { ( $_->{ 'pick' } , $_->{ 'weighted_trust' } ) } @{ $factoid_stats } ) . "\n";
+
+}
+
+1;

@@ -1,0 +1,105 @@
+#!/bin/bash
+
+# Note : this script expects an input directory populated with *.spl files
+# CURRENT : reconciliate macro and micro ?
+
+BINDIR=`dirname $0`
+
+ROUGE_BASE=${BINDIR}/../third-party/rouge/RELEASE-1.5.5
+ROUGE_SCRIPT=${ROUGE_BASE}/ROUGE-1.5.5.pl
+
+TARGET_SIZE=4
+
+if [ $# -ne 4 ]; then
+    echo "Usage: $0 <system-id> <input-file> <evaluation-dir> <target-dir>"
+    exit
+fi
+
+SYSTEM_ID=$1
+INPUT_FILE=$2
+INPUT_DIR=$3
+TARGET_DIR=$4
+
+MACRO_EVALUATION_DIR=${TARGET_DIR}/macro && mkdir -p ${MACRO_EVALUATION_DIR}
+MICRO_EVALUATION_DIR=${TARGET_DIR}/micro && mkdir -p ${MICRO_EVALUATION_DIR}
+
+PERL5_LIB=${BINDIR}/../../third-party/local/lib/
+
+# generate empty score file for micro scores (is this the only way ?)
+# TODO: create a function to run ROUGE for a pair of files
+ROUGE_OUT_TEMP_EMPTY=`mktemp`
+TEMP_EMPTY=`mktemp`
+TEMP_EMPTY_1=`mktemp`
+TEMP_EMPTY_2=`mktemp`
+echo -e "${TEMP_EMPTY_1}\t${TEMP_EMPTY_2}" > ${TEMP_EMPTY}
+perl -I ${PERL5_LIB} ${ROUGE_SCRIPT} -e ${ROUGE_BASE}/data/ -n ${TARGET_SIZE} -z SPL ${TEMP_EMPTY} ${LABEL} > ${ROUGE_OUT_TEMP_EMPTY}
+rm -f ${TEMP_EMPTY} ${TEMP_EMPTY_1} ${TEMP_EMPTY_2}
+
+EXPECTED_SIZE=
+find ${INPUT_DIR} -maxdepth 1 -type f -name '*.spl' | while read INPUT_FILE; do
+
+    CURRENT_SIZE=`wc -l ${INPUT_FILE} | awk '{ print $1 }'`
+    if [ -z "${EXPECTED_SIZE}" ]; then
+	EXPECTED_SIZE=${CURRENT_SIZE};
+	echo "Size reference (${INPUT_FILE}): ${EXPECTED_SIZE}";
+    elif [[ ${CURRENT_SIZE} != ${EXPECTED_SIZE} ]]; then
+	echo "Size mismatch for generation results (${INPUT_FILE}): ${CURRENT_SIZE} / ${EXPECTED_SIZE}";
+    fi
+    
+done;
+
+echo
+
+LABEL="";
+
+# ROUGE evaluation (macro)
+
+SYSTEM_MACRO_ROUGE="${MACRO_EVALUATION_DIR}/${SYSTEM_ID}.macro";
+
+echo "****************************************************************************************************"
+echo "ROUGE Evaluation (macro) - ${SYSTEM_ID}"
+perl -I ${PERL5_LIB} ${ROUGE_SCRIPT} -e ${ROUGE_BASE}/data/ -n ${TARGET_SIZE} -z SPL ${INPUT_FILE} ${LABEL} >> ${SYSTEM_MACRO_ROUGE}
+echo "****************************************************************************************************"
+
+echo
+
+# ROUGE evaluation (micro)
+
+SYSTEM_MICRO_ROUGE="${MICRO_EVALUATION_DIR}/${SYSTEM_ID}.micro";
+
+echo "****************************************************************************************************"
+echo "ROUGE Evaluation (micro) - ${SYSTEM_ID}"
+
+cat ${INPUT_FILE} | while read PEER_FILE REFERENCE_FILE; do
+    
+    LABEL=${REFERENCE_FILE}
+    
+    # create temp file just for this instance
+    ROUGE_MICRO_TEMP=`mktemp`
+    echo -e "${PEER_FILE}\t${REFERENCE_FILE}" > ${ROUGE_MICRO_TEMP}
+    
+    ROUGE_OUT_TEMP=`mktemp`
+    perl -I ${PERL5_LIB} ${ROUGE_SCRIPT} -e ${ROUGE_BASE}/data/ -n ${TARGET_SIZE} -z SPL ${ROUGE_MICRO_TEMP} ${LABEL} > ${ROUGE_OUT_TEMP}
+    
+    HAS_ROUGE_OUT=`wc -l ${ROUGE_OUT_TEMP} | awk '{ print $1 }'`
+    
+    if [[ ${HAS_ROUGE_OUT} > 0 ]]; then
+	cat ${ROUGE_OUT_TEMP} >> ${SYSTEM_MICRO_ROUGE}
+    else
+	echo "Warning: ROUGE did not output any score for: ${SYSTEM_ID} / ${PEER_FILE} / ${REFERENCE_FILE}"
+	cat ${ROUGE_OUT_TEMP_EMPTY} >> ${SYSTEM_MICRO_ROUGE}
+    fi
+    
+    # delete temp files
+    rm -f ${ROUGE_OUT_TEMP} ${ROUGE_MICRO_TEMP}
+    
+done;
+
+cat ${SYSTEM_MICRO_ROUGE} | grep ROUGE | tr ':' ' ' | awk -v file_base=${SYSTEM_MICRO_ROUGE} '{ print $1 "\t" $4 >> file_base "." $2 "." $3 }'
+
+echo "****************************************************************************************************"
+
+echo
+
+# delete temp file
+rm -f ${ROUGE_OUT_TEMP_EMPTY}

@@ -1,0 +1,140 @@
+#!/usr/bin/env perl
+
+# generate all stats for individual evaluation entries
+
+############################################################################################################################
+# output fields and default values
+#
+
+my @ALL_FIELDS;
+my @ALL_FIELDS_DEFAULT;
+
+my @ROUGE_FIELDS = ( 'ROUGE-1 Average_P' , 'ROUGE-1 Average_R' , 'ROUGE-1 Average_F' );
+my @ROUGE_FIELDS_DEFAULT = map { 0 } @ROUGE_FIELDS;
+push @ALL_FIELDS, @ROUGE_FIELDS;
+push @ALL_FIELDS_DEFAULT, @ROUGE_FIELDS_DEFAULT;
+
+my $COSINE_FIELD = 'Cosine Similarity';
+my $COSINE_FIELD_DEFAULT = 0;
+push @ALL_FIELDS, $COSINE_FIELD;
+push @ALL_FIELDS_DEFAULT, $COSINE_FIELD_DEFAULT;
+
+#
+############################################################################################################################
+
+use Cwd;
+use Getopt::Long;
+use Pod::Usage;
+
+# options holders
+my $help = 0;
+my $man = 0;
+
+Getopt::Long::Configure ("bundling");
+
+GetOptions('help|?' => \$help, man => \$man) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+print STDERR "generating evaluation data stats for environment: ${environment_root}";
+
+# list of summarizers
+my %summarizers;
+
+# stats
+my %data;
+
+# process each line in STDIN
+while(<STDIN>) {
+    
+    chomp;
+    my $line = $_;
+
+    if ( ! $line ) {
+	next;
+    }
+    
+    # parse line
+    my @fields = split /\t/, $line;
+    my $target_url = shift @fields;
+    my $context_url = shift @fields;
+    my $summarizer_id = shift @fields;
+    my $summary_file = shift @fields;
+    my @reference_summary_files = @fields;
+
+    my $all_reference_summaries = join(" ", @reference_summary_files);
+
+    # register summarizer
+    $summarizers{$summarizer_id}++;
+
+    # register URL info
+    if ( ! defined $data{$target_url} ) {
+       my %target_url_data;
+       # get global data about the target_url
+       $target_url_data{'global_data'} = (map { chomp; $_ } `run-statistics $context_url`)[0];
+       $data{$target_url} = \%target_url_data;
+    }
+
+    my @similarities;
+
+    # 1 - get ROUGE similarity data between summary and reference_summary
+    my @rouge_output = map { chomp; $_; } `rouge-similarity "${rouge_field}" ${summary_file} ${all_reference_summaries}`;
+    foreach my $rouge_field (@ROUGE_FIELDS) {
+      foreach my $rouge_line (@rouge_output) {
+	if ( $rouge_line =~ m/$rouge_field/ ) {
+	    my @tokens = split / /, $rouge_line;
+	    my $rouge_field_value = $tokens[3];
+	    push @similarities, $rouge_field_value;
+	}
+      }
+    }
+
+    # 2 - get cosine similarity
+    my $cosine_similarity = `cosine-similarity ${summary_file} ${all_reference_summaries}`;
+    chomp $cosine_similarity;
+    push @similarities, $cosine_similarity;
+
+    # add data for the current summarizer
+    $data{$target_url}->{$summarizer_id} .= join("\t", @similarities);
+
+}
+
+############################################################################################################################
+# output
+############################################################################################################################
+
+# dump header
+print "" . ((map { chomp; $_ } `run-statistics --header`)[0]);
+print "\t";
+my @similarity_header_fields;
+foreach my $summarizer (keys(%summarizers)) {
+    foreach my $field (@ALL_FIELDS) {
+         push @similarity_header_fields, "[$summarizer] $field";
+    }
+}
+print join("\t", @similarity_header_fields);
+print "\n";
+
+# dump stats
+foreach my $target_url (keys(%data)) {
+
+    if ( ! $target_url ) {
+	next;
+    }
+
+    print $data{$target_url}->{'global_data'};
+    print "\t";
+
+    my @similarity_fields;
+    foreach my $summarizer (keys(%summarizers)) {
+        if ( ! defined $data{$target_url}->{$summarizer} ) {
+	   $data{$target_url}->{$summarizer} = join("\t", @ALL_FIELDS_DEFAULT);
+        }
+        push @similarity_fields, $data{$target_url}->{$summarizer};
+    }
+    print join("\t", @similarity_fields);
+    print "\n";
+
+}
+
+1;

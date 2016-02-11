@@ -1,0 +1,48 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+DATA_DIRECTORY=$1
+OUTPUT_DIRECTORY=$2
+
+if [[ -z "${DATA_DIRECTORY}" || -z "${OUTPUT_DIRECTORY}" ]]; then
+   echo "Usage: $0 <data-directory> <output_directory>"
+   exit
+fi
+
+#if [[ -d ${OUTPUT_DIRECTORY} ]]; then
+#   echo "Output directory already exists, aborting ...";
+#   exit
+#fi
+
+# Create output directory
+mkdir -p ${OUTPUT_DIRECTORY}
+
+OUTPUT_TEST_SUMMARIES=${OUTPUT_DIRECTORY}/test.summaries
+OUTPUT_PARSED_SUMMARIES=${OUTPUT_DIRECTORY}/test-parsed.summaries
+OUTPUT_HIGHLIGHTED_SUMMARIES=${OUTPUT_DIRECTORY}/test-highlighted.summaries
+OUTPUT_HIGHLIGHTED_SUMMARIES_RANDOMIZED=${OUTPUT_DIRECTORY}/test-highlighted.summaries.randomized
+OUTPUT_MCQ=${OUTPUT_DIRECTORY}/mcq.summaries
+
+# Generate list of test URLs, together with their summary
+#find ${DATA_DIRECTORY} -maxdepth 2 -type f -name '*.summary' | sed 's/.summary//' | grep 9f68772e3187bb9a | xargs -i{} /proj/nlp/users/ypetinot/ocelot/svn-research/trunk/bin/dmoz-category-fold --test {} 0 summary summary.chunked.refined | grep kennedywilson | perl ${BINDIR}/split-concepts > ${OUTPUT_TEST_SUMMARIES}
+#find ${DATA_DIRECTORY} -maxdepth 2 -type f -name '*.summary' | sed 's/.summary//' | grep 7c64105e3 | xargs -i{} /proj/nlp/users/ypetinot/ocelot/svn-research/trunk/bin/dmoz-category-fold --test {} 0 summary summary.chunked.refined | grep neurospecialists.yourmd.com | perl ${BINDIR}/split-concepts 
+#find ${DATA_DIRECTORY} -maxdepth 2 -type f -name '*.summary' | sed 's/.summary//' | grep /16cc6fa8048af47b29272a6170db4c23/16cc6fa8048af47b29272a6170db4c23 | xargs -i{} /proj/nlp/users/ypetinot/ocelot/svn-research/trunk/bin/dmoz-category-fold --test {} 0 summary summary.parsed summary.chunked.refined | grep optic | perl -d ${BINDIR}/split-concepts 
+#find ${DATA_DIRECTORY} -maxdepth 2 -type f -name '*.summary' | sed 's/.summary//' | grep 0064881fb572ceddd38fc7c524f61a21 | xargs -i{} /proj/nlp/users/ypetinot/ocelot/svn-research/trunk/bin/dmoz-category-fold --test {} 0 summary summary.parsed summary.chunked.refined | perl -d ${BINDIR}/split-concepts > ${OUTPUT_TEST_SUMMARIES}
+
+find ${DATA_DIRECTORY} -maxdepth 2 -type f -name '*.summary' | sed 's/.summary//' | xargs -i{} /proj/nlp/users/ypetinot/ocelot/svn-research/trunk/bin/dmoz-category-fold --test {} 0 summary summary.parsed summary.chunked.refined | perl ${BINDIR}/split-concepts > ${OUTPUT_TEST_SUMMARIES}
+
+# TO IMPROVE: 7c64105e3ca9440379da8b8696527b17
+
+# TODO: do not split on of ?
+
+## Generate stanford parse
+#cat ${OUTPUT_TEST_SUMMARIES} | awk -F"\t" '{ print $2 }' | /proj/nlp/users/ypetinot/ocelot/svn-research/trunk/third-party/stanford/bin/run-tokenizer - | grep -v '^$' > ${OUTPUT_PARSED_SUMMARIES}
+
+# Generate highlighted summary
+cat ${OUTPUT_TEST_SUMMARIES} | sort -R | perl ${BINDIR}/generate-highlighted-summaries > ${OUTPUT_HIGHLIGHTED_SUMMARIES}
+
+# Shuffle highlighted summaries
+cat <( head -n1 ${OUTPUT_HIGHLIGHTED_SUMMARIES} ) <( cat ${OUTPUT_HIGHLIGHTED_SUMMARIES} | tail -n +1 | sort -R ) > ${OUTPUT_HIGHLIGHTED_SUMMARIES_RANDOMIZED}
+
+# Generate final MCQ data
+#cat ${OUTPUT_HIGHLIGHTED_SUMMARIES} | ${BINDIR}/generate-mcq > ${OUTPUT_MCQ};

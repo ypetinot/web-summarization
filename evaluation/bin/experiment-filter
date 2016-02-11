@@ -1,0 +1,78 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../src/";
+
+use File::Slurp;
+use Getopt::Long;
+use Pod::Usage;
+
+my $debug = 0;
+my $help = 0;
+my $man = 0;
+
+my $annotations = undef;
+my $filter = undef;
+my $eval_expression = undef;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, man => \$man,
+           'debug|d' => \$debug,
+	   'annotations=s' => \$annotations,
+	   'filter=s' => \$filter,
+	   'eval=s' => \$eval_expression
+    ) or pod2usage(2);
+
+if ( ! defined( $annotations ) ) {
+    die "Usage: $0 --annotations=<annotations-file> [--filter]";
+}
+
+# load annotations
+my %url_2_annotations;
+map {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/ , $line;
+
+    my $url = shift @fields;
+    foreach my $annotation (@fields) {
+	if ( ! defined( $url_2_annotations{ $url } ) ) {
+	    $url_2_annotations{ $url } = {};
+	}
+	$url_2_annotations{ $url }{ $annotation }++;
+    }
+
+} read_file( $annotations );
+
+
+my $count = 0;
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+
+    my @fields = split /\t/ , $line;
+    my $url = $fields[ 0 ];
+    my $stats = $fields[ $#fields ];
+
+    if ( $count++ && $filter && ! defined( $url_2_annotations{ $url }{ $filter } ) ) {
+	next;
+    }
+
+    # CURRENT : we want to filter based on certain stats 
+    # => problem : how do we account for systems that produce no stats (or not the ones we are looking for) ?
+    #if ( defined( $eval_expression ) 
+
+    print "$line\n";
+
+}
+
+1;

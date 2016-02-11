@@ -1,0 +1,113 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use WWW::Summarization::Summary;
+
+use Carp;
+use Cwd;
+use File::Copy;
+use File::Find;
+use File::Path;
+use File::Basename;
+use IO::File;
+use XML::TreePP;
+
+my $FROM_DIR = getcwd();
+
+# check args
+if ( $#ARGV < 0 ) {
+    die "Usage: $0 REFERENCE_SUMMARIZER1 [REFERENCE_SUMMARIZER2 [... [REFERENCE_SUMMARIZERn]]";
+}
+my %REFERENCE_SUMMARIZERS;
+foreach my $arg (@ARGV) {
+    $REFERENCE_SUMMARIZERS{$arg} = 1;
+}
+
+while (<STDIN>) {
+
+    chomp;
+    my $summary_dir = $_;
+
+    # list out all .summary files in the summary_dir
+    opendir(my $dh, $summary_dir) || die "can't opendir $summary_dir: $!";
+    my @summary_files = grep { $_ =~ m/^(.+)\.summary$/ } readdir($dh);
+
+    # split summary files into evaluation files and reference files
+    my @evaluation_files;
+    my @reference_files;
+    foreach my $summary_file (@summary_files) {
+	
+	my $from_summarizer = undef;
+	if ( $summary_file =~ m/^(.+)\.summary$/si ) {
+	    $from_summarizer = $1;
+	}
+
+	if ( defined($from_summarizer) && defined($REFERENCE_SUMMARIZERS{$from_summarizer}) ) {
+	    push @reference_files, $summary_file;
+	}
+	else {
+	    push @evaluation_files, $summary_file;
+	}
+
+    }
+
+    my @summary_objs;
+
+    # read all summary files
+    foreach my $summary_file (@evaluation_files) {
+	my $summary_obj = WWW::Summarization::Summary::load("$summary_dir/$summary_file");
+	if ( $summary_obj ) {
+	    push @summary_objs, $summary_obj;
+	}
+    }
+
+    # collect global stats
+    my $adjusted_length = undef;
+    foreach my $summary_obj (@summary_objs) {
+	my $length = $summary_obj->getWordLength();
+	if ( !defined($adjusted_length) || ($length < $adjusted_length) ) {
+	    $adjusted_length = $length;
+	}
+    }
+
+    # adjust and write out new summary file
+    foreach my $summary_obj (@summary_objs) {
+
+	# adjust content
+	my $adjusted_content = adjust_content($summary_obj->text(), $adjusted_length);
+
+	# set adjusted content
+	$summary_obj->text($adjusted_content);
+	
+	# set new summarizer id
+	$summary_obj->summarizerId( $summary_obj->summarizerId() . "-adjusted" );
+
+	# write out
+	$summary_obj->write($summary_dir);
+
+    }
+
+}
+
+# adjust content to the specified length
+sub adjust_content {
+
+    my $content = shift;
+    my $adjusted_length = shift;
+
+    # tokenize content
+    my @tokens = split /((?:\s|[[:punct:]])+)/, $content;
+
+    if ( $adjusted_length && ($adjusted_length < scalar(@tokens)) ) {
+	print STDERR "[$0] adjusting summary length from " . scalar(@tokens) . " to $adjusted_length tokens\n";
+	splice @tokens, (2*$adjusted_length - 1); # we also include the punctuation
+    }
+
+    return join("", @tokens);
+
+}
+
+1;
+

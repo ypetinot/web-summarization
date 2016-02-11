@@ -1,0 +1,131 @@
+#!/bin/bash
+
+# Note : generating a list of test url-summary instances is the responsibility of the user
+# find ./experiment-data-constructs -type f -name '*.summary' -exec cat \{\} \; | /proj/nlp/users/ypetinot/ocelot-working-copy/svn-research/trunk/data/bin/url-normalizer > instances
+
+BINDIR=`dirname $0`
+ROOT_SUMMARIZERS=${BINDIR}/../../summarizers/
+
+BINDIR_DIST=${BINDIR}/../../bin/
+source ${BINDIR_DIST}/parallel-job-resources
+
+function _output_handler() {
+
+    INPUT_BASE=$1
+    OUTPUT_SUMMARIZER_BASE=$2
+    FOLD_ID=$3
+    SUMMARIZER_ID=$4
+    WRITE_OUTPUT=$5
+
+    if [[ "${WRITE_OUTPUT}" == "1" ]]; then
+
+	OUTPUT_FILE=${OUTPUT_SUMMARIZER_BASE}.summary
+	cat - > ${OUTPUT_FILE}
+
+    else
+
+	cat -
+
+    fi
+
+}
+
+# In case the summarizer arguments come in quoted
+set -- $@
+
+SHORTOPTS="hdg:lps:"
+LONGOPTS="help,debug,global-data-base:,log,prepare,system-configuration:"
+
+ARGS_COPY=$@
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+GLOBAL_DATA_BASE=${ROOTDIR_DATA}
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+        -d | --debug )
+            DEBUG=1; shift 1;;
+	-g | --global-data-base )
+	    GLOBAL_DATA_BASE=$2; shift 2;;
+	-l | --log )
+	    LOG=1; shift 1;;
+	-s | --system-configuration )
+	    SYSTEM_CONFIGURATION=$2; shift 2;;
+	--)
+            shift; break;;
+    esac
+
+done
+
+EXPERIMENT_INPUT_BASE_DIR=$1
+EXPERIMENT_OUTPUT_BASE_DIR=$2
+WRITE_OUTPUT=$3
+SUMMARIZER_DATA_ENTRY="$4"
+SUMMARIZER_ID="$5"
+SUMMARIZER_BINARY="$6"
+
+INPUT_FILE_BASE=${EXPERIMENT_INPUT_BASE_DIR}/${SUMMARIZER_DATA_ENTRY}
+OUTPUT_FILE_BASE=${EXPERIMENT_OUTPUT_BASE_DIR}/${SUMMARIZER_DATA_ENTRY}
+OUTPUT_DIRECTORY=${OUTPUT_FILE_BASE}.summarizers/
+OUTPUT_SUMMARIZER_BASE=${OUTPUT_DIRECTORY}/${SUMMARIZER_ID}
+OUTPUT_SUMMARIZER_BASE_PID=${OUTPUT_SUMMARIZER_BASE}.$$
+
+#1 : $(EXPERIMENT_TEST_INSTANCES_INPUT)/
+#2 : $@.temp/
+#3 : 1
+#4 : {}
+#5 : ...
+
+if [[ "${WRITE_OUTPUT}" == "1" ]]; then
+
+    mkdir -p ${OUTPUT_DIRECTORY}
+
+    # http://www.linuxjournal.com/content/bash-redirections-using-exec
+    # Note: for now having a single err log file is enough
+    #exec 2> ${OUTPUT_SUMMARIZER_BASE_PID}.err
+    exec 2> ${OUTPUT_SUMMARIZER_BASE}.err
+
+fi
+
+# Logging mode activated ?
+if [[ "${LOG}" -eq "1" ]]; then
+    #OUTPUT_SUMMARIZER_LOG=${OUTPUT_SUMMARIZER_BASE_PID}.log
+    OUTPUT_SUMMARIZER_LOG=${OUTPUT_SUMMARIZER_BASE}.log
+    mkdir -p ${OUTPUT_SUMMARIZER_LOG}
+    SERIALIZATION_OPTIONS="--output-directory=${OUTPUT_SUMMARIZER_LOG}"
+fi
+
+# Debug mode activated ?
+if [[ "${DEBUG}" -eq "1" ]]; then
+    DEBUG_OPTIONS="--debug"
+fi
+
+[ $((a%2)) -eq 0 ]
+
+# TODO: may be i should be using tab-separated params ater all ?
+# Note: a little bit messy, but ok for now
+if [[ ! -z "${SYSTEM_CONFIGURATION}" ]]; then
+    SUMMARIZER_CONFIGURATION_PARAM="--system-configuration=${SYSTEM_CONFIGURATION}"
+fi
+
+if [[ ! -z "${GLOBAL_DATA_BASE}" ]]; then
+    GLOBAL_DATA_BASE_OPTION="--global-data-base=${GLOBAL_DATA_BASE}"
+fi
+
+# TODO : to be removed + all references to fold should probably be removed ? => simply split url-summary pairs prior to system ingestion
+FOLD_ID=0
+
+# http://stackoverflow.com/questions/4622355/read-in-bash-on-tab-delimited-file-without-empty-fields-collapsing
+# perl -I ${ROOT_SUMMARIZERS}/../third-party/local/lib/ -d:NYTProf
+# CURRENT : input is in the form <url>\t<url-normalized>\t<ground-truth>
+cat ${INPUT_FILE_BASE} | ${ROOT_SUMMARIZERS}/${SUMMARIZER_BINARY} --run-analysis --system=${SUMMARIZER_ID} ${SUMMARIZER_CONFIGURATION_PARAM} 1 --fold-id=${FOLD_ID} --input-base=${INPUT_FILE_BASE} ${GLOBAL_DATA_BASE_OPTION} ${DEBUG_OPTIONS} ${SERIALIZATION_OPTIONS} | _output_handler ${INPUT_FILE_BASE} ${OUTPUT_SUMMARIZER_BASE} ${FOLD_ID} ${SUMMARIZER_ID} ${WRITE_OUTPUT};
+
+# We're officially done !
+if [[ "${WRITE_OUTPUT}" == "1" ]]; then
+    #touch ${OUTPUT_SUMMARIZER_BASE_PID}.done
+    touch ${OUTPUT_SUMMARIZER_BASE}.done
+fi

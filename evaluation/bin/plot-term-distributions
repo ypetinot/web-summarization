@@ -1,0 +1,24 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <distribution-data-file>"
+    exit 1;
+fi
+
+DISTRIBUTION_DATA_FILE=$1
+
+# create temp data file
+TEMP_DATA_FILE=`mktemp`
+cat ${DISTRIBUTION_DATA_FILE} | tr "\'" "_" > ${TEMP_DATA_FILE}
+
+#exit
+
+# run significance test
+R --slave --vanilla < ${BINDIR}/term-distributions.R --args ${TEMP_DATA_FILE}
+
+#--quiet
+
+# remove temp data file
+rm -f ${TEMP_DATA_FILE}

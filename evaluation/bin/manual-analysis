@@ -1,0 +1,8 @@
+
+/proj/nlp/users/ypetinot/ocelot-working-copy/svn-research/trunk/bin/dmoz-category-clusterer-wrapper /proj/nlp/users/ypetinot/data/dmoz-current/categories.full /proj/nlp/users/ypetinot/data/dmoz-current/instances.full.gz 0.5 > /local/nlp/ypetinot/experiments/manual-analysis/clusterable-with-largest-0-5.data
+
+cat /local/nlp/ypetinot/experiments/manual-analysis/clusterable-with-largest-0-5.data | grep -v '^Top/World' | grep -v cluster_size | awk -F"\t" '{ if ( $2 >= 4 && $NF >= 0.5 ) { print $0 } }' | wc -l
+
+cat /local/nlp/ypetinot/experiments/manual-analysis/clusterable-with-largest-0-7.data | grep -v '^Top/World' | grep -v cluster_size | awk -F"\t" '{ if ( $2 >= 50 && $NF >= 0.5 ) { print $0 }' | sort -R | head -n50 | while read LINE; do LINE_URL=`echo "${LINE}" | cut -f1 | sed 's#Top#http://www.dmoz.org#'`; LINE_RATIO=`echo "${LINE}" | awk -F"\t" '{ print $4 }'`; echo -e "<table><tr><td><a href='${LINE_URL}'>${LINE_URL}</a></td><td>${LINE_RATIO}</td></tr></table>"; done > ~/experiments/manual-analysis-2015-06-30/homogeneous-0-7.htm
+
+ypetinot@barracuda:~$ cat /local/nlp/ypetinot/experiments/manual-analysis/clusterable-with-largest-0-5.data | grep -v '^Top/World' | grep -v cluster_size | awk -F"\t" '{ if ( $2 >= 50 && $NF >= 0.5 ) { print $0 } }' | sort -R | head -n50 | while read LINE; do LINE_URL=`echo "${LINE}" | cut -f1 | sed 's#Top#http://www.dmoz.org#'`; LINE_RATIO=`echo "${LINE}" | awk -F"\t" '{ print $4 }'`; echo -e "<table><tr><td><a href='${LINE_URL}'>${LINE_URL}</a></td><td>${LINE_RATIO}</td></tr></table>"; done > ~/experiments/manual-analysis-2015-06-30/homogeneous-0-5.htm

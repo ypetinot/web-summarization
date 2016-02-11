@@ -1,0 +1,22 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+RAW_DATA=$1
+SYSTEMS=$2
+OUTPUT_DIR=$3
+
+if [[ ! -f ${RAW_DATA} || ! -f ${SYSTEMS} || ! -d ${OUTPUT_DIR} ]]; then
+    echo "Usage: $0 <raw-data> <systems> <output-dir>"
+    exit 1;
+fi
+
+_SYSTEMS=( $( cat ${SYSTEMS} ) )
+
+for (( i = 0 ; i < ${#_SYSTEMS[@]} ; i++ )); do
+    system_1=${_SYSTEMS[$i]};
+    for (( j = $(( $i + 1 )) ; j < ${#_SYSTEMS[@]} ; j++ )); do
+        system_2=${_SYSTEMS[$j]};
+	cat ${RAW_DATA} | ${BINDIR}/compare-systems --system-2="${system_2}" --system-1="${system_1}" > ${OUTPUT_DIR}/side-by-side-${system_1}-${system_2}.out
+    done;
+done;

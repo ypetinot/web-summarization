@@ -1,0 +1,82 @@
+#!/usr/bin/env perl
+
+# Note : we are generating all acceptable system combinations towards a side-by-side human evaluation
+# => systems without namespace are comparable to all other systems => yes
+# => systems with a namespace are only comparable to other systems within the same namespace => this is redundant
+# TODO : what if I want to compare systems from two different blocks ?
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use File::Slurp;
+
+my $systems_file = $ARGV[ 0 ];
+if ( ! -f $systems_file ) {
+    die "Usage: $0 <systems-file>";
+}
+
+my @systems = read_file( $systems_file , chomp => 1 );
+
+for ( my $i = 0 ; $i <= $#systems - 1 ; $i++ ) {
+
+    my $system_i = $systems[ $i ];
+    my $namespace_i = get_namespace( $system_i );
+    my $has_namespace_i = defined( $namespace_i );
+    my $namespace_i_is_oracle = is_oracle_namespace( $namespace_i );
+
+    for ( my $j = $i + 1 ; $j <= $#systems ; $j++ ) {
+
+	my $system_j = $systems[ $j ];
+	my $namespace_j = get_namespace( $system_j );
+	my $has_namespace_j = defined( $namespace_j );
+	my $namespace_j_is_oracle = is_oracle_namespace( $namespace_j );
+
+	
+
+	# CURRENT : instead of this disable comparisons across namespaces if one of them is an oracle space => i.e. what I have below ?
+	if ( $namespace_i_is_oracle || $namespace_j_is_oracle ) {
+	 
+	    # both systems must be in the same namespace, a comparison between the two would be unfair otherwise
+	    if ( ! $has_namespace_i || ! $has_namespace_j ) {
+		next;
+	    }
+	    elsif ( $namespace_i ne $namespace_j ) {
+		next;
+	    }
+   
+	}
+	else {
+
+	    # none of the systems are oracles , all comparisons are permitted
+
+	}
+
+	print join( "\t" , $system_i , $system_j ) . "\n"
+
+    }
+
+}
+
+sub is_oracle_namespace {
+    my $namespace = shift;
+    return ( defined( $namespace ) && ( $namespace =~ m/oracle/ ) );
+}
+
+sub get_namespace {
+
+    my $system_id = shift;
+    my @components = split /:::/ , $system_id;
+    
+    my $namespace = undef;
+    if ( scalar( @components ) > 1 ) {
+	$namespace = $components[ 0 ];
+    }
+
+    return $namespace;
+
+}
+
+1;

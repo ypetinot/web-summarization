@@ -1,0 +1,25 @@
+#!/bin/bash
+
+RAW_DATA=$1
+SYSTEM_ID_1=$2
+SYSTEM_ID_2=$3
+TARGET_METRICS=$4
+
+if [[ ! -f "${RAW_DATA}" || -z "${SYSTEM_ID_1}" || -z "${SYSTEM_ID_2}" || -z "${TARGET_METRICS}" ]]; then
+    echo "Usage: $0 <raw-data> <system-id-1> <system-id-2> <target-metric>";
+    exit 1;
+fi
+
+HEADER=`cat ${RAW_DATA} | head -n1`
+
+function _generate_stream() {
+
+    SYSTEM_ID=$1
+    METRICS=$2
+
+    METRICS_RANGES=`echo -e "${HEADER}" | tr '\t' '\n' | cat -n - | grep fmeasure | awk '{ print $1 }' | tr '\n' ',' | sed 's/\,$/\n/'`
+    cat <( echo ${HEADER} ) ${RAW_DATA} | sort -k1 | grep "${SYSTEM_ID}" | cut -f4,1-3,${METRICS_RANGES}
+
+}
+
+join -t$'\t'  <( _generate_stream ${SYSTEM_ID_1} "${TARGET_METRICS}" ) <( _generate_stream ${SYSTEM_ID_2} "${TARGET_METRICS}" )

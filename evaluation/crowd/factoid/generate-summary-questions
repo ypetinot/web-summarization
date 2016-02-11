@@ -1,0 +1,138 @@
+#!/usr/bin/env perl
+
+# Questions:
+# Rate summary A's readability - 1/2/3/4/5
+# Does summary A convey the idea that Site X provides (offline) services for <F> ?
+
+# TODO: generate data for both the best possible baseline (title) and the ground truth summaries
+# use the ground truth summaries for contributor filtering !
+
+# --> 1 summary / HIT
+
+use strict;
+use warnings;
+
+use HTML::Entities;
+
+my @header_labels = ( "URL" , "Summary" , "_golden" , "Fragment" , "Highlighted Description" );
+print join( "\t" , @header_labels ) . "\n";
+
+my %url2factoids;
+
+my $question_prefix = 'Does the following summary convey the idea that the site pointed to by __URL__ ';
+my $label2question = {
+
+    # 5 occurrences
+    'other' => undef,
+
+    # 54 occurrences
+    'site_audience' => 'is targetting a group of users whose denomination or attribute is "__BLOCK__" ?',
+
+    # 313 occurrences
+    'site_offline' => 'provides offline services or products that can be, at least partially, described by the term "__BLOCK__" ?',
+
+    # 271 occurrences
+    'site_online' => 'provides online services or information that can be, at least partially, described by the term "__BLOCK__" ?',
+
+    # 120 occurrences
+    'site_owner' => 'is owned or controlled by a person or company whose name is, or can be characterized, by "__BLOCK__" ?',
+
+    # 2 occurrences
+    'site_type' => 'has the following type (or characteristic) : "__BLOCK__" ?'
+
+};
+
+# 1 - load factoid data
+my $factoid_data_file = $ARGV[ 0 ];
+open FACTOID_DATA, $factoid_data_file or die "Unable to open factoid data file ($factoid_data_file) : $!";
+while ( <FACTOID_DATA> ) {
+    
+    chomp;
+
+    my @fields = split /\t/ , $_;
+    my $factoid_key = shift @fields;
+    my $label = shift @fields;
+    my $weighted_confidence = shift @fields;
+
+
+    my $separator = '::';
+    my @factoid_key_fields = split /$separator/ , $factoid_key;
+    my $factoid_chunk = pop @factoid_key_fields;
+    my $url = join( $separator , @factoid_key_fields );
+
+    if ( ! defined( $url2factoids{ $url } ) ) {
+	$url2factoids{ $url } = {};
+    }
+
+    $url2factoids{ $url }{ $label } = [ $factoid_chunk , $weighted_confidence ];
+
+}
+close FACTOID_DATA;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+
+    my @descriptions = map { _escaped( $_ ); } @fields;
+    my $description_gold = shift @descriptions;
+
+    my $url_factoids = $url2factoids{ $url };
+    if ( $url_factoids ) {
+
+	foreach my $description_entry ( [ $description_gold , 1 ] , map { [ $_ , 0 ] } @descriptions ) {
+
+	    my $description = $description_entry->[ 0 ];
+	    my $description_is_gold = $description_entry->[ 1 ];
+
+	    foreach my $url_factoid_label (keys( %{ $url_factoids } )) {
+
+		my $factoid_chunk = $url_factoids->{ $url_factoid_label }->[ 0 ];
+		my $factoid_confidence = $url_factoids->{ $url_factoid_label }->[ 1 ];
+		
+		my $question_template = $question_prefix . $label2question{ $url_factoid_label };
+		my $question = _realize_question( $question_template , $url , $factoid_chunk );
+
+		print join( "\t" , $url , $description_is_gold , $description , $question , $factoid_confidence ) . "\n";
+		
+	    }
+	    
+	}
+
+    }
+
+}
+
+sub _realize_question {
+
+    my $question_template = shift;
+    my $url = shift;
+    my $factoid_chunk = shift;
+
+    my $realized_question = $question_template;
+
+    # 1 - substitute URL
+    if ( $realized_question !~ s/__URL__/$url/ ) {
+	die "Unable to substitute URL in question template: $question_template";
+    } 
+
+    # 2 - substitute factoid chunk
+    if ( $realized_question =~ s/__CHUNK__/$factoid_chunk/ ) {
+	die "Unable to substitute factoid chunk in question template: $question_template";
+    }
+
+    return $realized_question;
+
+}
+
+sub _escaped {
+
+    my $string = shift;
+
+    return encode_entities( $string );
+
+}
+
+1;

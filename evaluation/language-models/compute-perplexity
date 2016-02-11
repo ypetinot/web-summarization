@@ -1,0 +1,27 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+my $logprob_sum = 0;
+my $token_sum = 0;
+
+while(<STDIN>) {
+
+    chomp;
+    my $line = $_;
+
+    my ($logprob,$token_count) = split /\t/, $line;
+
+    $logprob_sum += $logprob;
+    $token_sum += $token_count;
+
+}
+
+# compute perplexity
+my $normalized_entropy = ( -1 * $logprob_sum / $token_sum );
+my $total_perplexity = exp($normalized_entropy);
+
+print "$total_perplexity\n";
+
+1;

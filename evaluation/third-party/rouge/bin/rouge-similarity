@@ -1,0 +1,15 @@
+# check number of parameters
+if [ $# -lt 2 ]; then
+        echo "Usage: $0 SUMMARY_FILE REFERENCE_SUMMARY_FILE";
+	exit;
+fi
+
+# create temp rouge input file
+TEMP_ROUGE_INPUT=`mktemp`
+echo -e "$@" | tr ' ' '\t' > ${TEMP_ROUGE_INPUT}
+
+# run ROUGE on temp rouge input file
+run-rouge ${TEMP_ROUGE_INPUT}
+
+# remove temp rouge input file
+rm -f ${TEMP_ROUGE_INPUT}

@@ -1,0 +1,67 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+ROOTDIR_DIST=${BINDIR}/../../
+source ${ROOTDIR_DIST}/dist.rc
+
+EXPERIMENTS_INCLUDE_DIR=${BINDIR}/../src/
+
+SHORTOPTS="hdm,p:,s:"
+LONGOPTS="help,debug,category-max:,category-patterns:,summarizers:,nice:"
+
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+        -d | --debug )
+            DEBUG=1; shift 1;;
+        -m | --category-max )
+            REPOSITORY_CATEGORY_MAX=$2; shift 2;;
+	-p | --category-patterns )
+	    REPOSITORY_CATEGORY_PATTERNS=$2; shift 2;;
+	-s | --summarizers )
+	    SUMMARIZERS=$2; shift 2;;
+	-n | --nice )
+	    # TODO : introduced only because parallel jobs are harder to rerun when nice is activated ...
+	    NICE=$2; shift 2;;
+	--)
+            shift; break;;
+    esac
+
+done
+
+EXPERIMENT_DEFINITION="$1"
+EXPERIMENT_REQUESTED_SYSTEM_GROUPS="$2"
+INSTANCE_LIST=$3
+# TODO : should be removed ?
+FOLD_ID=$4
+EXPERIMENT_OUTPUT_DIRECTORY=$5
+
+# TODO: check whether FOLD_ID is a number ?
+if [[ -z "${EXPERIMENT_DEFINITION}" || -z "${EXPERIMENT_REQUESTED_SYSTEM_GROUPS}" || ! -f "${INSTANCE_LIST}" || -z "${FOLD_ID}" || -z "${EXPERIMENT_OUTPUT_DIRECTORY}" ]]; then
+    echo "Usage: $0 <experiment-definition> <requested-system-groups> <repository-category-list> <fold-id> <experiment-output-directory>"
+    exit 1;
+fi
+
+if [[ ! -z "${SUMMARIZERS}" ]]; then
+    SUMMARIZERS_OPTION="SUMMARIZERS=${SUMMARIZERS}"
+fi
+
+# TODO : why ???
+#perl -e 'use Moose;'
+
+# CURRENT : to be completed
+# TODO : can we call a global build method instead ?
+###perl -I${EXPERIMENTS_INCLUDE_DIR} -I${LIBDIR_THIRD_PARTY} -M${EXPERIMENT_DEFINITION} -e "${EXPERIMENT_DEFINITION}->run( '${INSTANCE_LIST}' )"
+
+# get absolute path for experiment directory (important since distributed processes currently do not transfer files)
+# TODO : implement file transfer ?
+EXPERIMENT_OUTPUT_DIRECTORY_ABSOLUTE=`readlink -f ${EXPERIMENT_OUTPUT_DIRECTORY}`
+
+# run experiment process
+# TODO : add -j back
+make --no-print-directory --warn-undefined-variables -f ${BINDIR}/makefile.experiment run-experiment EXPERIMENT_DEFINITION="${EXPERIMENT_DEFINITION}" EXPERIMENT_REQUESTED_SYSTEM_GROUPS="${EXPERIMENT_REQUESTED_SYSTEM_GROUPS}" FOLD_ID=${FOLD_ID} INSTANCE_LIST=${INSTANCE_LIST} EXPERIMENT_DIRECTORY=${EXPERIMENT_OUTPUT_DIRECTORY_ABSOLUTE} ${SUMMARIZERS_OPTION} NICE=${NICE}

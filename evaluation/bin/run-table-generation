@@ -1,0 +1,16 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <raw-data-1> <raw-data-2>"
+    exit 1;
+fi
+
+# run significance test
+#R --quiet --slave --vanilla < ${BINDIR}/table.R --args $@
+R --quiet --vanilla < ${BINDIR}/table.R --args $@
+#| grep significant | awk '{ print $2 }' | tr -d '"'
+
+# remove temp data file
+rm -f ${TEMP_DATA_FILE}

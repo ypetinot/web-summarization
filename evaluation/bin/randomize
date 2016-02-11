@@ -1,0 +1,5 @@
+#!/bin/bash
+
+TEMP_DIR=$PWD
+
+cat | while read line; do echo "$RANDOM $line"; done | sort -n -T $TEMP_DIR | sed -r 's/^[0-9]+ //'

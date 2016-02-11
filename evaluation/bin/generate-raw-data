@@ -1,0 +1,105 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Evaluation::Definitions;
+
+my $separator = $Evaluation::Definitions::SYSTEM_FIELD_SEPARATOR;
+my $separator_key_value = $Evaluation::Definitions::KEY_VALUE_SEPARATOR;
+
+my $count = 0;
+my @raw_data_header;
+my $n_fields;
+
+# system parameters
+my %parameters;
+
+my $parameter_marker = '+';
+
+# record buffer
+# TODO: clearly this will no work well is the number of data points were to become extremely large
+my @records;
+
+# 1 - scan all records
+while ( <STDIN> ) {
+
+    chomp;
+    
+    my $line = $_;
+    my @system_data_fields = split /\t/ , $line;
+ 
+    my $url = shift @system_data_fields;
+    my $raw_system_id = shift @system_data_fields;
+    my $summary = shift @system_data_fields;
+    my $reference = shift @system_data_fields;
+
+    my @leading = ( $url , $raw_system_id , $summary , $reference );
+
+    if ( ! $count++ ) {
+        @raw_data_header = @system_data_fields;
+        $n_fields = scalar( @raw_data_header );
+        next;
+    }
+ 
+    my $system_configuration = _parse_system_configuration( $raw_system_id );
+
+    # update system paramters info
+    map { $parameters{ $_ }++ } keys( %{ $system_configuration } );
+
+    # store record
+    my %record = %{ $system_configuration };
+    map { $record{ $raw_data_header[ $_ ] } = $system_data_fields[ $_ ]; } 0..($n_fields-1);
+    push @records , [ \@leading , \%record ];
+   
+}
+
+# 2 - finalize raw data header
+my @full_raw_data_header;
+push @full_raw_data_header , sort { $parameters{ $b } <=> $parameters{ $a } } keys( %parameters );
+push @full_raw_data_header , @raw_data_header;
+
+# 3 - output header
+print join( "\t" , 'url' , '?system-id' , '?summary' , '?reference' , @full_raw_data_header ) . "\n";
+
+# 4 - output
+foreach  my $record (@records) {
+
+    print join( "\t" , @{ $record->[ 0 ] } , map { my $value = $record->[ 1 ]->{ $_ }; defined($value) ? $value : ''; } @full_raw_data_header ) . "\n";
+
+}
+
+sub _mark_parameter {
+    my $parameter_id = shift;
+    return $parameter_marker . $parameter_id;
+}
+
+sub _parse_system_configuration {
+
+    my $encoded_id = shift;
+
+    my @fields = split /\Q$separator\E/ , $encoded_id;
+
+    my $system_id = shift @fields;
+
+    my %system_configuration;
+
+    # TODO : this should not be necessary !                                                                                                                                                 
+    $system_configuration{ _mark_parameter( 'system' ) } = $system_id;
+
+    map {
+
+        my $param_entry = $_;
+        my ( $param_key , $param_value ) = split /$separator_key_value/ , $param_entry;
+
+        $system_configuration{ _mark_parameter( $param_key ) } = $param_value;
+
+    } @fields;
+
+    return \%system_configuration;
+
+}

@@ -1,0 +1,36 @@
+#!/bin/bash
+
+EXPERIMENT_DIRECTORY=$1
+OUTPUT_DIRECTORY=$2
+
+if [[ -z "${EXPERIMENT_DIRECTORY}" || ! -d "${EXPERIMENT_DIRECTORY}" || -z "${OUTPUT_DIRECTORY}" ]]; then
+    echo "Usage $0 <experiment-directory>"
+    exit 1;
+fi
+
+find ${EXPERIMENT_DIRECTORY}/generation/ -type d -name '*.summarizers' | while read INSTANCE_DIRECTORY; do
+
+    INSTANCE_ID=`echo ${INSTANCE_DIRECTORY} | awk -F"." '{ print $(NF-1) }' | awk -F"/" '{ print $NF }'`
+    OUTPUT_DIRECTORY_INSTANCE=${OUTPUT_DIRECTORY}/${INSTANCE_ID}/
+    mkdir -p ${OUTPUT_DIRECTORY_INSTANCE}
+
+    find ${INSTANCE_DIRECTORY} -type f -name '*.summary' | grep -v baseline-ranking | sed 's/.summary$//' | while read INSTANCE_FILE_BASE; do
+
+	SYSTEM_ID=`echo ${INSTANCE_FILE_BASE} | awk -F":::" '{ print $NF }'`
+	OUTPUT_FILE=${OUTPUT_DIRECTORY_INSTANCE}/${SYSTEM_ID}
+	INSTANCE_FILE_SUMMARY=${INSTANCE_FILE_BASE}.summary
+
+	echo "******************************* Target Page *************************************" > ${OUTPUT_FILE}
+	cat ${INSTANCE_FILE_SUMMARY} | tail -n1 | cut -f1 >> ${OUTPUT_FILE}
+	echo -e "\n\n" >> ${OUTPUT_FILE}
+
+	echo "******************************* Ranked References *******************************" >> ${OUTPUT_FILE}
+	cat ${INSTANCE_FILE_BASE}.err | grep __RANKED_REFERENCES__ | cut -f 2- >> ${OUTPUT_FILE}
+	echo -e "\n\n" >> ${OUTPUT_FILE}
+
+	echo "******************************* Generated Summary *******************************" >> ${OUTPUT_FILE}
+	cat ${INSTANCE_FILE_SUMMARY} | tail -n1 | cut -f3 >> ${OUTPUT_FILE}
+
+    done;
+
+done;

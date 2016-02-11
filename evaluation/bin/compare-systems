@@ -1,0 +1,206 @@
+#!/usr/bin/env perl
+
+package Scripts::Evaluation::CompareSystems;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use Moose;
+use namespace::autoclean;
+
+with( 'Logger' );
+with( 'MooseX::Getopt::Dashes' );
+
+has 'system_1' => ( is => 'ro' , isa => 'Str' , required => 1 );
+has 'system_2' => ( is => 'ro' , isa => 'Str' , required => 1 );
+
+has 'fields_better' => ( is => 'ro' , isa => 'ArrayRef[Num]' , required => 0 , default => sub { [] } );
+has 'fields_worse' => ( is => 'ro' , isa => 'ArrayRef[Num]' , required => 0 , default => sub { [] } );
+
+has 'include_reference' => ( is => 'ro' , isa => 'Bool' , default => 1 );
+
+__PACKAGE__->meta->make_immutable;
+
+1;
+
+# CURRENT - randomize and/or rank by maximum improvment
+
+my $app = Scripts::Evaluation::CompareSystems->new_with_options;
+
+my %header_2_index;
+my %index_2_header;
+my $n_fields = undef;
+my $count = 0;
+
+# what are we looking for
+my $system_1 = $app->system_1;
+my $system_2 = $app->system_2;
+my @fields_better = @{ $app->fields_better };
+my @fields_worse = @{ $app->fields_worse };
+my $include_reference = $app->include_reference;
+
+my $field_threshold = 3;
+my %print_fields;
+map { $print_fields{ $_ }++ } @fields_better;
+map { $print_fields{ $_ }++ } @fields_worse;
+
+my $current_url;
+my %buffer;
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+    my @fields = split /\t/ , $line;
+
+    if ( ! $count++ ) {
+	map {
+	    my $index = $_;
+	    my $header_key = $fields[ $_ ];
+	    $header_2_index{ $header_key } = $index;
+	    $index_2_header{ $index } = $header_key;
+	} ( 0 .. $#fields );
+	$n_fields = scalar( @fields );
+	next;
+    }
+
+    my $url = $fields[ 0 ];
+    my $system = $fields[ 1 ];
+
+    if ( ( ! defined( $current_url ) ) || ( $current_url ne $url ) ) {
+
+	if ( scalar( keys( %buffer ) ) ) {
+	    _process_buffer();
+	}
+
+	# get ready for the next system
+	$current_url = $url;
+	%buffer = ();
+
+    }
+
+    # keep track of system entries
+    $buffer{ $system } = \@fields;
+
+}
+
+# TODO : how can we avoid repeating this here ?
+_process_buffer();
+
+sub _process_buffer {
+
+    # select entries for the target systems
+    my $system_1_entry = $buffer{ $system_1 };
+    my $system_2_entry = $buffer{ $system_2 };
+    
+    if ( $system_1_entry && $system_2_entry ) {
+	
+	my $ok = 1;
+	my $url = $system_1_entry->[ 0 ];
+	
+	# determine whether the current entry matches our conditions
+	foreach my $test_group ( [ \@fields_better , 1 ] , [ \@fields_worse , 0 ] ) {
+	    
+	    my $test_group_fields = $test_group->[ 0 ];
+	    my $test_group_operation = $test_group->[ 1 ];
+	    
+	    foreach my $test_group_field ( @{ $test_group_fields } ) {
+		
+		# TODO : turn this into a parameter validation
+		if ( $test_group_field < $field_threshold || $test_group_field > $n_fields ) {
+		    die "Requested invalid field : $test_group_field";
+		}
+		
+		my $system_1_field_value = $system_1_entry->[ $test_group_field ];
+		my $system_2_field_value = $system_2_entry->[ $test_group_field ];
+		
+		if ( $test_group_operation ) {
+
+		    if ( $system_1_field_value > $system_2_field_value ) {
+			# nothing to be done - still ok
+			print "$system_1_field_value / $system_2_field_value\n";
+		    }
+		    else {
+			# we do not want this entry
+			$ok = 0;
+		    }
+		    
+		}
+		else {
+		
+		    if ( $system_1_field_value < $system_2_field_value ) {
+			# nothing to be done - still ok
+		    }
+		    else {
+			$ok = 0;
+		    }
+
+		}
+
+		if ( ! $ok ) {
+		    last;
+		}
+
+	    }
+	    
+	    if ( ! $ok ) {
+		last;
+	    }
+	    
+	}
+	
+	if ( $ok ) {
+	    
+	    # output
+	    
+	    # url
+	    print "$url\n";
+	    
+	    # line #1 - system_1
+	    print _extract_system( $system_1 , $system_1_entry ) . "\n";
+	    
+	    # line #2 - system_2
+	    print _extract_system( $system_2 , $system_2_entry ) . "\n";
+	    
+	    # line #3 - reference (optional)
+	    if ( $include_reference ) {
+		# TODO
+		print join( "\t" , 'ground-truth' , $system_1_entry->[ $field_threshold ] ) . "\n";
+	    }
+	    
+	    print "\n";
+	    
+	}
+	
+    }
+
+}
+
+sub _get_field_index {
+
+    my $field_key = shift;
+    return $header_2_index{ $field_key };
+
+}
+
+sub _extract_system {
+
+    my $system = shift;
+    my $system_entry = shift;
+    
+    # TODO : we don't have to recompute this every single time
+    my $n_fields = scalar( @{ $system_entry } );
+
+    return join( "\t" , $system , map {
+	$system_entry->[ $_ ];
+	  }
+		 grep { $_ < $field_threshold || $print_fields{ $_ } }
+		 ( 2 .. ( $n_fields - 1 ) ) );
+
+}
+
+1;

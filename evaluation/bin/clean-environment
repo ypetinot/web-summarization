@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 ROOT";
+    exit;
+fi
+
+ENVIRONMENT_ROOT=$1;
+
+echo "cleaning environment: ${ENVIRONMENT_ROOT}"
+
+find ${ENVIRONMENT_ROOT} -name '*.err' -or -name 'tmp' | xargs -i{} rm -rf {}

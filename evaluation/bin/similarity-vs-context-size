@@ -1,0 +1,80 @@
+#!/usr/bin/env perl
+
+my $CONTEXT_SIZE_FIELD_NAME = "CONTEXT_SIZE";
+
+use List::Util qw[min max];
+
+print STDERR "generating plot data for similarity vs context size\n";
+
+# read in all data
+my @input_lines = map { chomp; $_ } <STDIN>;
+my @complete_header_fields = split (/\t/, shift @input_lines);
+
+# first determine the number of meta fields
+my @meta_fields = split /\t/, ((map { chomp; $_ } `run-statistics --header`)[0]);
+my $column_offset = scalar(@meta_fields);
+my $context_size_column_index = undef;
+for(my $i=0; $i<=$#meta_fields; $i++) {
+    if ( $meta_fields[$i] eq $CONTEXT_SIZE_FIELD_NAME ) {
+	$context_size_column_index = $i;
+    }
+}
+
+if ( ! defined($context_size_column_index) ) {
+    die "[$0] could not find $CONTEXT_SIZE_FIELD_NAME column ...";
+}
+
+# sort input lines by decreasing context
+my @sorted_input_lines = sort { (split(/\t/,$b))[$context_size_column_index] <=>  (split(/\t/,$a))[$context_size_column_index] } @input_lines;
+
+# compute range of context sizes
+my $minimum_context_size = 0;
+my $maximum_context_size = (split(/\t/,$sorted_input_lines[0]))[$context_size_column_index];
+
+# output header info
+my @similarity_header_fields = @complete_header_fields;
+for(my $i=0; $i<$column_offset; $i++) {
+    shift @similarity_header_fields;
+}
+print  "MINIMUM_CONTEXT_SIZE" . "\t" . join("\t", @similarity_header_fields) . "\n";
+
+for(my $i=$minimum_context_size; $i<=$maximum_context_size; $i++) {
+
+    my @similarities;
+    my $line_count = 0;
+
+    foreach my $input_line (@input_lines) {
+
+	# parse line
+	my @fields = split /\t/, $input_line;
+
+	# get context size value
+	my $context_size = $fields[$context_size_column_index];
+	
+	# skip if context size is not greater than minimum context size
+	if ( $context_size < $i ) {
+	    next;
+	}
+
+	$line_count++;
+
+	for(my $column_index=$column_offset; $column_index<=$#fields; $column_index++) {
+	    $similarities[$column_index] += $fields[$column_index];
+	}
+
+    }
+
+    # output data point
+    
+    print $i;
+
+    for(my $column_index=$column_offset; $column_index<=$#complete_header_fields; $column_index++) {
+	my $average_similarity = $similarities[$column_index] / $line_count;
+	print "\t$average_similarity";
+    }
+
+    print "\n";
+
+}
+
+1;

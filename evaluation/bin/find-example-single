@@ -1,0 +1,59 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use File::Slurp;
+
+my $system_a_file = $ARGV[ 0 ];
+my $system_b_file = $ARGV[ 1 ];
+my $metric = $ARGV[ 2 ];
+
+if ( ! -f $system_a_file || ! -f $system_b_file ) {
+    die "Invalid system file: $system_a_file / $system_b_file";
+}
+
+my $system_a_scores = _load_scores( $system_a_file );
+my $system_b_scores = _load_scores( $system_b_file );
+
+my $system_a_score_metric = $system_a_scores->{ $metric };
+my $system_b_score_metric = $system_b_scores->{ $metric };
+
+if ( ! defined( $system_a_score_metric ) || ! defined( $system_b_score_metric ) ) {
+    die "Requested metric ($metric) missing from at least one summary file: ($system_a_file : $system_a_score_metric) / ($system_b_file : $system_b_score_metric)";
+}
+elsif ( $system_a_score_metric > $system_b_score_metric ) { 
+    print join( "\t" , $system_a_file , $system_b_file ) . "\n";
+}
+
+sub _load_scores {
+
+    my $filename = shift;
+
+    my @lines = map { chomp; $_; } read_file( $filename ); 
+    if ( $#lines != 1 ) {
+	die "Invalid system file - missing header/output : $filename";
+    }
+
+    my @header_fields = split /\t/ , $lines[ 0 ];
+    my @output_fields = split /\t/ , $lines[ 1 ];
+
+    if ( $#header_fields != $#output_fields ) {
+	die "Invalid system file - field count mismatch : $filename";
+    }
+
+    my %scores;
+    for (my $i=0; $i<=$#header_fields; $i++) {
+	$scores{ $header_fields[ $i ] } = $output_fields[ $i ];
+    }
+
+    return \%scores;
+
+}
+
+1;

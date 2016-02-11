@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Generates list of instances ( url-category pairs ) to be provided to run-experiment
+# TODO ...
+
+function _category_filter() {
+
+    cat - \
+    | if [[ -f "${REPOSITORY_CATEGORY_PATTERNS}" ]]; then grep --line-buffered -f ${REPOSITORY_CATEGORY_PATTERNS}; else cat - ; fi \
+    | if [[ ! -z "${REPOSITORY_CATEGORY_MAX}" ]]; then head -n ${REPOSITORY_CATEGORY_MAX}; else cat - ; fi \
+    | ${BINDIR}/filter-outliers | ${BINDIR_DIST}/dmoz-category-check summary content anchortext
+
+}
+
+REPOSITORY_CATEGORY_LIST=${OUTPUT_SELECTION_DIRECTORY}/category.list
+if [[ ! -f ${REPOSITORY_CATEGORY_LIST} ]]; then
+
+    # make sure the selection directory exists
+    mkdir -p ${OUTPUT_SELECTION_DIRECTORY}
+   
+    # run selection
+    # CURRENT : selection should be run against a data service ?
+    find ${REPOSITORY_BASE_DIRECTORY} -maxdepth 5 -type f -name '*.summary' | sed 's/.summary//' | _category_filter > ${REPOSITORY_CATEGORY_LIST}
+
+fi

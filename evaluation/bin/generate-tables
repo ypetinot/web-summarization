@@ -1,0 +1,107 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../src/";
+
+use File::Slurp;
+use Getopt::Long;
+use Pod::Usage;
+
+my $debug = 0;
+my $help  = 0;
+my $man   = 0;
+
+my $with_table_context = 0;
+
+GetOptions('help|?' => \$help, man => \$man,
+	   'debug|d' => \$debug,
+	   'with-table-context' => \$with_table_context
+    ) or pod2usage(2);
+
+# reading list of table files
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $filename = $_;
+
+    my @file_content = map { chomp; $_; } read_file( $filename );
+
+    if ( $with_table_context ) {
+	# TODO : create header/footer files instead ?
+	print '\begin{table*}[ht!]' . "\n";
+	print '\scriptsize' . "\n";
+	print '\centering' . "\n";
+    }
+
+    print '\begin{tabular}{ | l | c | c | c | c | c | c | c | }' . "\n";
+    print '\hline' . "\n";
+
+    _adjust_content( \@file_content );
+
+    print '\hline' . "\n";
+    print '\end{tabular}' . "\n";
+
+    if ( $with_table_context ) {
+	my @filename_components = split /\// , $filename;
+	my $category_id = $filename_components[ $#filename_components ];
+	$category_id =~ s/\.out$//sg;
+	$category_id =~ s/_/\//sg;
+	print '\caption{Performance of adaptation algorithms - ' . $category_id . ' - \dag \space indicates statistically significant improvements (according to a Wilcoxon signed-rank test with $p < 0.05$) compared to the provided ranking baselines.}' ."\n";
+	
+	my $category_key = lc( $category_id );
+	$category_key =~ s/\//-/sg;
+	print '\label{table:results-adaptation-' . "$category_key}\n";
+	print '\end{table*}' . "\n";
+    }
+
+    print "\n\n";
+
+}
+
+sub _adjust_content {
+
+    my $file_content = shift;
+
+    my @adjusted_content;
+    my $current_block = undef;
+
+    my $line_count = 0;
+    foreach my $line ( @{ $file_content } ) {
+
+	if ( $line =~ m/^adaptation:::graph4-adaptation-extractive-reranked-oracle/ ) {
+	    next;
+	}
+
+	$line_count++;
+
+	my @fields = split /\&/ , $line;
+	if ( scalar( @fields ) > 1 ) {
+	    my $system_id = $fields[ 0 ];
+	    my @system_id_elements = split /:::/ , $system_id;
+	    my $block = $system_id_elements[ 0 ];
+	    if ( ( $line_count > 2 ) && ( ! defined( $current_block ) || ( $current_block ne $block ) ) ) {
+		print '\noalign{\hrule height 3pt}' . "\n";
+		$current_block = $block;
+	    }
+	}
+
+	# corrected line
+	my $corrected_line = $line;
+	$corrected_line =~ s/^adaptation-//sg;
+	$corrected_line =~ s/^adaptation/regular/sg;
+	$corrected_line =~ s/adaptation/adapt/sg;
+	$corrected_line =~ s/graph4\-//sg;
+
+	print "$corrected_line\n";
+
+    }
+
+}
+
+1;

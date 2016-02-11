@@ -1,0 +1,152 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Carp;
+use Cwd;
+use File::Copy;
+use File::Find;
+use File::Path;
+use File::Basename;
+use IO::File;
+use XML::TreePP;
+
+my $FROM_DIR = getcwd();
+
+# check args
+if ( $#ARGV < 0 ) {
+    die "Usage: $0 REFERENCE_SUMMARIZER1 [REFERENCE_SUMMARIZER2 [... [REFERENCE_SUMMARIZERn]]";
+}
+my %REFERENCE_SUMMARIZERS;
+foreach my $arg (@ARGV) {
+    $REFERENCE_SUMMARIZERS{$arg} = 1;
+}
+
+# one output file per summarizer
+my %spl_filehandles;
+
+while (<STDIN>) {
+
+    chomp;
+    my $summary_dir = $_;
+
+    # list out all .summary files in the summary_dir
+    opendir(my $dh, $summary_dir) || die "can't opendir $summary_dir: $!";
+    my @summary_files = grep { $_ =~ m/^(.+)\.summary$/ } readdir($dh);
+
+    my @summary_entries;
+    foreach my $summary_file (@summary_files) {
+	my @summary_entry = extract_summaries($summary_file, $summary_dir);
+	if (! scalar(@summary_entry) ) {
+	    next;
+	}
+	push @summary_entries, \@summary_entry;
+    }
+    
+    # process
+    process($summary_dir, \@summary_entries);
+
+}
+
+# process set of related summary files
+sub process {
+
+    my $summary_dir = shift;
+    my $summary_entries = shift;
+    
+    # split entries into reference and test entries
+    my @reference_entries;
+    my @test_entries;
+    foreach my $summary_entry (@{$summary_entries}) {
+
+	my ($summarizer_id, $target_url, $context_url, $summary_only_file) = @{$summary_entry};
+	
+	print STDERR "processing: $summarizer_id - $summary_only_file - $summary_dir\n";
+
+	if ( defined($REFERENCE_SUMMARIZERS{$summarizer_id}) ) {
+	    push @reference_entries, $summary_entry;
+	}
+	else {
+	    push @test_entries, $summary_entry;
+	}
+
+    }
+
+    # get list of reference files
+    my @reference_files = map { my ($summarizer_id, $target_url, $context_url, $summary_only_file) = @{$_}; $summary_only_file; } @reference_entries;
+
+    foreach my $test_entry (@test_entries) {
+
+	my ($summarizer_id, $target_url, $context_url, $summary_only_file) = @{$test_entry};
+
+	# creating new entry
+	my $summary_entry = $summary_only_file . "\t" . join("\t", @reference_files);
+
+	# ROUGE output file name
+	my $output_file = "${summarizer_id}.spl";
+
+	# write out to the global spl file for the current peer summarizer
+	if ( ! defined($spl_filehandles{$summarizer_id}) ) {
+	    my $fh = new IO::File;
+	    open ($fh, "> $output_file") || die "unable to create spl file ($output_file) for $summarizer_id : $!";
+	    $spl_filehandles{$summarizer_id} = $fh;
+	}
+	my $destination = $spl_filehandles{$summarizer_id};
+	print $destination "$summary_entry\n";
+    
+	# also print info to STDOUT
+	print STDOUT "$target_url\t$context_url\t$summarizer_id\t$summary_entry\n";
+
+    }
+
+}
+
+# process .summary file, dumping all summaries to separate files in destination_dir
+sub extract_summaries {
+
+    my $source_file = shift;
+    my $destination_dir = shift;
+
+    # parse summary file
+    my $tpp = XML::TreePP->new();
+    my $tree = $tpp->parsefile( "$destination_dir/$source_file" );
+    if ( ! $tree ) {
+        die "invalid summary data: $source_file";
+    }
+
+    # extract target URL from summary data
+    my $target_url = $tree->{summary}->{'-target'};
+
+    # extract summarizer id from summary data
+    my $summarizer_id = $tree->{summary}->{'-summarizer-id'};
+
+    # extract context URL from summary data
+    my $context_url = $tree->{summary}->{'-context'};
+
+    # extract summary from summary file
+    my $summary = '';
+    if ( !$tree->{summary} || !$tree->{summary}->{value} ) {
+        if ( $tree->{summary} && $tree->{summary}->{status} ) {
+            #print STDERR "skipping $source_file: " . $tree->{summary}->{status} . "\n";
+        }
+        else {
+            die "invalid summary data: $source_file";
+        }
+    }
+    else {
+	$summary = $tree->{summary}->{value};
+    }
+
+    # write summary to temp file
+    my $summary_only_file = "$destination_dir/${summarizer_id}";
+    open (SUMMARY_ONLY, "> $summary_only_file" ) || die "unable to create file $summary_only_file";
+    print SUMMARY_ONLY "$summary\n";
+    close SUMMARY_ONLY;
+
+    return ($summarizer_id, $target_url, $context_url, $summary_only_file);
+
+}
+
+1;
+

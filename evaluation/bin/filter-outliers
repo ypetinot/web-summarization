@@ -1,0 +1,58 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use URI;
+
+# autoflush
+$| = 1;
+
+while ( <STDIN> ) {
+
+    chomp;
+    
+    my $category_base = $_;
+
+    my $keep = 1;
+    my $count = 0;
+    my %hosts;
+
+    open CATEGORY_BASE, $category_base or die "Unable to open category file ($category_base): $!";
+    while ( <CATEGORY_BASE> ) {
+	
+	chomp;
+	
+	my @fields = split /\t/, $_;
+	my $url = shift @fields;
+	my $category = shift @fields;
+
+	my $uri_obj = URI->new( $url );
+	my $host = $uri_obj->host();
+
+	$hosts{ $host }++;
+	if ( $hosts{ $host } > 10 ) {
+	    print STDERR "Will skip outlier category $category - more than 10 URLs originate from the same host ...\n";
+	    $keep = 0;
+	    last;
+	} 
+
+	$count++;
+	if ( $count > 200 ) {
+	    print STDERR "Will skip outlier category $category - more than 200 URLs in this category ...\n";
+	    $keep = 0;
+	    last;
+	}
+
+    }
+    close CATEGORY_BASE;
+
+    if ( ! $keep ) {
+	next;
+    }
+
+    print "$category_base\n";
+
+}
+
+1;

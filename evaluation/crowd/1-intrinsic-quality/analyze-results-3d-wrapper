@@ -1,0 +1,41 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+EXPERIMENT_FILE=$1;
+SYSTEMS_PAIRINGS_FILE=$2
+OUTPUT_DIRECTORY=$3
+if [[ -z "${EXPERIMENT_FILE}" || ! -f "${EXPERIMENT_FILE}" || -z "${SYSTEMS_PAIRINGS_FILE}" || ! -f ${SYSTEMS_PAIRINGS_FILE} || -z "${OUTPUT_DIRECTORY}" ]]; then
+    echo "Usage $0 <experiment-file> <systems-pairings-file> <output_directory>"
+    exit 1;
+fi
+
+if [[ -d ${OUTPUT_DIRECTORY} ]]; then
+    echo "Output directory already exists: ${OUTPUT_DIRECTORY}"
+    exit 2;
+fi
+
+OUTPUT_DIRECTORY_FULL_ANALYSIS=${OUTPUT_DIRECTORY}/full-analysis/
+OUTPUT_DIRECTORY_FULL_ANALYSIS_LOG=${OUTPUT_DIRECTORY_FULL_ANALYSIS}/analysis.log
+OUTPUT_DIRECTORY_FULL_ANALYSIS_OUT=${OUTPUT_DIRECTORY_FULL_ANALYSIS}/analysis.out
+
+OUTPUT_DIRECTORY_PER_DIMENSION_ANALYSIS=${OUTPUT_DIRECTORY}/per-dimension-analysis/
+
+mkdir -p ${OUTPUT_DIRECTORY_FULL_ANALYSIS}
+mkdir -p ${OUTPUT_DIRECTORY_PER_DIMENSION_ANALYSIS}
+
+#cat initial.out
+${BINDIR}/analyze-results-3d ${EXPERIMENT_FILE} ${SYSTEMS_PAIRINGS_FILE} > ${OUTPUT_DIRECTORY_FULL_ANALYSIS_OUT} 2> ${OUTPUT_DIRECTORY_FULL_ANALYSIS_LOG}
+
+cat ${OUTPUT_DIRECTORY_FULL_ANALYSIS_OUT} | awk -F"\t" -voutput_directory=${OUTPUT_DIRECTORY_PER_DIMENSION_ANALYSIS} '{ print $0 >> output_directory "/" $1 }'
+
+DATE=`date +%Y-%m-%d`
+EVALUATION_LABEL=`echo $( readlink -f ${EXPERIMENT_FILE} ) | sed 's#.*experiment-\(.*\)/evaluation/human-analyses/\(.*\)/.*#\2#'`
+EXPERIMENT_LABEL=`echo $( readlink -f ${EXPERIMENT_FILE} ) | sed 's#.*experiment-\(.*\)/evaluation/.*#\1#'`
+find ${OUTPUT_DIRECTORY_PER_DIMENSION_ANALYSIS} -type f -not -name '*.tex' | while read OUTPUT_FILE; do
+    OUTPUT_FILE_SORTED=${OUTPUT_FILE}.sorted
+    DIMENSION=`basename ${OUTPUT_FILE}`
+    DIMENSION_OUTPUT_DIRECTORY=`dirname ${OUTPUT_FILE}`
+    cat ${OUTPUT_FILE} | sort -k3 -g -r | cut -f 2- > ${OUTPUT_FILE_SORTED}
+    cat ${OUTPUT_FILE_SORTED} | perl ${BINDIR}/analyze-results-3d-table-generator > ${DIMENSION_OUTPUT_DIRECTORY}/thesis-adaptation-${EXPERIMENT_LABEL}-human-evaluation-${EVALUATION_LABEL}-table-3d-${DIMENSION}.tex
+done;

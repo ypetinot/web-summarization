@@ -1,0 +1,13 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+RAW_OUT=$1
+
+# positive - unigrams
+cat ${RAW_OUT} | ${BINDIR}/compare-systems --system-2=adaptation-oracle-category:::graph4-baseline-ranking --system-1=adaptation-oracle-category:::graph4-adaptation-extractive --fields-better=8
+
+# negative - unigrams
+#cat ${RAW_OUT} | ${BINDIR}/compare-systems --system-1=adaptation-oracle-category:::graph4-baseline-ranking --system-2=adaptation-oracle-category:::graph4-adaptation-extractive --fields-better=8
+
+# positive - bigrams
+#cat ${RAW_OUT} | ${BINDIR}/compare-systems --system-2=adaptation-oracle-category:::graph4-baseline-ranking --system-1=adaptation-oracle-category:::graph4-adaptation-extractive --fields-better=20

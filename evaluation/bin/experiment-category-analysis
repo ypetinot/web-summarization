@@ -1,0 +1,36 @@
+#!/bin/bash -x
+
+# TODO : ultimately this whole script should be absorbed by makefile.experiment
+# cat $(EXPERIMENT_DIRECTORY_EVALUATION_ANNOTATIONS) | xargs -i{} 'cat $(EXPERIMENT_DIRECTORY_EVALUATION_RAW) | $(BINDIR_EXPERIMENT)/experiment-filter --annotations=$(EXPERIMENT_DIRECTORY_EVALUATION_INSTANCE_ANNOTATIONS) --filter {} | $(BINDIR_EXPERIMENT)/experiment-manager --post-process $(EXPERIMENT_MANAGER_OPTIONS) > $@.temp/$$(echo {} | tr '/' '_' ).out'
+
+# TODO : find a way to create one target for each annotation in makefile.experiment
+RAW_OUT=$1
+
+#<( cat ~/experiments/experiment-2015-06-04-adaptation-extractive/instances.request | /proj/nlp/users/ypetinot/ocelot-working-copy/svn-research/trunk/evaluation/bin/generate-annotations )
+EVALUATION_ANNOTATIONS=$2
+
+INSTANCE_ANNOTATIONS=$3
+EXPERIMENT_MANAGER_OPTIONS=$4
+OUTPUT_DIRECTORY=$5
+
+if [[ -z "${RAW_OUT}" || ! -f "${EVALUATION_ANNOTATIONS}" || ! -f "${INSTANCE_ANNOTATIONS}" || -z "${OUTPUT_DIRECTORY}" || ! -d "${OUTPUT_DIRECTORY}" ]]; then
+    echo "Usage: $0 <raw-out> <evaluation-annotations> <instance-annotations> <output-directory>"
+    exit;
+fi
+
+BINDIR=`dirname $0`
+
+#ANNOTATION_FILTERS=`cat ${EVALUATION_ANNOTATIONS} | awk -F"\t" '{ print $2 }' | sort -u | tr '\n' ' '`
+ANNOTATION_FILTERS=`cat ${EVALUATION_ANNOTATIONS} | sort -u | tr '\n' ' '`
+
+for annotation_filter in ${ANNOTATION_FILTERS}; do
+
+    output_file=${OUTPUT_DIRECTORY}/$( echo ${annotation_filter} | tr '/' '_' ).out
+
+    cat ${RAW_OUT} | ${BINDIR}/experiment-filter --annotations=${INSTANCE_ANNOTATIONS} --filter=${annotation_filter} | perl ${BINDIR}/experiment-manager --post-process ${EXPERIMENT_MANAGER_OPTIONS} > ${output_file}
+
+    #--allow-unspecified-parameters ${BINDIR}/../conf/summarizers-meta.conf Experiments::NAACL_HLT_2015::ReferenceAdaptation title adaptation adaptation-oracle-retrieval adaptation-oracle-category
+
+done;
+
+# CURRENT : filter at a level of neighborhood homogeneity => get full table

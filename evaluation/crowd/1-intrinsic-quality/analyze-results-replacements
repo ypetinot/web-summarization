@@ -1,0 +1,99 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../../src/perl/";
+use lib "${FindBin::Bin}/../../../data/src/";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use StringNormalizer;
+
+my $SYSTEM_ID_TITLE = 'title';
+
+# for each url, collect title
+my %url2title;
+
+# for each title-replacement system and for each url, compare the produced summary with the original title
+my %systems;
+
+while ( <STDIN> ) {
+
+    chomp;
+    
+    my $line = $_;
+    my @fields = split /\t/ , $line;
+
+    my $url = shift @fields;
+    my $system = shift @fields;
+    my $summary = shift @fields || '';
+
+    if ( $system eq $SYSTEM_ID_TITLE ) {
+	$url2title{ $url } = $summary;
+    }
+    elsif ( $system =~ m/title-replacement/ ) {
+	$systems{ $system }{ $url } = $summary;
+    }
+    else {
+	next;
+    }
+
+}
+
+foreach my $system (keys( %systems )) {
+
+    my $count = 0;
+    my $title_exact_match_count = 0;
+
+    my $system_entries = $systems{ $system };
+    foreach my $url (keys( %{ $system_entries } )) {
+	
+	$count++;
+
+	my $title = $url2title{ $url } || '';
+	my $summary = $system_entries->{ $url } || '';
+
+	if ( _is_match( $title , $summary ) ) {
+	    $title_exact_match_count++;
+	}
+
+    }
+
+    my $ratio = $title_exact_match_count / $count;
+    print join( "\t" , $system , $ratio ) . "\n";
+
+}
+
+sub _is_match {
+
+    my $title = shift;
+    my $summary = shift;
+
+    # Note : we strip out all punctuation characters, normalize and compare
+    my $title_normalized = _normalize( $title );
+    my $summary_normalized = _normalize( $summary );
+
+    if ( $title_normalized eq $summary_normalized ) {
+	return 1;
+    }
+
+    return 0;
+
+}
+
+sub _normalize {
+
+    my $string = shift;
+
+    my $string_normalized = $string;
+
+    # strip out punctuation
+    $string_normalized =~ s/\p{Punct}+/ /sgi;
+    $string_normalized = lc( $string_normalized );
+
+    return StringNormalizer::_normalize( $string_normalized );
+
+}
+
+1;

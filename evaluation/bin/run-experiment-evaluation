@@ -1,0 +1,184 @@
+#!/usr/bin/env perl
+
+# Collect all experimental results
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../third-party/local/lib/";
+
+use File::Path;
+use JSON;
+
+if ( scalar(@ARGV) != 1 ) {
+    die "Usage: $0 <base-directory>";
+}
+
+my $base_directory = $ARGV[0];
+
+# check that the base directory actually exists
+if ( ! -d $base_directory ) {
+    die "Invalid base directory: $base_directory ...";
+}
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $category_base = shift @fields;
+    my $fold = shift @fields;
+    my $id = shift @fields;
+    my $output_file = shift @fields;
+    my $model = shift @fields;
+
+    # create fold reference files if they don't exist already
+    my $reference_mapping = _create_fold_reference_files( $base_directory , $category_base );
+    
+    # create peer files
+    my $peer_mapping = _create_peer_files( $base_directory , $category_base , $fold , $id , $output_file );
+
+    # open/create evaluation file for this system
+    my $evaluation_file = join("/", $base_directory, join(".", $id, "spl"));
+    open SYSTEM_EVALUATION_DATA, ">>$evaluation_file" or die "Unable to open/create evaluation file ($evaluation_file): $evaluation_file";
+
+    # output evaluation setup
+    foreach my $url ( keys( %{ $peer_mapping } ) ) {
+	
+	my $peer_file = $peer_mapping->{ $url };
+	my $reference_file = $reference_mapping->{ $url };
+
+	print SYSTEM_EVALUATION_DATA join("\t", $peer_file, $reference_file) . "\n";
+
+    }
+    
+    # close evaluation file (for now)
+    close SYSTEM_EVALUATION_DATA;
+
+}
+
+# create reference files
+sub _create_fold_reference_files {
+
+    my $base = shift;
+    my $category_base = shift;
+
+    my $reference_subdir = "reference";
+    my $reference_directory = join("/", $base, $reference_subdir, $category_base);
+
+    # load complete reference data
+    my $complete_reference_data = _load_summary_file( $reference_directory , $category_base );
+
+    return $complete_reference_data;
+
+}
+
+# create peer files
+sub _create_peer_files {
+
+    my $base = shift;
+    my $category_base = shift;
+    my $fold = shift;
+    my $id = shift;
+    my $output_file = shift;
+
+    my $peer_subdir = "peers";
+    # TODO : can I make this cleaner ?
+    my @path_components = grep { defined( $_ ) } ( $base , $category_base , $peer_subdir , $fold , $id );
+    my $peer_directory = join( "/" , @path_components );
+
+    # load peer data
+    my $peer_data = _load_peer_data( $peer_directory , $output_file );
+
+    return $peer_data;
+
+}
+
+# url-summary mapping file
+sub _get_mapping_file {
+
+    my $base_dir = shift;
+
+    return join("/", $base_dir, "url-mapping.json");
+
+}
+
+# load summary file
+sub _load_summary_file {
+
+    my $reference_directory = shift;
+    my $path = shift;
+
+    my $serialized_data_file = _get_mapping_file( $reference_directory );
+
+    # first make sure the reference files aren't already there
+    if ( -f $serialized_data_file ) {
+	local $/ = undef;
+	open URL_MAPPING, $serialized_data_file or die "Unable to open serialization file ($serialized_data_file): $!";
+	my $json_content = <URL_MAPPING>;
+	close URL_MAPPING;
+	return decode_json( $json_content );
+    }
+    
+    return _create_url_summary_mapping( $path , $reference_directory );
+
+}
+
+# load peer data
+sub _load_peer_data {
+
+    my $peer_directory = shift;
+    my $output_file = shift;
+
+    return _create_url_summary_mapping( $output_file , $peer_directory );
+
+}
+
+# create url-summary file
+sub _create_url_summary_mapping {
+
+    my $input_file = shift;
+    my $target_directory = shift;
+
+    # create reference directory
+    mkpath $target_directory;
+
+    my %summary_data;
+
+    open DATA_FILE, $input_file or die "Unable to open file ($input_file): $!";
+
+    my $i = 0;
+    while( <DATA_FILE> ) {
+
+	chomp;
+
+	my @fields = split /\t/, $_;
+	my $url = shift @fields;
+	my $data = shift @fields || "";
+
+	# create file for this entry
+	my $summary_file = join("/", $target_directory, $i++);
+	open SUMMARY_FILE, ">$summary_file" or die "Unable to create summary file ($summary_file): $!";
+	print SUMMARY_FILE "$data\n";
+	close SUMMARY_FILE;
+
+	# associate url to this path
+	$summary_data{ $url } = $summary_file;
+
+    }
+
+    close DATA_FILE;
+
+    my $serialized_data_file = _get_mapping_file( $target_directory );
+
+    # write out url mapping for (possible) future usage
+    open URL_MAPPING, ">$serialized_data_file" or die "Unable to create serialzation file ($serialized_data_file): $!";
+    print URL_MAPPING encode_json( \%summary_data );
+    close URL_MAPPING;
+
+    return \%summary_data;
+
+}
+
+1;

@@ -1,0 +1,76 @@
+#!/usr/bin/env perl
+
+package Apps::SplitWithHeader;
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+
+use File::Slurp;
+
+use Moose;
+use namespace::autoclean;
+
+with( 'MooseX::Getopt::Dashes' );
+
+# split field (1-indexed)
+has 'split_field' => ( is => 'ro' , isa => 'Num' , required => 1 );
+
+# field separator
+has 'field_separator' => ( is => 'ro' , isa => 'Str' , default => "\t" );
+
+# has header
+has 'has_header' => ( is => 'ro' , isa => 'Bool' , default => 1 );
+
+# output directory
+has 'output_directory' => ( is => 'ro' , isa => 'Str' , default => './' );
+
+__PACKAGE__->meta->make_immutable;
+
+1;
+
+my $splitter = __PACKAGE__->new_with_options;
+my $field_separator = $splitter->field_separator;
+my $split_field_index = $splitter->split_field - 1;
+
+my $count = 0;
+my $header_line = undef;
+my %initialized;
+while ( <STDIN> ) {
+
+    chomp;
+    
+    my $line = $_;
+
+    if ( ! $count++ && $splitter->has_header ) {
+	$header_line = $line;
+	next;
+    } 
+
+    my @fields = split /$field_separator/ , $line;
+
+    if ( $split_field_index > $#fields ) {
+	die "Invalid split field index: $split_field_index";
+    }
+    my $output_file = join( '/' , $splitter->output_directory , $fields[ $split_field_index ] );
+
+    if ( ! $initialized{ $output_file }++ ) {
+	_update_file( $output_file , $header_line , 0 );
+    }
+
+    _update_file( $output_file , $line , 1 );
+
+}
+
+sub _update_file {
+    my $file = shift;
+    my $line = shift;
+    my $append = shift;
+    write_file( $file , { append => $append } , ( "$line\n" ) ) ;
+}
+
+1;

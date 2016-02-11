@@ -1,0 +1,40 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+RAW_OUT=$1
+OUTPUT_DIRECTORY=$2
+
+if [[ -z "${RAW_OUT}" || ! -f "${RAW_OUT}" || -z "${OUTPUT_DIRECTORY}" ]]; then
+    echo "Usage: $0 <raw-out> <output-directory>"
+    exit 1;
+fi
+
+mkdir -p ${OUTPUT_DIRECTORY}
+
+# TODO: salvage ?
+# perl -d ${BINDIR}/split-systems
+
+# 1 - split systems
+OUTPUT_DIRECTORY_SYSTEMS=${OUTPUT_DIRECTORY}/systems/
+mkdir -p ${OUTPUT_DIRECTORY_SYSTEMS}
+tail -n +2 ${RAW_OUT} | awk -F"\t" -voutput_directory=${OUTPUT_DIRECTORY_SYSTEMS} '{ print $1 "\t" $3 "\t" $4 >> output_directory "/" $2 }'
+
+# 2 - analyze each system independently
+OUTPUT_DIRECTORY_ROUGE=${OUTPUT_DIRECTORY}/rouge/
+mkdir -p ${OUTPUT_DIRECTORY_ROUGE}
+find ${OUTPUT_DIRECTORY_SYSTEMS} -maxdepth 1 -type f | while read SYSTEM_FILE; do
+    SYSTEM_ID=`basename ${SYSTEM_FILE}`
+    SYSTEM_BASE=${OUTPUT_DIRECTORY_ROUGE}/${SYSTEM_ID}
+    SYSTEM_SPL=${SYSTEM_BASE}.spl
+    OUTPUT_DIRECTORY_SYSTEM=${SYSTEM_BASE}
+    mkdir -p ${OUTPUT_DIRECTORY_SYSTEM}
+    cat ${SYSTEM_FILE} | ${BINDIR}/generate-rouge-input-data ${OUTPUT_DIRECTORY_SYSTEM} > ${SYSTEM_SPL}
+    ${BINDIR}/run-experiment-rouge ${SYSTEM_ID} ${SYSTEM_SPL} ${OUTPUT_DIRECTORY_SYSTEM} ${OUTPUT_DIRECTORY_ROUGE}
+done;
+
+# TODO : salvage ?
+#perl ${BINDIR}/run-experiment-evaluation ${TARGET_DIR}
+
+# run post-processing
+##${BINDIR}/run-experiment-post-process ${POST_PROCESSING_DIR}

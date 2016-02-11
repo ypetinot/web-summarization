@@ -1,0 +1,127 @@
+
+777601 (eventually open to lower level of annotator reputation - only resulted in a handful of annotations)
+*775325 (high level of annotator reputation)*
+
+787323885 Includes news , history , fixtures . Results and for the club based in Epping , ESSEX .
+29% acceptable
+14% good
+43% very good
+*784192828* Includes news , history , fixtures . Results and for the club based in Epping , ESSEX . / http://eppingcc.hitscricket.com/home/default.aspx
+7% irrelevant
+2% partly inaccurate
+16% acceptable
+36% good
+38% very good
+
+787325273 No data available
+83% irrelevant
+17% very good
+
+787323882 Department of Mathematics - University of Ferrara / http://dm.unife.it/index_I.html
+20% acceptable
+20% good
+60% very good
+*784192597* Department of Mathematics - University of Ferrara / http://dm.unife.it/index_I.html
+1% partly inaccurate
+10% acceptable
+23% good
+65% very good
+
+787323883 An Amstrad CPC for and windows . / http://copacabana.emuunlim.com/
+14% irrelevant
+14% acceptable
+57% good
+14% very good
+*784192686* An Amstrad CPC for and windows . / http://copacabana.emuunlim.com/
+18% irrelevant => this might actually have been the right annotation (not to mention that the page is under construction based on the annotators' comments => make sure to not include this type of URLs in the test questions)
+13% partly inaccurate
+18% acceptable
+30% good
+23% very good
+
+*784192887* No data available / http://archives.cnn.com/2001/TECH/computing/01/10/windows.mac.cohabit.idg/
+94% irrelevant
+2% acceptable
+2% good
+1% very good
+
+787323884 News and reviews about both new and classic science fiction books . Visitors can add authors , books , comment and their own reviews . / http://emulationrealm.net/
+50% irrelevant
+25% partly inaccurate
+25% good
+*784192721* News and reviews about both new and classic science fiction books . Visitors can add authors , books , comment and their own reviews . / http://emulationrealm.net/
+70% irrelevant
+5% partly inaccurate
+5% acceptable
+11% good
+9% very good
+
+787323887 Official site with roster , schedule , statistics and news for Aztec softball . / http://goaztecs.cstv.com/sports/w-softbl/sdsu-w-softbl-body.html
+20% good
+80% very good
+*784192882* Official site with roster , schedule , statistics and news for Aztec softball . / http://goaztecs.cstv.com/sports/w-softbl/sdsu-w-softbl-body.html
+4% partly inaccurate
+7% acceptable => seems a bit harsh to consider this option as being unacceptable
+24% good
+65% very good
+
+787323890 Newspaper . News , sports , editorials , and classifieds . / http://dailybeacon.utk.edu/
+67% acceptable
+33% very good => I can see why this would be seen as a very good summary => do not discriminate between good summaries (maybe also between bad summaries ?)
+*784321605* Newspaper . News , sports , editorials , and classifieds . /  http://dailybeacon.utk.edu/
+3% irrelevant
+9% partly inaccurate
+19% acceptable
+32% good
+36% very good => I can understand why this option could be picked by some annotators
+
+787323891 Boston College Official Athletic Site - Women ' s Lacrosse / http://bceagles.cstv.com/sports/w-lacros/bc-w-lacros-body.html
+13% acceptable => seems to allow discrimination against non native english speakers ?
+88% very good
+*784321635* Boston College Official Athletic Site - Women ' s Lacrosse / http://bceagles.cstv.com/sports/w-lacros/bc-w-lacros-body.html
+1% irrelevant
+3% partly inaccurate
+4% acceptable
+22% good
+70% very good
+
+787325545 Provides an insight into his career , offers a profile , gallery , lists achievements and includes a guest book . / http://10dulkar.tripod.com
+14% acceptable
+29% good
+57% very good => I can see why this can be seen as a very good summary
+
+787325968 CP / M Emulator for Macintosh / http://homepage3.nifty.com/bugbug/cpm/
+17% acceptable
+17% good
+67% very good
+
+*784320546* No data available / http://imi.cas.sc.edu/IMI
+91% irrelevant => this seems like a very good way to filter out spammers/bots, but having at most one of this type is certainly sufficient
+1% acceptable
+4% good
+4% very good
+
+*784192838* No data available / http://clifford.org/
+81% irrelevant
+1% partly inaccurate
+1% acceptable
+3% good
+13% very good
+
+********************************************************************************************************
+
+788042779: 3/4/5
+788042780: remove => ideally I should avoid using as test question instances for which the positive/negative decision is not clear
+788042781: 1 => clearly irrelevant, cannot be anything else
+788042782: 3/4/5 => this is definitely a positive even if there if the grammar is incorrect
+788042784: 3/4/5 => this is definitely a positive
+788042789: 3/4/5 => this is definitely a positive
+788042790: 3/4/5 => this is definitely a positive
+788043746: 3/4/5 => this is definitely a positive [definitely keep this one since it requires basic inference on the location]
+788057186: 1 => no data available, keep this one (and only one like this)
+788057488: 3/4/5 => this is definitely a positive [disabled]
+
+=> need more negatives (3)
+788594076: 1 => this is definitely a negative
+788594094: 1 => this is definitely a negative
+788594256: 1 => this is definitely a negative

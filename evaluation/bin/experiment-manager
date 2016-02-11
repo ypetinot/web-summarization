@@ -1,0 +1,206 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../src/perl/";
+use lib "${FindBin::Bin}/../../third-party/local/lib/";
+use lib "${FindBin::Bin}/../src/";
+
+use Web::Summarizer::Utils;
+
+use Environment;
+use Evaluation::Definitions;
+use Carp;
+use Clone qw(clone);
+use Data::Dumper;
+use Getopt::Long;
+use List::MoreUtils qw/ uniq /;
+use JSON;
+
+my @metrics;
+my @parameters;
+my %is_output_ok;
+
+my %totals;
+my %instance_counts;
+my %instance2seen;
+my %system2parameters;
+my $count = 0;
+
+my $average_from_effective = undef;
+my $n_fields;
+
+my $debug = 0;
+my $help = 0;
+my $man = 0;
+my $allow_unspecified_parameters = 0;
+
+my $do_generate_summarizers = 0;
+my $do_post_process = 0;
+
+# TODO : is this the right way of implementing this ?
+my $do_per_annotation = 0;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?' => \$help, man => \$man,
+	   'allow-unspecified-parameters' => \$allow_unspecified_parameters,
+	   'generate-summarizers' => \$do_generate_summarizers,
+	   'post-process' => \$do_post_process,
+           'debug|d' => \$debug
+    ) or pod2usage(2);
+
+if ( scalar( @ARGV ) < 1 ) {
+    die "Usage: $0 <meta-configuration-file> <experiment-driver> <summarizers-base-directory> [ <requested-system-1> [ <requested-system-2> ... ] ]";
+}
+
+my $meta_configuration_file = shift @ARGV;
+if ( ! -f $meta_configuration_file ) {
+    die "Please provide a valid meta configuration file ...";
+}
+
+my $experiment_driver_class = shift @ARGV;
+my $_experiment_driver_class = Web::Summarizer::Utils::load_class( $experiment_driver_class );
+
+my @requested_systems = @ARGV;
+if ( ! scalar( @requested_systems ) ) {
+    die "No system requested ...";
+}
+
+# instantiate experiment driver
+my $experiment_driver = $_experiment_driver_class->new(
+    meta_configuration => $meta_configuration_file,
+    requested_systems => \@requested_systems,
+    # CURRENT / TODO : is this the right place for this parameter ?
+    allow_unspecified_parameters => $allow_unspecified_parameters
+    );
+
+if ( $do_generate_summarizers ) {
+
+    my $summarizer_systems_entries = $experiment_driver->generate_summarizer_systems_entries;
+    my %seen;
+    foreach my $entry (@{ $summarizer_systems_entries }) {
+	
+	my $summarizer_handler = $entry->[ 0 ];
+	my $summarizer_group_label = $entry->[ 1 ];
+	my $summarizer_configuration = $entry->[ 2 ] || {};
+
+	# TODO : keep the summarizer label and sub-id separate in generate_summarizer_systems_entries
+	my $summarizer_group_label_common = $summarizer_group_label;
+	$summarizer_group_label_common =~ s/\@.+$//;
+
+	my $summarizer_key = join( "///" , $summarizer_handler , $summarizer_group_label_common , $summarizer_configuration );
+	if ( ! $seen{ $summarizer_key }++ ) {
+	    my $summarizer_params = join( '=' , '--system-configuration' , to_json( $summarizer_configuration ) );
+	    print join( " " , $summarizer_group_label_common , $summarizer_handler , $summarizer_params ) . "\n";
+	}
+
+    }
+
+}
+elsif ( $do_post_process ) {
+
+    while ( <STDIN> ) {
+	
+	chomp;
+	
+	my @fields = split /\t/ , $_;
+	
+	my $instance_id = shift @fields;
+	my $system_id = shift @fields;
+	my $output = shift @fields;
+	my $reference = shift @fields;
+	
+	if ( ! $count++ ) {
+	    
+	    # determine effective index
+	    for (my $i=0; $i<scalar(@fields); $i++) {
+		
+		my $current_field = $fields[ $i ];
+		
+		if ( $current_field !~ m/^(\?|\+)/ ) {
+		    $average_from_effective = $i;
+		    last;
+		}
+		elsif ( $current_field =~ m/^\+/ ) {
+		    $is_output_ok{ $i } = 1;
+		    push @parameters , $current_field;
+		}
+	    }
+	    
+	    if ( ! defined( $average_from_effective ) ) {
+		die "Unable to locate first metric field ...";
+	    }
+	    
+	    @metrics = @fields;
+	    splice @metrics, 0 , $average_from_effective;	
+	    next;
+	    
+	}
+	
+	my @extra = splice @fields , 0 , $average_from_effective;
+	
+	# extract parameter fields
+	my @parameter_values = map { $extra[ $_ ]; } grep { $is_output_ok{ $_ } } 0..$#extra;
+	if ( scalar( @parameters ) != scalar( @parameter_values ) ) {
+	    die "Mismatch in extra/parameters fields ...";
+	}
+	
+	$instance_counts{ $system_id }++;
+	$instance2seen{ $system_id }{ $instance_id } = 1;
+	
+	if ( ! defined( $system2parameters{ $system_id } ) ) {
+	    $system2parameters{ $system_id } = \@parameter_values;
+	}
+	else {
+	    my $mismatch = grep { $system2parameters{ $system_id }->[ $_ ] ne $parameter_values[ $_ ] } 0..$#parameter_values;
+	    if ( $mismatch ) {
+		die "Mismatch in system parameters ...";
+	    }
+	}
+	
+	my %field2value;
+	for (my $i=0; $i<scalar(@metrics); $i++) {
+	    $field2value{ $metrics[ $i ] } = $fields[ $i ];
+	}
+	
+	# notify experiment driver
+	$experiment_driver->update_units( $system_id , $instance_id , \%field2value );
+	
+    }
+
+    $experiment_driver->generate_output;
+
+}
+
+=pod
+
+_output( "system-uid" , @parameters , @metrics );
+
+# make sure we saw we same number of instances for all systems
+my $count_match = uniq ( values( %instance_counts ) );
+if ( $count_match != 1 ) {
+    print STDERR "Instance count mismatch : " . Dumper( \%instance_counts ) . "\n";
+}
+
+# compute fields averages
+foreach my $system_id (keys( %totals )) {
+
+    my @averages = map {
+
+	my $field = $_;
+	my $field_total = $totals{ $system_id }{ $_ } || 0;
+	my $field_average = $field_total / $instance_counts{ $system_id };
+       
+	$field_average;
+	
+    } @metrics;
+
+    _output( $system_id , @{ $system2parameters{ $system_id } } , @averages );
+
+}
+
+=cut
+
+1;

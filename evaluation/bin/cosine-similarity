@@ -1,0 +1,128 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+use Lingua::StopWords qw( getStopWords );
+my $stopwords = getStopWords('en');
+
+if ( $#ARGV < 1 ) {
+	die "Usage $0 SUMMARY_FILE REFERENCE_SUMMARY_FILE_1 [REFERENCE_SUMMARY_FILE_2 []]";
+}
+
+my $summary_file = shift @ARGV;
+my @reference_files = @ARGV; 
+
+# get weights for summary file
+#my $summary_weights = get_weights($summary_file);
+
+# will pick maximum similarity for now
+my $maximum_cosine_similarity = 0;
+
+foreach my $reference_file (@reference_files) {
+
+    # 1 - get weights for reference file
+    my ($reference_weights, $reference_tokens_count) = get_weights($reference_file);
+
+    # get weights for summary file
+    my ($summary_weights, $summary_tokens_count) = get_weights($summary_file, $reference_tokens_count);
+
+    # 2 - compute cosine similarity
+    my $cosine_similarity = cosine_similarity($summary_weights, $reference_weights);
+    
+    if ( $cosine_similarity ) {
+	$maximum_cosine_similarity = $cosine_similarity;
+    }
+
+}
+
+# output maximum cosine similarity
+print "$maximum_cosine_similarity\n";
+
+1;
+
+# get tf weights for a summary file
+sub get_weights {
+
+	my $file = shift;
+	my $max_tokens = shift;
+
+	my %weights;
+
+	# 1 - get file content
+	open(FILE, $file) or die "unable to open file: $file";
+	local $/ = undef;
+	my $content = <FILE>;
+
+	# 2 - cleanse content
+	$content = lc($content);
+	$content =~ s/\s+/ /g;
+
+	# 2 - tokenize content
+	my @tokens = split /(?:\s|[[:punct:]])+/, $content;
+	if ( $max_tokens && ($max_tokens < scalar(@tokens)) ) {
+	    print STDERR "[$0] truncating summary from " . scalar(@tokens) . " to $max_tokens tokens\n";
+	    splice @tokens, $max_tokens;
+	}
+	foreach my $token (@tokens) {
+	    # check if current token is a stop-word
+	    #if ( defined $stopwords->{$token} ) {
+	#	# print STDERR "[$0] filtering out token: $token\n";
+	#	next;
+	#    }
+	    $weights{$token}++;
+	}
+
+	# close file
+	close(FILE);
+
+	return (\%weights, scalar(@tokens));
+
+}
+
+# compute cosine similarity
+sub cosine_similarity {
+
+	my $summary_weights = shift;
+	my $reference_weights = shift;
+
+	# get set of tokens that will be used to compute the similarity
+        my %temp = (%{$summary_weights},%{$reference_weights});
+	my @keys = keys(%temp);
+
+	# compute norm of summary vector
+	my $summary_vector_norm = vector_norm($summary_weights);
+	# print STDERR "[$0] summary vector norm: $summary_vector_norm\n";
+
+	# compute norm of reference vector
+	my $reference_vector_norm = vector_norm($reference_weights);
+	# print STDERR "[$0] reference vector norm: $reference_vector_norm\n";
+
+	# compute cosine
+	my $cosine = 0;
+	if ( $summary_vector_norm && $reference_vector_norm ) {
+
+	    foreach my $key (@keys) {
+		$cosine += ($summary_weights->{$key}?$summary_weights->{$key}:0)
+		    * ($reference_weights->{$key}?$reference_weights->{$key}:0);
+	    }
+	    $cosine /= ($summary_vector_norm * $reference_vector_norm);
+
+	}
+
+	return $cosine;
+
+}
+
+# compute norm of vector
+sub vector_norm {
+	my $weights = shift;
+
+	my $norm = 0;
+	foreach my $key (keys(%$weights)) {
+		$norm += ($weights->{$key})**2;
+	}
+
+	$norm = sqrt($norm);
+
+	return $norm;
+}

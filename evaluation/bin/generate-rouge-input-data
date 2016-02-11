@@ -1,0 +1,57 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+my $output_directory = $ARGV[ 0 ];
+if ( ! defined( $output_directory ) || ! -d $output_directory ) {
+    die "Usage: $0 <output-directory>";
+}
+
+my %url2id;
+my $n_urls = 0;
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/ , $_;
+    my $url = shift @fields;
+    my $summary_peer = shift @fields;
+    my $summary_reference = shift @fields;
+
+    if ( ! defined( $url2id{ $url } ) ) {
+	$url2id{ $url } = ++ $n_urls;
+    }
+
+    my $url_id = $url2id{ $url };
+    
+    my $summary_peer_file = _create_summary_file( $url_id , 'peer' , $summary_peer );
+    my $summary_reference_file = _create_summary_file( $url_id , 'reference' , $summary_reference );
+
+    print join( "\t" , $summary_peer_file , $summary_reference_file ) . "\n";
+
+}
+
+sub _create_summary_file {
+
+    my $url_id = shift;
+    my $type = shift;
+    my $summary = shift;
+
+    my $directory = join( '/' , $output_directory , $type );
+    if ( ! -d $directory ) {
+	mkdir $directory;
+    }
+
+    my $filename = join( '/' , $directory , $url_id );
+    if ( ! -f $filename ) {
+	open (SUMMARY_FILE, "> $filename" ) || die "Unable to create summary file: $filename";
+	print SUMMARY_FILE "$summary\n";
+	close SUMMARY_FILE;
+    }
+
+    return $filename;
+
+}
+
+1;

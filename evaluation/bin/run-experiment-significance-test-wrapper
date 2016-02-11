@@ -1,0 +1,43 @@
+#!/bin/bash -x
+
+BINDIR=`dirname $0`
+
+measurement_file_a=$1
+measurement_file_b=$2
+
+if [[ ! -f "${measurement_file_a}" || ! -f "${measurement_file_b}" ]]; then
+    echo "Usage: $0 <measurement-file-a> <measurement-file-b>";
+    exit 1;
+fi
+
+# join files on reference field
+TEMP_SORTED_1=`mktemp`
+TEMP_SORTED_2=`mktemp`
+TEMP_MEASUREMENT_1=`mktemp`
+TEMP_MEASUREMENT_2=`mktemp`
+
+# -k1 --> -k 1b,1
+cat ${measurement_file_a} | sort -k 1b,1 > ${TEMP_SORTED_1}
+cat ${measurement_file_b} | sort -k 1b,1 > ${TEMP_SORTED_2}
+
+if ! join -j 1 ${TEMP_SORTED_1} ${TEMP_SORTED_2} | awk -v m1=${TEMP_MEASUREMENT_1} -v m2=${TEMP_MEASUREMENT_2} '{ print $2 >> m1; print $3 >> m2; }'; then
+    echo "Failed to join measurement files: ${measurement_file_a} / ${measurement_file_b} ... skipping ...";
+    exit 2;
+fi
+
+# make sure both files have the same length
+length_a=`wc -l ${TEMP_MEASUREMENT_1} | awk '{ print $1 }'`;
+length_b=`wc -l ${TEMP_MEASUREMENT_2} | awk '{ print $1 }'`;
+
+if [[ ${length_a} != ${length_b} ]]; then
+    SIGNIFICANCE_TEST="__LENGTH_MISMATCH__";
+else
+    # run significance test for the current pair of results
+    SIGNIFICANCE_TEST=`${BINDIR}/run-significance-test ${TEMP_MEASUREMENT_1} ${TEMP_MEASUREMENT_2}`;
+#   ${BINDIR}/run-significance-test ${TEMP_MEASUREMENT_1} ${TEMP_MEASUREMENT_2}
+fi
+
+echo ${measurement_file_a} ${measurement_file_b} ${SIGNIFICANCE_TEST}
+
+# delete temp files
+rm -f ${TEMP_SORTED_1} ${TEMP_SORTED_2} ${TEMP_MEASUREMENT_1} ${TEMP_MEASUREMENT_2}

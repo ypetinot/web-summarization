@@ -1,0 +1,219 @@
+#!/usr/bin/env perl
+
+# perl /proj/fluke/users/ypetinot/ocelot-working-copy/svn-research/trunk/evaluation/crowd/1-intrinsic-quality/analyze-results ./a778031.csv ./systems.filtered.pairings
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../src/";
+use lib "${FindBin::Bin}/../../src/";
+use lib "${FindBin::Bin}/../../../src/perl";
+use lib "${FindBin::Bin}/../../../third-party/local/lib/";
+
+use Significance;
+
+use Carp::Assert;
+use File::Slurp;
+use Statistics::Basic qw(:all);
+use Text::CSV::Slurp;
+
+# TODO: technically this could/should be handled by the Experiment::Manager class ?
+# How ? 
+
+my $input_file = $ARGV[ 0 ];
+my $systems_pairings_file = $ARGV[ 1 ];
+
+if ( ! defined( $input_file ) || ! defined( $systems_pairings_file ) ) {
+    die "Usage: $0 <input-file> <systems-pairings-file>";
+}
+
+if ( ! -f $input_file ) {
+    die "Invalid input file: $input_file";
+}
+
+if ( ! -f $systems_pairings_file ) {
+    die "Invalid systems pairing file: $systems_pairings_file";
+}
+
+my $FIELD_KEY_EVALUATION = 'how_would_you_assess_the_relevance_of_this_summary_to_describe_underlinethe_purposepurpose_of_the_above_web_page';
+
+my $FIELD_KEY_EVALUATION_ACCURACY = 'accuracy_judgement';
+my $FIELD_KEY_EVALUATION_ACCURACY_AGREEMENT = join( ':' , $FIELD_KEY_EVALUATION_ACCURACY , 'confidence' );
+
+my $FIELD_KEY_EVALUATION_INFORMATIVENESS = 'informativeness_judgement';
+my $FIELD_KEY_EVALUATION_INFORMATIVENESS_AGREEMENT = join( ':' , $FIELD_KEY_EVALUATION_INFORMATIVENESS , 'confidence' );
+
+my $FIELD_KEY_EVALUATION_SPECIFICITY = 'specificity_judgement';
+my $FIELD_KEY_EVALUATION_SPECIFICITY_AGREEMENT = join( ':' , $FIELD_KEY_EVALUATION_SPECIFICITY , 'confidence' );
+
+my $FIELD_KEY_SYSTEM = 'system';
+my $FIELD_KEY_URL = 'url';
+
+my %assessment2numerical_accuracy = (
+    'Inaccurate' => 1,
+    'Mostly inaccurate' => 2,
+    'Somewhat accurate' => 3,
+    'Mostly accurate' => 4,
+    'Accurate' => 5
+);
+
+my %assessment2numerical_informativeness = (
+    'Uninformative' => 1,
+    'mostly_uninformative' => 2,
+    'Mostly informative' => 3,
+    'Informative' => 4,
+    'Very informative' => 5
+);
+
+my %assessment2numerical_specificity = (
+    'Not specific' => 1,
+    'Mostly not specific' => 2,
+    'Mostly specific' => 3,
+    'Specific' => 4,
+    'Very specific' => 5
+);
+
+# 1 - collect data for each system
+my %system2entries;
+
+my $data = Text::CSV::Slurp->load( file => $input_file );
+
+my $aggregate_assessment_data_accuracy = [ {} , 0 ];
+my $aggregate_assessment_data_informativeness = [ {} , 0 ];
+my $aggregate_assessment_data_specificity = [ {} , 0 ];
+
+my $significance_analyzer = new Significance;
+my @systems_pairings = map {
+    my @systems = split /\s+/ , $_;
+    \@systems;
+} read_file( $systems_pairings_file , { chomp => 1 } );    
+
+# Note : we process each dimension independently
+foreach my $metric_entry (
+
+    [
+     'accuracy' ,
+     $FIELD_KEY_EVALUATION_ACCURACY_AGREEMENT ,
+     $FIELD_KEY_EVALUATION_ACCURACY ,
+     \%assessment2numerical_accuracy ,
+     $aggregate_assessment_data_accuracy
+    ],
+
+    [
+     'informativeness' ,
+     $FIELD_KEY_EVALUATION_INFORMATIVENESS_AGREEMENT ,
+     $FIELD_KEY_EVALUATION_INFORMATIVENESS ,
+     \%assessment2numerical_informativeness ,
+     $aggregate_assessment_data_informativeness
+    ],
+
+    [
+     'specificity' ,
+     $FIELD_KEY_EVALUATION_SPECIFICITY_AGREEMENT ,
+     $FIELD_KEY_EVALUATION_SPECIFICITY ,
+     \%assessment2numerical_specificity ,
+     $aggregate_assessment_data_specificity
+    ]
+
+    ) {
+
+    my $metric_id = $metric_entry->[ 0 ];
+    my $metric_agreement_key = $metric_entry->[ 1 ];
+    my $metric_key = $metric_entry->[ 2 ];
+    my $assessment2numerical = $metric_entry->[ 3 ];
+    my $aggregate_assessment_data = $metric_entry->[ 4 ];
+
+    my $entry_count = 0;
+    foreach my $datum (@{ $data }) {
+	
+	my $system_id = $datum->{ $FIELD_KEY_SYSTEM };
+	my $url = $datum->{ $FIELD_KEY_URL };
+	
+	# Note : update entry count (this is the number of annotation tasks, not the number of URLs considered)
+	$entry_count++;
+	
+	my $assessment_agreement = $datum->{ $metric_agreement_key };
+	my $assessment_string = $datum->{ $metric_key };
+	my $assessment_numerical = $assessment2numerical->{ $assessment_string };
+	
+	# sanity checks
+	affirm { defined( $assessment_string ) && length( $assessment_string ) } 'Assessment string must be non-empty' if DEBUG;
+	affirm { defined( $assessment_numerical ) } 'There has to exist a numerical mapping for the assessment string' if DEBUG;
+	
+	if ( ! defined( $aggregate_assessment_data->[ 0 ]->{ $system_id } ) ) {
+	    $aggregate_assessment_data->[ 0 ]->{ $system_id } = {};
+	}
+	$aggregate_assessment_data->[ 0 ]->{ $system_id }{ $url } = $assessment_numerical;
+	
+	$aggregate_assessment_data->[ 1 ] += $assessment_agreement;
+
+    }
+ 
+    my $average_agreement = $aggregate_assessment_data->[ 1 ] / $entry_count;
+    print STDERR "Average agreement ($metric_id): $average_agreement\n";
+ 
+    my @systems = keys( %{ $aggregate_assessment_data->[ 0 ] } );
+    foreach my $systems_pairing (@systems_pairings) {
+	
+	my $system_i = $systems_pairing->[ 0 ];
+	my $system_i_distribution = _get_system_distribution( $aggregate_assessment_data->[ 0 ] , $system_i );
+	
+	my $system_j = $systems_pairing->[ 1 ];
+	my $system_j_distribution = _get_system_distribution( $aggregate_assessment_data->[ 0 ] , $system_j );
+	
+	# test significance between system_i and system_j
+	my ( $significance , $p_value , $test_id ) = $significance_analyzer->test_significance( $system_i_distribution , $system_j_distribution );
+	
+	print STDERR join( "\t" , $metric_id , $system_i , $system_j , $significance , $p_value ) . "\n";
+	
+    }
+    
+    # 2 - compute stats for each system
+    my %system2average;
+    foreach my $system_id (@systems) {
+	
+	my @assessment_numerical_values = values( %{ _get_system_distribution( $aggregate_assessment_data->[ 0 ] , $system_id ) } );
+	my $assessment_average = mean( @assessment_numerical_values );
+	$system2average{ $system_id } = $assessment_average;
+	
+    }
+    
+    # 2 - compute stats for each system
+    foreach my $system_id (@systems) {
+	
+	my $namespace = _extract_namespace( $system_id );
+	
+	# list significance to all comparable systems with lower assessment averages
+	my $assessment_average = $system2average{ $system_id };
+
+	print join( "\t" , $metric_id , $system_id , $assessment_average , $namespace ) . "\n";
+	
+    }
+
+}
+
+sub _get_system_distribution {
+    my $system2entries = shift;
+    my $system_id = shift;
+    my $distribution = $system2entries->{ $system_id };
+    return $distribution;
+}
+
+sub _extract_namespace {
+    my $system_id = shift;
+    my @system_id_components = split /:::/ , $system_id;
+
+    my $has_namespace = ( scalar( @system_id_components ) > 1 );
+    my $namespace = $has_namespace ? $system_id_components[ 0 ] : 'baseline';
+
+    return ( $namespace );
+
+}
+
+# Compute significance between systems (all pairs)
+# => rank systems and compute significance against most distant reference ?
+# => only compare systems in the same namespace => i.e. oracle-based within oracle space , non-oracle-base within non-oracle space
+# Output as table ?
+# Output as graph ?
+# Output as column-ordered matrix => can easily show all significance information
