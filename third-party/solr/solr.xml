@@ -1,0 +1,26 @@
+<!-- <solr persistent="true" sharedLib="lib"> -->
+<!-- <cores adminPath="/admin/cores"> -->
+<!-- <core name="core0" instanceDir="collection1" /> -->
+<!-- <core name="dbpedia-ontology-mapping" instanceDir="dbpedia-ontology-mapping" /> -->
+<!-- <core name="odp-index" instanceDir="collections/odp-index" /> -->
+<!-- </cores> -->
+<!-- </solr> -->
+
+<solr>
+
+  <solrcloud>
+    <str name="host">127.0.0.1</str>
+    <int name="hostPort">${hostPort:8983}</int>
+    <str name="hostContext">${hostContext:solr}</str>
+    <int name="zkClientTimeout">${solr.zkclienttimeout:30000}</int>
+    <str name="shareSchema">${shareSchema:false}</str>
+    <bool name="genericCoreNodeNames">${genericCoreNodeNames:true}</bool>
+  </solrcloud>
+ 
+  <shardHandlerFactory name="shardHandlerFactory" class="HttpShardHandlerFactory">
+    <int name="socketTimeout">${socketTimeout:120000}</int>
+    <int name="connTimeout">${connTimeout:15000}</int>
+  </shardHandlerFactory>
+
+</solr>
+

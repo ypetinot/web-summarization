@@ -1,0 +1,4 @@
+# http://stackoverflow.com/questions/59895/can-a-bash-script-tell-what-directory-its-stored-in
+export THIRD_PARTY_RESOURCES_JAVA_BASE=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+export JAVA_HOME=${THIRD_PARTY_RESOURCES_JAVA_BASE}/
+export PATH=${JAVA_HOME}/bin/:${PATH}

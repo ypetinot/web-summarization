@@ -1,0 +1,5 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+${BINDIR}/../tomcat/build/bin/startup.sh

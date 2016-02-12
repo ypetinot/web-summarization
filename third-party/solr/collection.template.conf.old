@@ -1,0 +1,5 @@
+<!-- <Context docBase="/proj/nlp/users/ypetinot/ocelot/svn-research/trunk/third-party/tomcat/tomcat/build/" debug="1" crossContext="true" > -->
+<Context docBase="/proj/nlp/users/ypetinot/ocelot/svn-research/trunk/third-party/solr/solr-4.7.2/dist/solr-4.7.2.war" debug="1" crossContext="true" >
+<!--   <Environment name="solr/__COLLECTION_ID__" type="java.lang.String" value="__PATH_SEGMENT_HOME__" override="true" /> -->
+   <Environment name="solr/home" type="java.lang.String" value="__PATH_SEGMENT_HOME__" override="true" />
+</Context>

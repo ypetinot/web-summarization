@@ -1,0 +1,67 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "${FindBin::Bin}/../../local/lib/";
+
+use Text::Trim;
+
+our $CHUNK_BEGIN = 'B';
+our $CHUNK_IN = 'I';
+our $CHUNK_OTHER = 'O';
+
+# autoflush
+$| = 1;
+
+while ( <STDIN> ) {
+
+    chomp;
+    my $line = trim( $_ );
+
+    my @line_tokens = split /\s+/ , $line;
+    my @output_elements;
+    my $chunk_status = 0;
+    my $chunk_type = undef;
+    foreach my $line_token (@line_tokens) {
+
+	my $keep = 1;
+	my $chunk_sequence_marker = undef;
+	
+	if ( $line_token =~ m/^\[(.+)$/ ) {
+	    $chunk_status = 2;
+	    $chunk_type = $1;
+	    $keep = 0;
+	}
+	elsif ( $line_token eq ']' ) {
+	    $chunk_status = 0;
+	    $chunk_type = undef;
+	    $keep = 0;
+	}
+
+	if ( ! $keep ) {
+	    next;
+	}
+
+	if ( $chunk_status == 1 ) {
+	    $chunk_sequence_marker = $CHUNK_IN;
+	}
+	elsif ( $chunk_status == 2 ) {
+	    $chunk_sequence_marker = $CHUNK_BEGIN;
+	    $chunk_status = 1;
+   	}
+	else {
+	    $chunk_sequence_marker = $CHUNK_OTHER;
+	}
+
+	my $chunk_marker = join( "-" , $chunk_sequence_marker , defined( $chunk_type ) ? $chunk_type : () );
+	my $output_element = join( "/" , $line_token , $chunk_marker );
+	push @output_elements , $output_element;
+
+    }
+
+    print join( " " , @output_elements ) . "\n";
+
+}
+
