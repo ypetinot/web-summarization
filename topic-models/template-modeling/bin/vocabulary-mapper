@@ -1,0 +1,60 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+my %mapping;
+
+my $mapping_file = $ARGV[ 0 ];
+open MAPPING_FILE, $mapping_file or die "Unable to open mapping file: $!";
+while ( <MAPPING_FILE> ) {
+
+    chomp;
+
+    my @mapping_fields = split /\t/, $_;
+    my $id = shift @mapping_fields;
+    my $word = shift @mapping_fields;
+
+    $mapping{ $id } = $word;
+
+}
+close MAPPING_FILE;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $pattern = shift @fields;
+
+    print join("\t", _mapped_pattern( $pattern ) , @fields) . "\n";
+    
+}
+
+sub _mapped_pattern {
+
+    my $string = shift;
+
+    my @elements = split /\s+/, $string;
+    return join( " " , map {
+
+	my $token = $_;
+
+	if ( $token =~ m/^(\d+)(\[.+\])?$/ ) {
+	    my $word_id = $1;
+	    my $attributes = $2;
+
+	    ( $mapping{ $word_id } || $word_id ) . ( defined($attributes) ? $attributes : "" );
+	
+	}
+	else {
+
+	    $_;
+
+	}
+
+	} @elements );
+
+}
+
+1;

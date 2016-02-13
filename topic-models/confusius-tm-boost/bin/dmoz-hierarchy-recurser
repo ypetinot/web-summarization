@@ -1,0 +1,102 @@
+#!/usr/bin/env perl
+
+# recursed over the DMOZ hierarchy using the specified class
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../src/";
+use lib "$FindBin::Bin/../../../src/perl/";
+use lib "$FindBin::Bin/../../../third-party/local/lib/";
+
+use Cwd;
+use Data::Dumper;
+use Getopt::Long;
+use Pod::Usage;
+
+use DMOZ::Hierarchy;
+use DMOZ::Mapper;
+
+my $help = 0;
+my $man = 0;
+my $debug = 0;
+my $commit = 0;
+
+my $input_model = undef;
+my $recurser_class = undef;
+my $label = undef;
+my $mode = undef;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?'     => \$help,
+	   'man'        => \$man,
+	   'model=s'    => \$input_model,
+	   'recurser=s' => \$recurser_class,
+	   'label=s'    => \$label,
+	   'mode=s'     => \$mode,
+	   'commit'     => \$commit,
+	   'debug|d'    => \$debug) or pod2usage(2);
+
+if ( !$input_model || !$recurser_class ) { pod2usage(2) }
+
+my @params = @ARGV;
+
+# 0 - load recurser class
+eval("use $recurser_class;");
+if ( $@ ) {
+    die "Unable to load recurser module $recurser_class ...";
+}
+
+# 1 - instantiate tree root
+my $dmoz_hierarchy = new DMOZ::Hierarchy($input_model);
+
+# 2 - recurse over the entire DMOZ hierarchy
+my $mapper = $recurser_class->new( 'mode' => $mode, @params );
+if ( !$mapper ) {
+    die "Unable to instantiate mapper for class $recurser_class ...";
+}
+
+my $updated_hierarchy = $dmoz_hierarchy->recurse($mapper, $label);
+
+# 3 - commit if requested
+if ( $commit ) {
+    $updated_hierarchy->finalize();
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+    dmoz-hierarchy-recurser - recurses over the entire DMOZ hierarchy using the given recurser class
+
+=head1 SYNOPSIS
+
+    dmoz-hierarchy-recurser --model <MODEL_PATH> --recurser <RECURSER_CLASS> --label <LABEL> [--commit]
+
+     Options:
+       -help            brief help message
+       -man             full documentation
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<-help>
+
+    Print a brief help message and exits.
+
+=item B<-man>
+
+    Prints the manual page and exits.
+
+=back
+
+=head1 DESCRIPTION
+
+    B<This program> will read the given input file(s) and do something
+    useful with the contents thereof.
+
+=cut

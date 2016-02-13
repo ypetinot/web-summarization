@@ -1,0 +1,40 @@
+#!/usr/bin/env perl
+
+# map from raw tab-separated data form to hllda data format
+
+use strict;
+use warnings;
+
+while(<STDIN>) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+    my $content = shift @fields;
+    my $category = shift @fields;
+
+    my $mapped_category = process_category($category);
+
+    print '"' . join('","', $url, $content, $mapped_category) . '"' . "\n";
+
+}
+
+sub process_category {
+
+    my $raw_category = shift;
+
+    my @all = split /\//, $raw_category;
+    my @topics;
+    my $current = "";
+
+    for (my $i=0; $i<scalar(@all); $i++) {
+	$current = join("/", $current, $all[$i]);
+	push @topics, $current;
+    }
+
+    return join(" ", @topics);
+
+}
+
+1;

@@ -1,0 +1,1 @@
+/proj/fluke/users/ypetinot/ocelot/svn-research/trunk/topic-models/confusius-tm-boost/src/../../../third-party/google/protobuf-2.3.0/src/google/protobuf/stubs/strutil.h

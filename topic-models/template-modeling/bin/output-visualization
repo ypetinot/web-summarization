@@ -1,0 +1,8 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+STATE_FILE=$1
+VOCABULARY_FILE=${BINDIR}/../../../../../../data/dmoz-corpus-12-07-2010/training/dmoz.mapped.description.vocabulary
+
+cat ${STATE_FILE} | perl -e 'while ( <STDIN> ) { chomp; my $line = $_; my @fields = split /\t/, $line; my $word_count = 0; while( $fields[ 0 ] =~ m/\d+/sig ) { $word_count++; } print join("\t", @fields, $word_count) . "\n"; }' | sort -n -r -k 2 -t'	' | awk -F"\t" '{ if ( $3 > 1 ) { print $1 "\t" $2 } }' | ${BINDIR}/vocabulary-mapper ${VOCABULARY_FILE}

@@ -1,0 +1,8 @@
+#!/bin/bash
+
+BINDIR=`dirname $0`
+
+STATE_FILE=$1
+VOCABULARY_FILE=${BINDIR}/../../../../../../data/dmoz-corpus-12-07-2010/training/dmoz.mapped.description.vocabulary
+
+cat ${STATE_FILE} | perl ${BINDIR}/vocabulary-mapper ${VOCABULARY_FILE}

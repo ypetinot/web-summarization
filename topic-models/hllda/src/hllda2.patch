@@ -1,0 +1,22 @@
+2c2
+< // http://nlp.stanford.edu/software/tmt/0.4/
+---
+> // http://nlp.stanford.edu/software/tmt/0.3/
+15c15
+< val source = CSVFile("pubmed-oa-subset.csv") ~> IDColumn(1);
+---
+> val source = CSVFile("dmoz.mapped.csv") ~> IDColumn(1);
+26c26
+<   Column(4) ~>                           // select column containing text
+---
+>   Column(3) ~>                           // select column containing text
+37c37
+<   Column(2) ~>                           // take column two, the year
+---
+>   Column(4) ~>                           // take column two, the year
+51c51
+< // Trains the model, writing to the given output path
+---
+> // Trains the model, writing to the givne output path
+54d53
+< 

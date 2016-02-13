@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# computes the perplexity of the strings provided on STDIN
+
+BINDIR=`dirname $0`;
+
+SHORTOPTS="ho:v:"
+LONGOPTS="help,order:,model:"
+
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+        -o | --order )
+            ORDER=$2; shift 2;;
+	-p | --model )
+	    MODEL_FILE=$2; shift 2;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+if [[ -z "${ORDER}" || -z "${MODEL_FILE}" ]]; then
+    echo "Usage: $0 --order=<ngram-order> --model=<model-file>";
+    exit;
+fi 
+
+# load options
+. ${BINDIR}/ngram-options
+
+cat | ${BINDIR}/map-to-srilm-vocabulary | while read LINE; do
+    TOKEN_COUNT=`echo "$LINE" | wc -w`
+    ${BINDIR}/../../../third-party/local/bin/ngram ${SRILM_OPTIONS} -order ${ORDER} -lm ${MODEL_FILE} -ppl <( echo $LINE ) | tee >( cat 1>&2 ) | grep logprob | awk -v token_count=${TOKEN_COUNT} 'BEGIN{OFS="\t"} { print $4,token_count }'
+done;

@@ -1,0 +1,166 @@
+#!/usr/bin/env perl
+
+# this script reads the DMOZ hierarchy from STDIN and maps it to a tree-based structure
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../src/";
+use lib "$FindBin::Bin/../../../src/perl/";
+use lib "$FindBin::Bin/../../../third-party/local/lib/";
+
+use Cwd;
+use Data::Dumper;
+use Getopt::Long;
+use Pod::Usage;
+
+use ContentDistribution;
+use DMOZ::Hierarchy;
+
+binmode(STDIN, ':utf8');
+
+# set autoflush
+$! = 1;
+
+my $help = 0;
+my $man = 0;
+my $debug = 0;
+my $label = undef;
+my $vocabulary = undef;
+
+my $model_out = undef;
+
+my $do_check = 0;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?'       => \$help,
+	   'man'          => \$man,
+	   'model-out=s'  => \$model_out,
+	   'label=s'      => \$label,
+	   'vocabulary=s' => \$vocabulary,
+	   'debug|d'      => \$debug) or pod2usage(2);
+
+if ( !$model_out ) { pod2usage(2) }
+
+if ( !$vocabulary ) {
+    print STDERR "no vobabulary specified, will use pre-existing vocabulary, if any\n";
+}
+
+# 0 - instantiate tree root
+my $dmoz_hierarchy = new DMOZ::Hierarchy($model_out, $vocabulary);
+
+# 1 - map each leaf to a language model
+my $n_entries = 0;
+while(<STDIN>) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+
+    my $url         = shift @fields;
+    my $title       = shift @fields;
+    my $description = shift @fields;
+    my $category    = shift @fields;
+
+    # create entry node for this entry
+    my $dmoz_entry_node = $dmoz_hierarchy->createEntry($url,$title,$description,$category);
+
+    # skip if unable to create entry node
+    if ( !$dmoz_entry_node ) {
+	print STDERR "[$0] unable to create entry node for $url\n";
+	next;
+    }
+
+    if ( defined($label) ) {
+	$dmoz_entry_node->set('label', $label, 1);
+    }
+
+    $n_entries++;
+    if ( !($n_entries % 10000) ) {
+	print STDERR "[$0] processing entries $n_entries ...\n";
+    }
+
+    # check
+    if ( $do_check ) {
+	
+	my $dmoz_node = $dmoz_hierarchy->getNodeFromName( join("/", ($category, $url)) );
+	if ( !$dmoz_node ) {
+	    die "Unable to get node for URL: $url";
+	}
+	if ( $dmoz_node->title() ne $title ) {
+	    die "Invalid title for URL: $url";
+	}
+	if ( $dmoz_node->description() ne $description ) {
+	    die "Invalid description for URL: $url";
+	}
+
+	my $dmoz_category_node = $dmoz_hierarchy->getNodeFromName($category);
+	if ( !$dmoz_category_node ) {
+	    die "Unable to get category node for category: $category";
+	}
+
+	# check parent-child relationship
+	my $children = $dmoz_category_node->getChildren();
+	my $found_child = 0;
+	foreach my $child (@$children) {
+
+	    if ( $child->equals($dmoz_node) ) {
+		$found_child++;
+	    }
+
+	}
+	if ( $found_child != 1 ) {
+	    die "Unable to find node from parent category: $found_child / $category / $url";
+	}
+
+
+	# check child-parent relationship
+	my $parent_node = $dmoz_node->getParent();
+	if ( ! $parent_node->equals($dmoz_category_node) ) {
+	    die "Unable to find parent category node for URL: $url";
+	}
+
+    }
+
+}
+
+# 2 - finalize data structure
+$dmoz_hierarchy->finalize();
+
+1;
+
+__END__
+
+=head1 NAME
+
+    sample - Using GetOpt::Long and Pod::Usage
+
+=head1 SYNOPSIS
+
+    map-to-hierarchy --model-out <OUTPUT_FILE>
+
+     Options:
+       -help            brief help message
+       -man             full documentation
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<-help>
+
+    Print a brief help message and exits.
+
+=item B<-man>
+
+    Prints the manual page and exits.
+
+=back
+
+=head1 DESCRIPTION
+
+    B<This program> will read the given input file(s) and do something
+    useful with the contents thereof.
+
+=cut

@@ -1,0 +1,27 @@
+I0130 14:10:01.686962 29077 hierarchy_builder.cc:7] starting hierarchy builder ...
+I0130 14:10:01.687074 29077 hierarchy.cc:125] building hierarchy from file: 
+I0130 14:10:01.687895 29077 hierarchy.cc:160] parsed input line: http://www.angelfire.com/tx/kjmachine/mirror.html | mirror barber shop | 1741 11844 312 4 1306 | Top/Regional/North_America/United_States/Arizona/Localities/G/Gilbert/Business_and_Economy/Beauty_and_Cosmetic_Services
+I0130 14:10:01.687908 29077 hierarchy.cc:88] fetching category node for: Top
+I0130 14:10:01.687914 29077 hierarchy.cc:92] category node does not exist: Top
+I0130 14:10:01.687921 29077 hierarchy.cc:62] creating category node: Top
+I0130 14:10:01.687940 29077 hierarchy.cc:75] internal node id for Top is 0
+I0130 14:10:01.687973 29077 hierarchy.cc:88] fetching category node for: Top/Regional
+I0130 14:10:01.687979 29077 hierarchy.cc:92] category node does not exist: Top/Regional
+I0130 14:10:01.687985 29077 hierarchy.cc:62] creating category node: Top/Regional
+I0130 14:10:01.687995 29077 hierarchy.cc:75] internal node id for Top/Regional is 1
+I0130 14:10:01.688007 29077 hierarchy.cc:187] parent node: 0x623bf0
+I0130 14:10:01.688022 29077 hierarchy.cc:88] fetching category node for: Top/Regional/North_America
+I0130 14:10:01.688030 29077 hierarchy.cc:92] category node does not exist: Top/Regional/North_America
+I0130 14:10:01.688035 29077 hierarchy.cc:62] creating category node: Top/Regional/North_America
+I0130 14:10:01.688050 29077 hierarchy.cc:75] internal node id for Top/Regional/North_America is 2
+I0130 14:10:01.688062 29077 hierarchy.cc:187] parent node: 0x623d80
+I0130 14:10:01.688070 29077 hierarchy.cc:88] fetching category node for: Top/Regional/North_America/United_States
+I0130 14:10:01.688076 29077 hierarchy.cc:92] category node does not exist: Top/Regional/North_America/United_States
+I0130 14:10:01.688081 29077 hierarchy.cc:62] creating category node: Top/Regional/North_America/United_States
+I0130 14:10:01.688091 29077 hierarchy.cc:75] internal node id for Top/Regional/North_America/United_States is 3
+I0130 14:10:01.688104 29077 hierarchy.cc:187] parent node: 0x61e360
+I0130 14:10:01.688112 29077 hierarchy.cc:88] fetching category node for: Top/Regional/North_America/United_States/Arizona
+I0130 14:10:01.688117 29077 hierarchy.cc:92] category node does not exist: Top/Regional/North_America/United_States/Arizona
+I0130 14:10:01.688122 29077 hierarchy.cc:62] creating category node: Top/Regional/North_America/United_States/Arizona
+I0130 14:10:01.688138 29077 hierarchy.cc:75] internal node id for Top/Regional/North_America/United_States/Arizona is 4
+I0130 14:10:01.688154 29077 hierarchy.cc:187] parent node: 0x61e390

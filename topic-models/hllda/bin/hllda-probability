@@ -1,0 +1,51 @@
+#!/bin/bash -x
+
+# computes the perplexity of the strings provided on STDIN
+
+# Format of the data to provide on STDIN:
+# <dmoz.rendered.url> \t <dmoz.mapped.description> \t <dmoz.rendered.category>
+
+BINDIR=`dirname $0`;
+
+SHORTOPTS="ho:v:"
+LONGOPTS="help,model:"
+
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+	-m | --model )
+	    MODEL_FILE=$2; shift 2;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+#EVALUATION_DATA=$1
+
+if [[ -z "${MODEL_FILE}" ]]; then
+    echo "Usage: $0 --model=<model-directory>";
+    exit;
+fi 
+
+# intermediary data files
+NCRP_DATA_FILE=$( mktemp )
+TOPIC_ASSIGNMENTS_FILE=$( mktemp )
+
+# create input file
+#paste -d$'\t' ${EVALUATION_DATA}/dmoz.rendered.url ${EVALUATION_DATA}/dmoz.mapped.description ${EVALUATION_DATA}/dmoz.rendered.category
+cat - | ${BINDIR}/hllda-map-data-2 ${NCRP_DATA_FILE} ${TOPIC_ASSIGNMENTS_FILE}
+
+# perform analysis
+HLLDA_BIN_DIR=/proj/nlp/users/ypetinot/temp-hllda-2/joeraii-UTML-Latent-Variable-Modeling-Toolkit-yves-dev/
+HLLDA_MODEL_FILE=${MODEL_FILE}
+export LD_LIBRARY_PATH=/proj/nlp/users/ypetinot/temp-hllda-2/gflags-1.4/.libs/:/proj/nlp/users/ypetinot/temp-hllda-2/glog-0.3.1/.libs/:/proj/nlp/users/ypetinot/ocelot/svn-research/trunk/third-party/local/lib/:
+GLOG_logtostderr=1 GLOG_minloglevel=0 ${HLLDA_BIN_DIR}/evaluatePrecomputedFixedNCRP -ncrp_datafile=${NCRP_DATA_FILE} -topic_assignments_file=${TOPIC_ASSIGNMENTS_FILE} -use_dag -cull_unique_topics=false -map_vocabulary=false -model=${HLLDA_MODEL_FILE} -max_gibbs_iterations=200
+
+# delete temporary input file
+rm -rf ${NCRP_DATA_FILE} ${TOPIC_ASSIGNMENTS_FILE}

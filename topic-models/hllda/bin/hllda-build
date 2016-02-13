@@ -1,0 +1,63 @@
+#!/bin/bash -x
+
+# builds a Hierarchical Labeled LDA model given sentences provided on stdin (one sentence per line)
+# the input is assumed to have been preprocessed, that is that the input is already mapped to the vocabulary space
+
+BINDIR=`dirname $0`;
+LIBDIR=${BINDIR}/../lib/
+SRCDIR=${BINDIR}/../src/
+
+INPUT_FILE=dmoz.hllda.csv
+OUTPUT_BASE=model
+
+SHORTOPTS="hp:v:n:"
+LONGOPTS="help,output:,n-gibbs-iterations:"
+
+ARGS=$( getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+N_GIBBS_ITERATIONS=1000;
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+	-p | --output )
+	    OUTPUT_DIRECTORY=$2; shift 2;;
+	-n | --n-gibbs-iterations )
+	    N_GIBBS_ITERATIONS=$2; shift 2;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+TRAINING_DATA=$1
+
+if [[ -z "${TRAINING_DATA}" || -z "${OUTPUT_DIRECTORY}" || -z "${N_GIBBS_ITERATIONS}" ]]; then
+    echo "Usage: $0 --output=<output-directory> --n-gibbs-iterations=<gibbs-iterations> <training-data>";
+    exit;
+fi
+
+# create destination directory if needed
+mkdir -p ${OUTPUT_DIRECTORY}
+
+# cleanup destination directory if needed
+rm -rf ${OUTPUT_DIRECTORY}/*
+
+# intermediary data files
+NCRP_DATA_FILE=${OUTPUT_DIRECTORY}/ncrp_data_file.out
+TOPIC_ASSIGNMENTS_FILE=${OUTPUT_DIRECTORY}/topic_assignments.out
+
+# create input file
+paste -d$'\t' ${TRAINING_DATA}/dmoz.rendered.url ${TRAINING_DATA}/dmoz.mapped.description ${TRAINING_DATA}/dmoz.rendered.category | ${BINDIR}/hllda-map-data-2 ${NCRP_DATA_FILE} ${TOPIC_ASSIGNMENTS_FILE}
+
+# learn model
+HLLDA_BIN_DIR=/proj/nlp/users/ypetinot/temp-hllda-2/joeraii-UTML-Latent-Variable-Modeling-Toolkit-yves-dev/
+HLLDA_MODEL_FILE=${OUTPUT_DIRECTORY}/hllda.model
+HLLDA_MODEL_OUT=${OUTPUT_DIRECTORY}/hllda.build.out
+HLLDA_MODEL_ERR=${OUTPUT_DIRECTORY}/hllda.build.err
+VOCABULARY_FILE=${TRAINING_DATA}/dmoz.mapped.description.vocabulary
+export LD_LIBRARY_PATH=/proj/nlp/users/ypetinot/temp-hllda-2/gflags-1.4/.libs/:/proj/nlp/users/ypetinot/temp-hllda-2/glog-0.3.1/.libs/:/proj/nlp/users/ypetinot/ocelot/svn-research/trunk/third-party/local/lib/:
+GLOG_logtostderr=1 GLOG_minloglevel=1 ${HLLDA_BIN_DIR}/samplePrecomputedFixedNCRP -ncrp_datafile=${NCRP_DATA_FILE} -topic_assignments_file=${TOPIC_ASSIGNMENTS_FILE} -use_dag -cull_unique_topics=false -map_vocabulary=false -vocabulary_size=$( wc -l ${VOCABULARY_FILE} | awk '{ print $1 }' ) -max_gibbs_iterations=${N_GIBBS_ITERATIONS} -model=${HLLDA_MODEL_FILE} 2> ${HLLDA_MODEL_ERR} > ${HLLDA_MODEL_OUT}

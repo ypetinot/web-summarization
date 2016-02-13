@@ -1,0 +1,85 @@
+#!/bin/bash -x
+
+# build confusius topic model from training data
+
+MODEL=$1
+TRAINING_DATA=$2
+ALLOCATION_MODE=$3
+
+BINDIR=`dirname $0`;
+
+LOG_TRAINING_HIERARCHY_CONSTRUCTION=${MODEL}/hierarchy_construction.training.log
+LOG_TRAINING_VOCABULARY_ANALYZER=${MODEL}/vocabulary_analyzer.training.log
+LOG_TRAINING_NGRAM_LANGUAGE_MODELS=${MODEL}/ngram_language_models.training.log
+LOG_TRAINING_CONTENT_DISTRIBUTION=${MODEL}/content_distribution.training.log
+LOG_TRAINING_WORD_ASSIGNMENT=${MODEL}/word_assignment.training.log
+LOG_TRAINING_ORIGIN=${MODEL}/origin.training.log
+LOG_TRAINING_DISTRIBUTION_UNIFORM=${MODEL}/node_uniform_distribution.training.log
+LOG_TRAINING_DISTRIBUTION_RENORMALIZED=${MODEL}/node_renormalized_distribution.training.log
+
+OVERWRITE=0
+
+if [[ -z ${MODEL} || -z ${TRAINING_DATA} || -z ${ALLOCATION_MODE} ]]; then
+   echo "Usage: $0 <MODEL_PATH> <TRAINING_DATA> <ALLOCATION_MODE>"
+   exit
+fi
+
+mkdir -p ${MODEL}
+
+if [[ ! -d ${MODEL} ]]; then
+   echo "Unable to create model root: ${MODEL} ...";
+   exit;
+fi
+
+# mihalcea radu --> building ontologies
+# evaluation by holding out data (predicting occurrence in DMOZ data)
+
+# clean up previous model if needed
+#rm -rf /var/tmp/BDB*
+#rm -rf ${MODEL}/*
+
+# push training data
+#cat ${TRAINING_DATA}
+if [[ ${OVERWRITE} == 1 || ! -f ${MODEL}/dmoz_hierarchy.dch ]]; then
+    paste -d$'\t' ${TRAINING_DATA}/dmoz.rendered.url ${TRAINING_DATA}/dmoz.rendered.title ${TRAINING_DATA}/dmoz.mapped.description ${TRAINING_DATA}/dmoz.rendered.category | time perl ${BINDIR}/map-to-hierarchy --model-out=${MODEL} --vocabulary=${TRAINING_DATA}/dmoz.mapped.description.vocabulary --label=training >& ${LOG_TRAINING_HIERARCHY_CONSTRUCTION}
+fi
+
+# collects and defines the vocabulary to be used by all models based on the hierarchy
+# this is deprecated
+# nice time perl ${BINDIR}/dmoz-entry-mapper --model=${MODEL} --mapper=DMOZ::Mapper::VocabularyAnalyzer --label=training >& ${LOG_TRAINING_VOCABULARY_ANALYZER}
+
+# generates N-gram models over the entire DMOZ data (flat)
+# TODO: this can become a separate model built directly on top of the dmoz data  
+#nice time perl ${BINDIR}/dmoz-entry-mapper --model=${MODEL} --mapper=DMOZ::Mapper::NGramLanguageModelBuilder --label=training 1 2 3 4 5 >& ${LOG_TRAINING_NGRAM_LANGUAGE_MODELS}
+
+# computes content-distribution over the training data (used for word assignment)
+if [[ ${OVERWRITE} == 1 || ! -f ${MODEL}/dmoz_hierarchy.content-distribution.dpf ]]; then
+    nice time perl ${BINDIR}/dmoz-hierarchy-recurser --model=${MODEL} --recurser=DMOZ::Mapper::ContentDistribution --label=training >& ${LOG_TRAINING_CONTENT_DISTRIBUTION}
+    OVERWRITE=1;
+fi
+
+# computes word-assignment over the DMOZ hierarchy based on the training data
+if [[ ${OVERWRITE} == 1 || ! -f ${MODEL}/dmoz_hierarchy.word-assignment.dpf ]]; then
+    nice time perl ${BINDIR}/dmoz-hierarchy-recurser --model=${MODEL} --recurser=DMOZ::Mapper::WordAssignment --label=training --mode=${ALLOCATION_MODE} >& ${LOG_TRAINING_WORD_ASSIGNMENT}
+    OVERWRITE=1;
+fi
+
+# determines the distribution of depth priors, used by hierarchical topic model
+if [[ ${OVERWRITE} == 1 || ! -f ${MODEL}/dmoz_hierarchy.origin-priors.dgf ]]; then
+    nice time perl ${BINDIR}/dmoz-hierarchy-recurser --model=${MODEL} --recurser=DMOZ::Mapper::Origin --label=training >& ${LOG_TRAINING_ORIGIN}
+    OVERWRITE=1;
+fi
+
+# computes language models (normalized word distributions) at each node in the hierarchy, given specific heuristics
+if [[ ${OVERWRITE} == 1 || ! -f ${MODEL}/dmoz_hierarchy.distribution-uniform.dpf ]]; then
+    nice time perl ${BINDIR}/dmoz-hierarchy-recurser --model=${MODEL} --recurser=DMOZ::Mapper::Distribution::UniformDistribution --label=training >& ${LOG_TRAINING_DISTRIBUTION_UNIFORM}
+    OVERWRITE=1;
+fi
+if [[ ${OVERWRITE} == 1 || ! -f ${MODEL}/dmoz_hierarchy.distribution-renormalized.dpf ]]; then
+    nice time perl ${BINDIR}/dmoz-hierarchy-recurser --model=${MODEL} --recurser=DMOZ::Mapper::Distribution::RenormalizedDistribution --label=training >& ${LOG_TRAINING_DISTRIBUTION_RENORMALIZED}
+    OVERWRITE=1;
+fi
+
+# download content for all test entries (we don't do this for the training data yet)
+#perl ${BINDIR}/dmoz-entry-mapper --model=${MODEL} --mapper=DMOZ::Mapper::ContentDownloader --label=testing
+

@@ -1,0 +1,25 @@
+#!/usr/bin/env perl
+
+# the purpose of this script is to map from regular word-id encoded tokens to word-id encoded tokens compatible with SRIM internal ids
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../src/";
+
+use SRILM::Mapper;
+
+while(<STDIN>) {
+
+    chomp;
+    my $line = $_;
+
+    my @tokens = split /\s+/, $line;
+    my @mapped_tokens = @{ SRILM::Mapper::map_from_srilm(\@tokens) };
+
+    print join(" ", @mapped_tokens) . "\n";
+
+}
+
+1; 

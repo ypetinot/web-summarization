@@ -1,0 +1,75 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use Term::ANSIColor;
+
+my @available_colors = ( 'red' , 'green' , 'yellow' , 'blue' , 'magenta' , 'cyan' );
+my $default_color = 'white';
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $line = $_;
+
+    my @tokens = split /\s+/, $line;
+    my $extra_data = pop @tokens;
+
+    my @tokens_words;
+    my @tokens_colors;
+
+    my %colors;
+    map {
+
+	$_ =~ m/^([^\[]+)(?:\[(\d+)\])?$/;
+	my $word = $1;
+	my $color = $2;
+
+	if ( defined( $color ) ) {
+	    $colors{ $color }++;
+	}
+
+	push @tokens_words, $word;
+	push @tokens_colors, $color;
+
+    } @tokens;
+
+    if ( scalar(@tokens) != scalar(@tokens_colors) ) {
+	die "Problem !";
+    }
+
+    my $n_colors = 0;
+    my %seen;
+    for (my $i=0; $i<scalar(@tokens); $i++) {
+	
+	if ( $i ) {
+	    print " ";
+	}
+
+	my $word = $tokens_words[ $i ];
+	my $color = $tokens_colors[ $i ];
+	my $print_color;
+
+	if ( ! defined( $color ) || $colors{ $color } <= 1 ) {
+	    $print_color = $default_color;
+	}
+	else {
+	    if ( ! defined( $seen{ $color } ) ) {
+		$seen{ $color } = $available_colors[ ( $n_colors++ ) ];
+	    }
+	    $print_color = $seen{ $color };
+	}
+
+	#my $print_token = $word . ( defined($color) ? "\[${color}\]" : "" );
+	my $print_token = $word;
+	print colored( $print_token , $print_color );
+
+    }
+
+    print "\t$extra_data\n";
+
+}
+
+1;

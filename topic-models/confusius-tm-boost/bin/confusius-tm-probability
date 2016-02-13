@@ -1,0 +1,129 @@
+#!/usr/bin/env perl
+
+# loads model and output probabilities of (string,path) pair provided on STDIN
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/../src/";
+use lib "$FindBin::Bin/../../../src/perl/";
+use lib "$FindBin::Bin/../../../third-party/local/lib/";
+
+use Cwd;
+use Data::Dumper;
+use Getopt::Long;
+use Pod::Usage;
+
+use DMOZ::Hierarchy;
+use DMOZ::HierarchicalLanguageModel;
+use DMOZ::Mapper::SingleNodeMapper;
+
+my $help = 0;
+my $man = 0;
+my $debug = 0;
+my $commit = 0;
+
+my $input_model = undef;
+my $recurser_class = undef;
+my $label = undef;
+my $distribution_mode = undef;
+my $distribution_backoff = undef;
+
+Getopt::Long::Configure ("bundling");
+GetOptions('help|?'     => \$help,
+	   'man'        => \$man,
+	   'model=s'    => \$input_model,
+	   'debug|d'    => \$debug,
+	   'distribution-mode=s' => \$distribution_mode,
+	   'distribution-backoff=s' => \$distribution_backoff
+    ) or pod2usage(2);
+
+if ( !$input_model ) { pod2usage(2) }
+
+my @params = @ARGV;
+
+# model parameters
+$distribution_mode ||= 'distribution-renormalized' || 'distribution-uniform';
+$distribution_backoff ||= 'DMOZ::BackoffDistribution::OOVBackoffDistribution' || 'DMOZ::BackoffDistribution::MissingVocabularyRenormalizedBackoffDistribution' || 'DMOZ::BackoffDistribution::MissingVocabularyUniformBackoffDistribution' || 'DMOZ::BackoffDistribution::DocumentSpecificBackoffDistribution';
+
+# 0 - instantiate hierarchy
+my $dmoz_hierarchy = new DMOZ::Hierarchy($input_model);
+
+# 1 - instantiate hierarchical model
+my $hierarchical_model = new DMOZ::HierarchicalLanguageModel($dmoz_hierarchy,$distribution_mode,$distribution_backoff);
+
+# 1 - process content on STDIN
+while(<STDIN>) {
+
+    chomp;
+
+    my @fields = split /\t/, $_;
+    my $url = shift @fields;
+    my $content = shift @fields;
+    my $hierarchy = shift @fields;
+
+    # 1.0 - prepare the function to be evaluated on the target path
+    my @tokens = split /\s+/, $content;
+    my $token_count = scalar(@tokens);
+
+    my $probability_func = sub {
+
+	my $path = shift;
+	my $data = shift;
+
+	# make call to hierarchical LM using path data
+	my $prob_data = $hierarchical_model->probability(\@tokens, $data);
+
+	# what happens with the OOV-LM ?
+	# --> OOV-LM produces OOVs with probability 1
+	# hierarchical LM provides this LM, not 
+
+	# print out results
+	print join("\t", $prob_data->{'probability'}, $prob_data->{'token_count'}, $prob_data->{'origins'}) . "\n";
+
+    };
+
+    # 1.1 - instantiate mapper
+    my $mapper = new DMOZ::Mapper::SingleNodeMapper($hierarchy, ['word-assignment','content-distribution',$distribution_mode], $probability_func);
+
+    # 1.2 - execute mapper
+    $dmoz_hierarchy->recurse($mapper);
+
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+    confusius-tm-probability - computes the probability of the input strings provided on STDIN given the specified model
+
+=head1 SYNOPSIS
+
+    confusius-tm-probability --model <MODEL_PATH>
+
+     Options:
+       -help            brief help message
+       -man             full documentation
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<-help>
+
+    Print a brief help message and exits.
+
+=item B<-man>
+
+    Prints the manual page and exits.
+
+=back
+
+=head1 DESCRIPTION
+
+    B<This program> computes the probability of input strings given the specified model.
+
+=cut 

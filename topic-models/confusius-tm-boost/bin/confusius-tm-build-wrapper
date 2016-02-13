@@ -1,0 +1,57 @@
+#!/bin/bash -x
+
+# build confusius topic model from training data
+
+OUTPUT_DIR=$1
+TRAINING_DATA=$2
+ALLOCATION_MODE=$3
+
+BINDIR=`dirname $0`;
+
+LOG_TRAINING_HIERARCHY_CONSTRUCTION=${OUTPUT_DIR}/hierarchy_construction.training.log
+LOG_TRAINING_VOCABULARY_ANALYZER=${OUTPUT_DIR}/vocabulary_analyzer.training.log
+LOG_TRAINING_NGRAM_LANGUAGE_MODELS=${OUTPUT_DIR}/ngram_language_models.training.log
+LOG_TRAINING_CONTENT_DISTRIBUTION=${OUTPUT_DIR}/content_distribution.training.log
+LOG_TRAINING_WORD_ASSIGNMENT=${OUTPUT_DIR}/word_assignment.training.log
+LOG_TRAINING_ORIGIN=${OUTPUT_DIR}/origin.training.log
+LOG_TRAINING_DISTRIBUTION_UNIFORM=${OUTPUT_DIR}/node_uniform_distribution.training.log
+LOG_TRAINING_DISTRIBUTION_RENORMALIZED=${OUTPUT_DIR}/node_renormalized_distribution.training.log
+
+if [[ -z "${OUTPUT_DIR}" || -z "${TRAINING_DATA}" || -z "${ALLOCATION_MODE}" ]]; then
+   echo "Usage: $0 <MODEL_PATH> <TRAINING_DATA> <ALLOCATION_MODE>"
+   exit
+fi
+
+mkdir -p ${OUTPUT_DIR}
+
+if [[ ! -d ${OUTPUT_DIR} ]]; then
+   echo "Unable to create model root: ${MODEL} ...";
+   exit;
+fi
+
+MODEL_FILE_HIERARCHY=${OUTPUT_DIR}/confusius.boost.model.hierarchy
+MODEL_FILE_CONTENT_DISTRIBUTION=${OUTPUT_DIR}/confusius.boost.model.content_distribution
+
+# mihalcea radu --> building ontologies
+# evaluation by holding out data (predicting occurrence in DMOZ data)
+
+# push training data
+paste -d$'\t' ${TRAINING_DATA}/dmoz.rendered.url ${TRAINING_DATA}/dmoz.rendered.title ${TRAINING_DATA}/dmoz.mapped.description ${TRAINING_DATA}/dmoz.rendered.category | head -n1 | GLOG_logtostderr=1 GLOG_v=2 nice time ${BINDIR}/../src/confusius-tm-build --model_out=${MODEL_FILE_HIERARCHY} --action=build >& ${LOG_TRAINING_HIERARCHY_CONSTRUCTION}
+
+# computes content-distribution over the training data (used for word assignment)
+GLOG_logtostderr=1 GLOG_v=2 nice time valgrind --db-attach=yes ${BINDIR}/../src/confusius-tm-build --model_in=${MODEL_FILE_HIERARCHY} --model_out=${MODEL_FILE_CONTENT_DISTRIBUTION} --action="content-distribution"
+
+#>& ${LOG_TRAINING_CONTENT_DISTRIBUTION}
+
+exit;
+
+# computes word-assignment over the DMOZ hierarchy based on the training data
+nice time perl ${BINDIR}/dmoz-hierarchy-recurser --model=${MODEL_FILE} --recurser=DMOZ::Mapper::WordAssignment --label=training --mode=${ALLOCATION_MODE} >& ${LOG_TRAINING_WORD_ASSIGNMENT}
+
+# determines the distribution of depth priors, used by hierarchical topic model
+nice time perl ${BINDIR}/dmoz-hierarchy-recurser --model=${MODEL_FILE} --recurser=DMOZ::Mapper::Origin --label=training >& ${LOG_TRAINING_ORIGIN}
+
+# computes language models (normalized word distributions) at each node in the hierarchy, given specific heuristics
+nice time perl ${BINDIR}/dmoz-hierarchy-recurser --model=${MODEL_FILE} --recurser=DMOZ::Mapper::Distribution::UniformDistribution --label=training >& ${LOG_TRAINING_DISTRIBUTION_UNIFORM}
+
+nice time perl ${BINDIR}/dmoz-hierarchy-recurser --model=${MODEL_FILE} --recurser=DMOZ::Mapper::Distribution::RenormalizedDistribution --label=training >& ${LOG_TRAINING_DISTRIBUTION_RENORMALIZED}

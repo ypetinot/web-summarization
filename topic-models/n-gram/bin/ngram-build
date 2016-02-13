@@ -1,0 +1,41 @@
+#!/bin/bash -x
+
+# builds an n-gram language model give sentences provided on stdin (one sentence per line)
+# the input is assumed to have been preprocessed, that is that the input is already mapped to the vocabulary space
+
+BINDIR=`dirname $0`;
+
+SHORTOPTS="ho:v:"
+LONGOPTS="help,order:,output:"
+
+ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
+eval set -- "$ARGS"
+
+while true; do
+
+    case "$1" in
+        -h | --help )
+            usage; exit 0;;
+        -o | --order )
+            ORDER=$2; shift 2;;
+	-p | --output )
+	    OUTPUT_FILE=$2; shift 2;;
+        --)
+            shift; break;;
+    esac
+
+done
+
+if [[ -z "${ORDER}" || -z "${OUTPUT_FILE}" ]]; then
+    echo "Usage: $0 --order=<ngram-order> --output=<output-file>";
+    exit;
+fi 
+
+# load options
+. ${BINDIR}/ngram-options
+
+cat | ${BINDIR}/map-to-srilm-vocabulary | ${BINDIR}/../../../third-party/local/bin/ngram-count ${SRILM_OPTIONS} -text - -order ${ORDER} -lm ${OUTPUT_FILE}
+
+# probabilities must sum up to 1
+# n=1 --> yes --? awk 'BEGIN{ SUM = 0; } { SUM += 10^($1) } END{ print SUM }'
+# n=2 
