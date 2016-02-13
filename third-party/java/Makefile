@@ -1,6 +1,6 @@
 # Note : currently no way to automate download, must manually download archive first
 OPENJDK_URL=http://download.oracle.com/otn-pub/java/jdk/8u25-b17/jdk-8u25-linux-x64.tar.gz
-OPENJDK_LOCAL_ARCHIVE=$(HOME)/openjdk/jdk-8u25-linux-x64.tar.gz
+OPENJDK_LOCAL_ARCHIVE=$(CURDIR)/../../../../../../third-party-distributions/jdk-8u25-linux-x64.tar.gz
 OPENJDK_ARCHIVE=$(notdir $(OPENJDK_URL))
 #OPENJDK_DIRECTORY=$(patsubst %.tar.gz,%,$(OPENJDK_ARCHIVE))
 OPENJDK_DIRECTORY=jdk1.8.0_25
