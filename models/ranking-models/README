@@ -1,0 +1,16 @@
+# Training framework
+# [] 1 - what are my instances ? =>
+# => we want to maximize the lcs of the top n retrieved summaries to the ground truth (taking more than the top summary is similar (but not equivalent ?) to a max-margin approach)
+# [doable] 2 - features are easy => anything that characterizes the occurrence of the token considered in the target object as well as in the corpus (in particular the summary portion of it)
+# => we are learning a term weighting function, the features weights are thus shared by all the terms
+
+# process:
+# 1 - random initialization for weights (aking to topic models / sampled from a dirichlet prior ?)
+# 2 - query index for all training instances
+# 3 - update weights
+# 4 - repeat
+
+# question : is the objective function convex ?
+# seems like it is ...
+
+# start with online implementation ?

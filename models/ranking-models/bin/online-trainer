@@ -1,0 +1,45 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+# [in-progress] 1 - filter entire dataset
+# [current] 2 - for each valid pair, generate weighted query using the featurized query-weighter and retrieve result set
+# how ?
+# [doable] 1 - list out all potential query terms by iterating over all available utterances (keep track of the modality/ies where the terms comes from => use regex for indicators so the URL doesn't have to be segmented for confirmation)
+# [doable] 2 - for each potential query term, generate (generic) term features
+# [doable] 3 - weighted query generation
+# [doable] 4 - submit weight query to solr
+# [doable] 5 - use top K (10 ?) results to evaluate quality of the model (can be cached as a single number for each individual instance)
+# [] 6 - weight adjustment ? delta can be easily computed, how do we distribute its impact among feature weights ? what is we assume a shape ?
+# CURRENT : discriminative training for logistic regression ?
+# CURRENT : energy machine ? => energy is the overall score => how do energy machines distribute diff in energy ?
+# CURRENT : is it really impossible to express the energy function ? => X is know (ok) , Y is a ranked collection of reference pairs
+
+# CURRENT : what if we're learning a distance function instead ? Distance trained to minimize LCS of summaries
+# CURRENT : is my objective function convex in the parameters (feature weights) ?
+# CURRENT : assume convex but no closed-form solution, how do people optimize usually ?
+# CURRENT : if not, how do we optimize a non-convex function ? => random sampling
+
+# CURRENT : regression => score document using the LCS between the ground truth summary and the reference summary
+# => what do we want to learn ? => ranking model, so we only use the index to retrieve a rough set of matching pairs => if a better integration is needed (possible, but not likely with proper filtering, e.g. either url or title must have one word in common (?)
+# [current] : produce training data in Rank-SVM format ? Is this compatible with what I want to do ?
+
+
+# this is not a supervised problem
+
+
+# 3 - compute update => how ? => we're learning against a single score => so, a perceptron would adjust based on the difference from one round to the next  
+# 4 - problem, we might not be able to measure improvement => better if decide to stop based on performance on fixed set
+
+binmode( STDIN , ':utf8' );
+
+while ( <STDIN> ) {
+
+      chomp;
+
+      
+
+}
+
+1;
