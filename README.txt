@@ -1,4 +1,4 @@
-This repository contains the source code for a framework for indicative Web summarization. Although primary intended for nearest-neighbor-based --- i.e. instance-based ---- summarization approaches, it provides the necessary infrastructure for alternate forms of indicative Web summarization, including for the construction of extraction-based  summarization systems.
+This repository contains the source code for a framework for indicative Web summarization. Although primary intended for nearest-neighbor-based --- i.e. instance-based ---- summarization approaches, it provides the necessary infrastructure for alternate forms of indicative Web summarization, including for the construction of extraction-based summarization systems.
 
 The repository is organized as follows:
 --------------------------------------
