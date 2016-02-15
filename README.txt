@@ -5,7 +5,7 @@ The repository is organized as follows:
 
 bin/ => bin directory for all non-summarizer-specific binaries/scripts.
 
-data/ => all dataset processing operations, including the collection and analysis of ODP data.
+data/ => code supporting all dataset processing operations, including the collection and analysis of ODP data.
 
 evaluation/ => all evaluation-related code.
 
