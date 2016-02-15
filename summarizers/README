@@ -1,3 +1,9 @@
-# data production for all summarizers
-cat dmoz.all.data | ./bin/dmoz-prepare-filter 2>/dev/null | ./bin/dmoz-prepare-render > dmoz.all.data.prepared
+Root directory for all individual indicative summarization systems.
 
+delort-summarizer => reimplementation of the (extractive) content-based summarizer proposed by (Delort et al. 2003)
+
+graph-summarizer-4 => ranking + adaptation + fusion-based summarizer
+
+ocelot => reimplementation of the (abstractive) translation-based summarizer proposed by (Berger et al. 2000) (incomplete)
+
+title-summarizer => title-based (extractive) summarization baseline
