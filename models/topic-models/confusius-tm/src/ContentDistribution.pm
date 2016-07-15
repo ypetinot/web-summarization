@@ -240,7 +240,7 @@ sub number_of_documents {
 
 }
 
-# get number of words based on which this distribution has been computed
+# get number of words based on which this distribution hAs been computed
 # accounts for multiple occurrences of a given word
 sub number_of_words {
 

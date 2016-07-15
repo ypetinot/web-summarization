@@ -1,7 +1,8 @@
-BUILD_MK=build.mk
-BUILD_MK_TPL=${BUILD_MK}.tpl
+##BUILD_MK=build.mk
+##BUILD_MK_TPL=${BUILD_MK}.tpl
 
-SUBDIRS=$(shell find -mindepth 1 -maxdepth 1 -type d -not -name '\.*')
+#SUBDIRS=$(shell find -mindepth 1 -maxdepth 1 -type d -not -name '\.*')
+SUBDIRS=third-party
 SUBDIRS_CLEAN=$(addsuffix _clean, ${SUBDIRS})
 
 DATA=data

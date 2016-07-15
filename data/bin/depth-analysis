@@ -1,0 +1,21 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use URI;
+
+while ( <STDIN> ) {
+
+    chomp;
+
+    my $url = $_;
+    my $uri = new URI( $url )->canonical;
+
+    my @path_segments = grep { length( $_ ) } $uri->path_segments;
+
+    print join( "\t" , $url , scalar( @path_segments ) ) . "\n";
+
+}
+
+1;

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# TODO : all of this should be moved to the Perl side
+
 # do not barf on undeclared options so that they can be passed to underlying system
 # TODO : is this a good idea ?
 #POSIXLY_CORRECT=1
@@ -10,9 +12,6 @@ LONGOPTS="help,debug,id:,target-dir:,summarizer-root:,cross-validation:,fold-id:
 ARGS_COPY=$@
 ARGS=$(getopt -s bash --options $SHORTOPTS --longoptions $LONGOPTS --name $0 -- "$@" )
 eval set -- "$ARGS"
-
-#TODO: create distribution level env var definitions (I already had that at some point)
-GLOBAL_DATA_BASE=${ROOTDIR_DATA}
 
 while true; do
 

@@ -5,7 +5,8 @@ use warnings;
 
 # TODO : activate this only in debug mode ?
 # http://www.perlmonks.org/?node_id=128283
-$DB::inhibit_exit = 0;
+# http://www.nntp.perl.org/group/perl.debugger/2004/10/msg54.html
+if ( defined $DB::inhibit_exit ) { $DB::inhibit_exit = 0; }
 
 # top level summarizer execution script
 

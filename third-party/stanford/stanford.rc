@@ -1,3 +1,0 @@
-# http://stackoverflow.com/questions/59895/can-a-bash-script-tell-what-directory-its-stored-in
-export THIRD_PARTY_RESOURCES_STANFORD_BASE=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
-export THIRD_PARTY_RESOURCES_STANFORD_JAVA_CLASSPATH=$( find ${THIRD_PARTY_RESOURCES_STANFORD_BASE}/ -type f -name '*.jar' | tr '\n' ':' )

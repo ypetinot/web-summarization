@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# TODO : move to the Perl side => makes sense if all the summarizer wrappers are expected to be Perl classes
+
 BINDIR=`dirname $0`
 DIST_ROOTDIR=${BINDIR}/../
 source ${DIST_ROOTDIR}/dist.rc
@@ -37,6 +39,7 @@ if [[ -z "${RUN_ANALYSIS}" ]]; then
     RUN_ANALYSIS="0";
 fi
 
+# TODO : this should not be necessary ?
 # 2 - set location of ODP data repository
 if [[ ${HOSTNAME} == ${DMOZ_REPOSITORY_HOST} ]]; then
     REPOSITORY_BASE_DIRECTORY=${DMOZ_REPOSITORY_BASE}
@@ -44,5 +47,10 @@ else
     REPOSITORY_BASE_DIRECTORY=${DMOZ_REPOSITORY_RSYNC}
 fi
 
+# TODO : this should not be necessary ?
+# TODO : create distribution level env var definitions (I already had that at some point)
+GLOBAL_DATA_BASE=${ROOTDIR_DATA}
+
 # 3 - execute run-summarizer-harness
-perl -I${SUMMARIZER_LIB} ${DEBUG_FLAGS} ${BINDIR}/run-summarizer-harness ${GLOBAL_DATA_BASE} ${REPOSITORY_BASE_DIRECTORY} ${SUMMARIZER_ROOTDIR} ${SUMMARIZER_CLASS} "${SYSTEM}" "${SYSTEM_CONFIGURATION}" ${RUN_ANALYSIS} $@ ${CONSUMED_ARGS} ${ADDITIONAL_ARGS}
+# TODO : is there a way to automatically set SUMMARIZER_ROOTDIR ? => probably not necessary => instead automatically add all summarizer root directories to some form of PATH variable ?
+echo perl -I${SUMMARIZER_LIB} ${DEBUG_FLAGS} ${BINDIR}/run-summarizer-harness ${GLOBAL_DATA_BASE} ${REPOSITORY_BASE_DIRECTORY} ${SUMMARIZER_ROOTDIR} ${SUMMARIZER_CLASS} "${SYSTEM}" "${SYSTEM_CONFIGURATION}" ${RUN_ANALYSIS} $@ ${CONSUMED_ARGS} ${ADDITIONAL_ARGS}
