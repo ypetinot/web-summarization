@@ -71,6 +71,9 @@ sub summarize {
     }
 =cut
     my $rendered_content = $instance->content_modality->content;
+
+    # TODO : add filtering ?
+
     my @content_sentences = grep { length($_); } @{ $instance->content_modality->segments };
     my $size_content = scalar( @content_sentences );
     
@@ -183,6 +186,7 @@ sub summarize {
     if ( $do_internal ) {
 
 	# Compute for each sentence of the content its similarity to the whole content
+	# TODO : introduce sentence objects ?
 	my @scored_content_sentences = map { [ $_ , Similarity::_compute_cosine_similarity( $rendered_content , $_ ) ] } @content_sentences;
 	my @sorted_content_sentences = map { $_->[ 0 ] } sort { $b->[ 1 ] <=> $a->[ 1 ] } @scored_content_sentences;
 

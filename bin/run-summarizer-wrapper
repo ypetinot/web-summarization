@@ -14,18 +14,21 @@
 BINDIR=`dirname $0`;
 SYSTEM=$1
 URL=$2
-SUMMARIZER_CONFIGURATION=$3
 
-if [[ -z "${SYSTEM}" || -z "${URL}" ]]; then
-    echo "Usage: $0 <system> <url|instance-file>";
-    echo "Systems available: graph4-base-ranking";
-    exit 1;
-fi
+# TODO : switch to a default configuration + summarizer-specific parameters passed on the command line after --
+SUMMARIZER_CONFIGURATION=$3
 
 source ${BINDIR}/../dist.rc
 
+# TODO : add option to list available summarizers => could be done by simply listing out sub-folders under ../summarizers/
+
+if [[ -z "${SYSTEM}" || -z "${URL}" ]]; then
+    echo "Usage: $0 <system> <url>";
+    exit 1;
+fi
+
 # TODO : --summarizer-root should not be necessary
-SUMMARIZER_BASE=${BINDIR}/../summarizers/graph-summarizer-4/
+SUMMARIZER_BASE=${BINDIR}/../summarizers/${SYSTEM}
 
 if [ -z "${SUMMARIZER_CONFIGURATION}" ]; then
     SUMMARIZER_CONFIGURATION=${SUMMARIZER_BASE}/conf/configuration.json
