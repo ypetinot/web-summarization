@@ -16,7 +16,8 @@ use namespace::autoclean;
 
 # TODO : move to a base class ?
 with( 'Logger' );
-with( 'Dictionary' );
+# TODO : remove ?
+###with( 'Dictionary' );
 with( 'DMOZ' );
 with( 'Freebase' );
 with( 'WordNetLoader' );

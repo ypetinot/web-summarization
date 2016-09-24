@@ -9,10 +9,6 @@ use Similarity;
 use Vocabulary;
 
 use JSON;
-use Net::Dict;
-
-###my $DICTD_SERVER = "coral12.cs.columbia.edu";
-###my $dict = Net::Dict->new( $DICTD_SERVER );
 
 use Moose;
 use namespace::autoclean;

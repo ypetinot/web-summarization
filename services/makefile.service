@@ -20,7 +20,7 @@ THRIFT_CPP_GCC_FLAGS=-I $(THRIFT_CPP_INCLUDE) -I $(THRIFT_CPP_GEN) $(THRIFT_SERV
 # TODO : could we require a specific dependency by obtaining the current service name
 # TODO : turn into a "make-and-install" macro where I can designate an (optional) location for installation ?
 gen-%: $(shell find $(CURDIR)/ -type f -name '*.thrift')
-	$(CURDIR)/../../third-party/local/bin/thrift --gen $* $<
+	thrift --gen $* $<
 
 .PHONY:
 clean-service:

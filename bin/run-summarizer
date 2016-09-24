@@ -53,4 +53,4 @@ GLOBAL_DATA_BASE=${ROOTDIR_DATA}
 
 # 3 - execute run-summarizer-harness
 # TODO : is there a way to automatically set SUMMARIZER_ROOTDIR ? => probably not necessary => instead automatically add all summarizer root directories to some form of PATH variable ?
-echo perl -I${SUMMARIZER_LIB} ${DEBUG_FLAGS} ${BINDIR}/run-summarizer-harness ${GLOBAL_DATA_BASE} ${REPOSITORY_BASE_DIRECTORY} ${SUMMARIZER_ROOTDIR} ${SUMMARIZER_CLASS} "${SYSTEM}" "${SYSTEM_CONFIGURATION}" ${RUN_ANALYSIS} $@ ${CONSUMED_ARGS} ${ADDITIONAL_ARGS}
+perl -I${SUMMARIZER_LIB} ${DEBUG_FLAGS} ${BINDIR}/run-summarizer-harness ${GLOBAL_DATA_BASE} ${REPOSITORY_BASE_DIRECTORY} ${SUMMARIZER_ROOTDIR} ${SUMMARIZER_CLASS} "${SYSTEM}" "${SYSTEM_CONFIGURATION}" ${RUN_ANALYSIS} $@ ${CONSUMED_ARGS} ${ADDITIONAL_ARGS}
