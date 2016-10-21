@@ -23,7 +23,7 @@ $(THRIFT_SERVER_SRC): $(THRIFT_CPP_GEN_SRC)
 
 # TODO: how to get the full list of prerequisites ?
 $(TARGET_SERVER): $(OBJ) $(THRIFT_CPP_ADDITIONAL)
-	g++ -L $(THIRD_PARTY_LIB) -lboost_regex -L $(THRIFT_CPP_LIB) -lthrift -lthriftz $^ -lpthread -o $@
+	g++ -lboost_regex -L $(THRIFT_CPP_LIB) -lthrift -lthriftz -lz $^ -lpthread -o $@
 
 # TODO : add thrift to PATH variable
 # TODO : reduce recipe duplication for code generation

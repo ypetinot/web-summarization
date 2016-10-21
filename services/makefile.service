@@ -1,15 +1,15 @@
-THIRD_PARTY_BASE=$(CURDIR)/../../third-party
+include $(abspath $(dir $(lastword $(MAKEFILE_LIST))))/../bin/makefile.common
+
+THIRD_PARTY_BASE=$(CURDIR)/../../containers-build
 THIRD_PARTY_LIB=$(THIRD_PARTY_BASE)/local/lib/
 
-GOOGLE_SPARSEHASH_INCLUDE=-I $(ROOTDIR_THIRD_PARTY)/google/sparsehash-1.10/src/
-
-THRIFT_BASE=$(THIRD_PARTY_BASE)/thrift/
+THRIFT_BASE=$(THIRD_PARTY_BASE)/
 THRIFT_CPP_GEN=gen-cpp
-THRIFT_CPP_BASE=$(THRIFT_BASE)/thrift-0.9.2/lib/cpp/
+THRIFT_CPP_BASE=$(shell realpath $(THRIFT_BASE)/thrift-0.9.*/lib/cpp/)
 THRIFT_CPP_INCLUDE=$(THRIFT_CPP_BASE)/src/
 THRIFT_CPP_LIB=$(THRIFT_CPP_BASE)/.libs/
 THRIFT_CPP_ADDITIONAL_BASE=$(THRIFT_CPP_INCLUDE)/thrift/
-THRIFT_CPP_ADDITIONAL=$(foreach test,TApplicationException Thrift concurrency/Monitor concurrency/Mutex concurrency/PosixThreadFactory concurrency/TimerManager concurrency/Util server/TSimpleServer server/TThreadedServer transport/TBufferTransports transport/TServerSocket transport/TSocket transport/TTransportException,$(THRIFT_CPP_ADDITIONAL_BASE)/$(test).o)
+THRIFT_CPP_ADDITIONAL=$(foreach test,TApplicationException concurrency/Monitor concurrency/Mutex concurrency/PosixThreadFactory concurrency/TimerManager concurrency/Util server/TSimpleServer server/TThreadedServer transport/TBufferTransports transport/TServerSocket transport/TSocket transport/TTransportException,$(THRIFT_CPP_ADDITIONAL_BASE)/$(test).o)
 
 # TODO : make modifications so that both the optimized and debug versions can be built
 DEBUG_FLAGS=-g
@@ -26,5 +26,9 @@ gen-%: $(shell find $(CURDIR)/ -type f -name '*.thrift')
 clean-service:
 	rm -rf gen-*
 
-thrift-install-perl-libs: gen-perl
-	cp -rf $</* $(THIRD_PARTY_BASE)/local/lib/
+#TODO : could a call to folder_dependency automatically generate this rule ?
+$(THIRD_PARTY_LIB):
+	mkdir -p $@
+
+thrift-install-perl-libs: gen-perl $(call folder_dependency,$(THIRD_PARTY_LIB))
+	cp -rf $</* $(THIRD_PARTY_LIB)

@@ -1,0 +1,70 @@
+mongodb
+wget
+libtext-trim-perl
+libxml-treepp-perl
+libjson-perl
+libfile-slurp-perl
+libbit-vector-perl
+liblog-log4perl-perl
+libboost-regex-dev
+libcarp-assert-perl
+libclone-perl
+libconfig-json-perl
+libdata-serializer-perl
+libdir-self-perl
+#libfunction-parameters-perl
+libdevel-cycle-perl
+libfile-rsyncp-perl
+libglib2.0-dev
+libgraph-perl
+libhtml-strip-perl
+libhtml-tokeparser-simple-perl
+libhtml-tree-perl
+#libnet-dict-perl
+libjson-maybexs-perl
+libjson-rpc-perl
+liblingua-stem-perl
+libmodule-path-perl
+libmongodb-perl
+libmoose-perl
+libmoosex-aliases-perl
+libmoosex-classattribute-perl
+libmoosex-singleton-perl
+libmoosex-storage-perl
+libnet-whois-raw-perl
+libpath-class-perl
+libsparsehash-dev
+libtest-differences-perl
+# TODO : this needs to become a dependency for libfunction-parameters-perl
+libtest-fatal-perl
+libwordnet-querydata-perl
+# TODO : this needs to become a dependency for libnet-dict-perl
+libappconfig-perl
+libssl-dev
+# TODO : would maven2 have a smaller dependency set ? (we shouldn't have to install x11-related libraries in order to setup our hosts)
+maven
+openjdk-7-jdk
+# TODO : re-introduce once the dev library is also available
+#thrift-compiler
+#libthrift-dev
+# The following are package dependencies required to build (and install ?) libthrift-dev
+# TODO : is there a way to reduce the set of dependencies while still building libthrift-dev ?
+mono-gmcs
+python-dev
+mono-devel
+libmono-system-web2.0-cil
+erlang-base
+#ruby-dev
+autoconf
+automake
+libtool
+bison
+flex
+python-all
+python-all-dev
+python-all-dbg
+libboost-test-dev
+libevent-dev
+php5
+php5-dev
+libqt4-dev

@@ -1,7 +1,6 @@
 # TODO: is there an alternative to fully qualified (with built-in namespace) variable names ?
 # Move this to a common makefile ?
-###COMMON_MAKEFILE_DIR:=$(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-###ROOTDIR_DIST?=$(abspath $(COMMON_MAKEFILE_DIR)/../)
+ROOTDIR_DIST?=$(abspath $(abspath $(dir $(lastword $(MAKEFILE_LIST))))/../)
 
 # default line heading
 LINE_HEADING?=>>

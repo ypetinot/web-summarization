@@ -35,7 +35,7 @@ $(PARSE_CLIENT_MODIFIED): $(STANFORD_THRIFT_PARSE_CLIENT)
 	chmod +x $@
 
 $(STANFORD_THRIFT_PERL): $(STANFORD_THRIFT_DIRECTORY)
-	$(THIRD_PARTY_BASE)/local/bin/thrift --gen perl $(STANFORD_SERVICE_THRIFT)	
+	thrift --gen perl $(STANFORD_SERVICE_THRIFT)
 
 clean:
 	rm -rf *~

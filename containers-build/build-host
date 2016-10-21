@@ -1,0 +1,29 @@
+#!/bin/bash
+
+if [[ "${USER}" != "root" ]]; then
+    echo "Must be run as root ..."
+    exit;
+fi
+
+BINDIR=`dirname $0`
+
+# 1 - source environment
+source ${BINDIR}/../dist.rc
+
+# TODO : ultimately this should probably be removed or replaced by something a little more elegant
+if [[ ! -d "${ROOTDIR_THIRD_PARTY}" ]]; then
+    ln -s ${BINDIR} ${ROOTDIR_THIRD_PARTY}
+fi
+
+# 2 - install all required packages
+${BINDIR}/install-packages ${BINDIR}/packages.list
+
+# 3 - install thrift
+# TODO : better integrate with distribution's makefile so that each run doesn't lead to a full recompilation
+####make -f ${BINDIR}/Makefile.thrift
+####dpkg -i ${BINDIR}/libthrift-dev.deb
+
+# 4 - build individual services
+pushd ${ROOTDIR_SERVICES}/lm-service && make && popd
+pushd ${ROOTDIR_SERVICES}/stanford-service && make && popd
+pushd ${ROOTDIR_SERVICES}/webgraph-service && make && popd

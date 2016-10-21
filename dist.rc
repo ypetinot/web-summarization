@@ -21,6 +21,7 @@ export DMOZ_REPOSITORY_RSYNC=${DMOZ_REPOSITORY_HOST}::repository
 
 export MONGODB_USER_CONF=${HOME}/mongodb.user
 
+# TODO : all these variables are meant to be stored in a --- non-bash --- configuration file => this file would in turn be shared by several processes
 export SERVICE_HOST=barracuda.cs.columbia.edu
 #export SERVICE_HOST_DEPENDENCY_PARSING=lobster.cs.columbia.edu
 export SERVICES_BASE="http://${SERVICE_HOST}"
@@ -56,11 +57,13 @@ export DATA_CATEGORY_LIST=${ROOTDIR_DATA}/categories.list
 
 # TODO : should /local/ be the real root ?
 export ROOTDIR_THIRD_PARTY=${ROOTDIR_DIST}/third-party/
-ROOTDIR_THIRD_PARTY_DIST=${ROOTDIR_THIRD_PARTY}/local/
+export ROOTDIR_THIRD_PARTY_DIST=${ROOTDIR_THIRD_PARTY}/local/
 BINDIR_THIRD_PARTY=${ROOTDIR_THIRD_PARTY_DIST}/bin/
 LIBDIR_THIRD_PARTY=${ROOTDIR_THIRD_PARTY_DIST}/lib/
 export THIRD_PARTY_RESOURCES_JAVA=${ROOTDIR_THIRD_PARTY}/java/java.rc
 export THIRD_PARTY_RESOURCES_STANFORD=${ROOTDIR_THIRD_PARTY}/stanford/stanford.rc
+
+export ROOTDIR_SERVICES=${ROOTDIR_DIST}/services/
 
 export ROOTDIR_EVALUATION=${ROOTDIR_DATA}/evaluation/
 export BINDIR_EVALUATION=${ROOTDIR_EVALUATION}/bin/
