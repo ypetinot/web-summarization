@@ -5,8 +5,9 @@
 /* The content of template slots is modeled using a gappy pattern model */
 
 #include "definitions.h"
-#include "gappy_pattern.h"
+#include "gappy_pattern_process.h"
 #include "probabilistic_object.h"
+#include "registrable_object.h"
 #include "template_element.h"
 
 #include <deque>
@@ -20,7 +21,8 @@
 
 using namespace google;
 
-class TemplateSlot: public ProbabilisticObject, public TemplateElement {
+/* TODO : add a LocallyUpdateableObject */
+class TemplateSlot: public StringifiableObject, public TemplateElement {
 
  public:
 
@@ -78,9 +80,6 @@ class TemplateSlot: public ProbabilisticObject, public TemplateElement {
   /* sample slot type */
   void sample_type();
 
-  /* compute the probability of this object */
-  virtual double log_probability();
-
   /* extend this slot */
   void extend( int index );
 
@@ -90,8 +89,9 @@ class TemplateSlot: public ProbabilisticObject, public TemplateElement {
   /* check consistency (public) */
   bool check_consistency() const;
 
+  /* TODO : the type should not be a GappyPatternProcess => the string id of a GappyPatternProcess is however OK */
   /* get type */
-  GappyPatternProcess* const get_type() const;
+  string const get_type() const;
 
   /* register coloring */
   void register_coloring();

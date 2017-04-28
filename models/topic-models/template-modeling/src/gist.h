@@ -66,6 +66,9 @@ class Gist: public MultinomialSampler {
   /* get corpus */
   Corpus& get_corpus();
 
+  /* sample template at specific location */
+  void sample_template_at_location( unsigned int i );
+  
  protected:
 
   /* init */

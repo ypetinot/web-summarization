@@ -2,7 +2,7 @@
 #define __CORPUS_H__
 
 #include "dirichlet_process.h"
-#include "gappy_pattern.h"
+#include "gappy_pattern_process.h"
 
 #include <glog/logging.h>
 #include <google/dense_hash_map>
@@ -13,7 +13,7 @@
 using namespace google;
 using namespace std;
 
-class GappyPatternProcess;
+/* TODO : this probably should not be necessary => try to remove circular dependencies between classes ? */
 class Gist;
 class Template;
 
@@ -35,9 +35,6 @@ class Corpus {
 
   /* get unigram count */
   long get_unigram_count( long word_id ) const;
-
-  /* get template dp */
-  DirichletProcess<Template>& get_template_dp();
 
   /* get slot type dp */
   DirichletProcess<GappyPatternProcess>& get_slot_type_dp();

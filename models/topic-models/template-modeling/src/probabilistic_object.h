@@ -6,7 +6,7 @@
 #include "statistics.h"
 #include <vector>
 
-#include "../../../third-party/dsFMT/dsFMT/dSFMT.h"
+#include <dSFMT.h>
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_rng.h>
 
@@ -70,7 +70,8 @@ class CountableProbabilisticObject: public ProbabilisticObject, public Countable
 
 };
 
-class PoissonProbabilisticObject: public ProbabilisticObject, public PoissonDistribution {
+/* TODO : does the use of a template here make sense ? */
+template< class T> class PoissonProbabilisticObject: public ProbabilisticObject, public PoissonDistribution<T> {
 
  public:
 

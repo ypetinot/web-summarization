@@ -10,7 +10,7 @@
 
 /* constructor ( with random initialization ) */
 Template::Template( Gist* gist )
-  :PoissonProbabilisticObject(gist->get_corpus(),FLAGS_template_dp_lambda),_gist(gist),_slots(_gist->length()),_slots_set(_gist->length(),0),_templatic_status(_gist->length(),TEMPLATIC_STATUS_NONE) {
+  :_gist(gist),_slots(_gist->length()),_slots_set(_gist->length(),0),_templatic_status(_gist->length(),TEMPLATIC_STATUS_NONE) {
   
   /* initialization */
   _init();
@@ -19,7 +19,7 @@ Template::Template( Gist* gist )
 
 /* copy constructor */
 Template::Template( const Template& t )
-  :PoissonProbabilisticObject(t),_gist(t._gist),_slots(_gist->length()),_slots_set(_gist->length(),0),_templatic_status(_gist->length(),TEMPLATIC_STATUS_NONE) {
+  :_gist(t._gist),_slots(_gist->length()),_slots_set(_gist->length(),0),_templatic_status(_gist->length(),TEMPLATIC_STATUS_NONE) {
 
   for ( unsigned int i = 0; i < _gist->length(); i++ ) {
 
@@ -220,7 +220,7 @@ string Template::_as_string( bool abstract_slot_content , bool include_slot_type
       if ( abstract_slot_content ) {
 	/* Note: right now the slot types are conditionally independent --> anonymous slot types */
 	if ( include_slot_type ) {
-	  representation.append( "[[ " + current_slot->get_type()->as_string() + ( include_slot_length ? "-" + boost::lexical_cast<std::string>( current_slot->length() ) : "" ) + " ]]" );
+	  representation.append( "[[ " + current_slot->get_type() + ( include_slot_length ? "-" + boost::lexical_cast<std::string>( current_slot->length() ) : "" ) + " ]]" );
 	}
 	else {
 	  representation.append( "[[ slot ]]" );
@@ -288,28 +288,6 @@ string Template::get_template_string() const {
   }
 
   return template_string;
-
-}
-
-  /* compute the probability of this object */
-double Template::log_probability() {
-
-  /* 1 - poisson distribution ( on the number of slots in this template ) */
-  double probability = get_poisson_log_probability( _slots.size() );
-  
-  /* 2 - unigram distribution */
-  vector< long > unigrams;
-  for ( vector< short int >::const_iterator iter = _templatic_status.begin(); iter != _templatic_status.end(); ++iter ) {
-    if ( *iter == TEMPLATIC_STATUS_TEMPLATIC ) {
-      unigrams.push_back( _gist->get_word( iter - _templatic_status.begin() ) );
-    }
-  }
-  probability += log( compute_unigram_probability( unigrams ) );
-  
-  /* 3 - gap/word arrangement distribution */
-  //probability += log( _compute_gappy_pattern_arrangement_probability( gappy_pattern ) );
-
-  return probability;
 
 }
 
@@ -586,83 +564,6 @@ bool Template::_valid_index( unsigned int index ) const {
 
 // P( s_t | template )
 // p( template | s_t ) = p ( s_t | template ) * p( template ) / p( s_t )
-
-/* register template with underlying dp */
-void Template::register_with_dp() {
-
-  /* register slot instances in this template */
-  /* TODO: slot iterator ? */
-  for (unsigned int i = 0; i<_slots.size(); i++) {
-    
-    if ( _templatic_status[ i ] == TEMPLATIC_STATUS_SLOT ) {
-      
-      tr1::shared_ptr<TemplateSlot> current_slot = _slots[ i ];
-      GappyPatternProcess* current_slot_type = current_slot->get_type();
-
-      /* update slot type dp */
-      _gist->get_corpus().get_slot_type_dp().add_instance( * current_slot_type );
-
-      /* register slot coloring */
-      /* pb: what does it mean if we register in bulk ? --> artificially inflate certain colorings ? */
-      current_slot->register_coloring();
-
-      i += current_slot->length();
-
-    }
-
-  }
-  
-  /* register template itself */
-  _get_underlying_dirichlet_process().add_instance( *this );
-
-}
-
-/* unregister template with underlying dp */
-void Template::unregister_with_dp() {
-
-  /* unregister template itself */
-  _get_underlying_dirichlet_process().remove_instance( *this );
-
-  /* unregister slots appearing inside the template (if any) */
-  /* TODO: create proper slot iterator ? */
-  for (unsigned int i = 0; i<_slots.size(); i++) {
-    
-    if ( _templatic_status[ i ] == TEMPLATIC_STATUS_SLOT ) {
-      
-      tr1::shared_ptr<TemplateSlot> current_slot = _slots[ i ];
-      GappyPatternProcess* current_slot_type = current_slot->get_type();
-
-      /* TODO: can the current slot type even be NULL ? */ 
-      if ( current_slot_type != NULL ) {
-    
-	/* remove the current instance from the slot type dp */
-	_gist->get_corpus().get_slot_type_dp().remove_instance( * current_slot_type );
-    
-	/* register slot coloring */
-	/* pb: what does it mean if we register in bulk ? --> artificially inflate certain colorings ? */
-	current_slot->unregister_coloring();
-
-#if 0
-	/* we're not using shared_ptr's for this */
-	if ( (_slot_type->count() == 1) ) {
-	  delete _slot_type;
-	}
-#endif
-	
-      }
-      
-      i += current_slot->length();
-      
-    }
-    
-  }
-
-}
-
-/* get underlying dp */
-DirichletProcess<Template>& Template::_get_underlying_dirichlet_process() const {
-  return _gist->get_corpus().get_template_dp();
-}
 
 /* resample all slot types for the target gist's template */
 /* gibbs-sampling: other variables (--> ?) remain unchanged*/

@@ -92,14 +92,15 @@ void TemplateSlot::sample_type() {
   CHECK( ! this->registered() );
 
   /* get list of existing slot types */
-  vector< GappyPatternProcess* > slot_types = _gist->get_corpus().get_slot_types();
+vector< GappyPatternProcess* > slot_types = _gist->get_corpus().get_slot_types();
 
+/* TODO : what is the base distribution for slot types ? => should probably be uniform ? */ 
   /* one sampling option for each color type (plus a new one) */
   vector< double > slot_types_probability;
   DirichletProcess<GappyPatternProcess>& slot_type_dp = _gist->get_corpus().get_slot_type_dp();
   for ( vector< GappyPatternProcess* >::const_iterator iter = slot_types.begin(); iter != slot_types.end(); ++iter ) {
-    bool slot_type_existing = ( slot_type_dp.get_instance_count( *( *iter ) ) != 0 );
-    double slot_type_probability = slot_type_existing ? slot_type_dp.multinomial_probability( *( *iter ) ) : slot_type_dp.new_probability( *( *iter ) );
+/* TODO : this assumes there is always exactly one empty slot type pre-allocated => should be fixed (i.e. the DP should control internally the creation of a new slot type) */ 
+    double slot_type_probability = slot_type_dp.multinomial_probability( *( *iter ) );
     slot_types_probability.push_back( slot_type_probability );
   }
 
@@ -441,6 +442,7 @@ unsigned int TemplateSlot::_sample_color( int index ) const {
     tr1::shared_ptr<GappyPattern> new_color_gappy_pattern( new GappyPattern( *this ) );
     new_color_gappy_pattern->add_word( index );
 
+    /* TODO : why does a call to _probability_new_color make sense here ? => why wouldn't it be ok to get the probability assigned by the underlying multinomial to this object/pattern ? */
     double prob_new_color = _slot_type->_probability_new_color( *( new_color_gappy_pattern.get() ) );
     
     /* the probability to assign a new color / create a new pattern cannot be 0 */

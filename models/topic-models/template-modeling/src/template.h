@@ -21,7 +21,7 @@ using namespace std;
 
  */
 
-class Template: public PoissonProbabilisticObject {
+class Template: public StringifiableObject {
 
  public:
 
@@ -64,18 +64,18 @@ class Template: public PoissonProbabilisticObject {
   /* tentatively (?) update template state */
   tr1::shared_ptr<Template> transition( unsigned int index , int state );
 
-  /* compute the probability of this object */
-  virtual double log_probability();
-
+  /* TODO : does not belong here */
   /* register template with underlying dp */
   void register_with_dp();
 
+  /* TODO : does not belong here */
   /* unregister template with underlying dp */
   void unregister_with_dp();
 
   /* flip templatic status at a specific location */
   void flip_templatic_status( unsigned int index );
 
+  /* TODO : does not belong here */
   /* resample all slot types for the target gist's template */
   /* TODO: can we do without this method ? */
   void sample_slot_types_and_register();
@@ -85,7 +85,8 @@ class Template: public PoissonProbabilisticObject {
 
   /* check whether the target location is templatic */
   bool is_templatic( unsigned int index ) const;
-  
+
+  /* TODO : should this be a static method that takes a Template instance as its parameter ? */
   /* check structural consistency */
   bool check_consistency() const;
 
@@ -139,8 +140,10 @@ class Template: public PoissonProbabilisticObject {
   /* check the validity of the target index */
   bool _valid_index( unsigned int index ) const;
 
+  /* TODO : does not belong here */  
   /* get underlying dp */
-  DirichletProcess<Template>& _get_underlying_dirichlet_process() const;
+  /* TODO : this should not be inside the template object => this is how we learn the true distribution of templates (since we don't know what the true distribution is, but we say it is a multinomial, we introduce a dirichlet process in order to iteratively learn the true distribution). */
+  DirichletProcess< Template , Distribution<Template> >& _get_underlying_dirichlet_process() const;
 
 };
 

@@ -12,13 +12,16 @@ using namespace std;
 
 class Corpus;
 
-class Distribution {
+template< class T > class Distribution {
 
  public:
-
+  
   /* constructor */
   Distribution( const Corpus& corpus );
 
+  /* probability of a given object (in the corpus ?) */
+  virtual double probability( const T& object ) = 0;
+  
  protected:
 
   /* underlying corpus */

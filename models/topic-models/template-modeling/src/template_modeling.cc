@@ -29,20 +29,9 @@ int main(int argc, char** argv) {
   LOG(INFO) << "Creating new corpus ...";
   Corpus corpus( FLAGS_template_dp_lambda , FLAGS_template_dp_alpha , FLAGS_slot_type_dp_alpha, FLAGS_gappy_patterns_lambda , FLAGS_gappy_patterns_dp_alpha );
 
-  /* 1 - read training data */
-  LOG(INFO) << "Loading training data ...";
-  vector< tr1::shared_ptr<Gist> > gists = corpus.load_gist_data( FLAGS_gist_data );
-
-  /* 2 - train model */
-  LOG(INFO) << "Training model ...";
-  tr1::shared_ptr<TemplateSampler> ts( new TemplateSampler( corpus , gists ) );
-  while ( ! ts->has_converged() && ts->get_iteration_number() < FLAGS_max_iterations ) {
-
-    ts->iterate();
-    ts->dump_state();
-
-  }
-  
+  /* 1 - instantiate our (empty) model */
+  TemplateModel model( corpus );
+    
   //boost::archive::binary_iarchive ia(ifs);
   //ia >> BOOST_SERIALIZATION_NVP(h);
  

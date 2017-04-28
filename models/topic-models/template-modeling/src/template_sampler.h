@@ -23,10 +23,10 @@ class TemplateSampler: public MultinomialSampler {
   /* check whether the sampler has converged */
   bool has_converged();
 
-  /* Return iteration number */
+  /* return iteration number */
   unsigned int get_iteration_number() const;
 
-  /* dump sampler state */
+  /* dump state (sampler + gists) */
   void dump_state();
 
   /* dump sampler state */
@@ -35,7 +35,7 @@ class TemplateSampler: public MultinomialSampler {
   /* dump gists state */
   void dump_state_gists();
 
-  /* compute log likelihood */
+  /* compute log likelihood of entire corpus */
   double log_likelihood() const;
 
   /* compute log likelihood for a specific gist */
@@ -63,6 +63,7 @@ class TemplateSampler: public MultinomialSampler {
   unsigned int _sample_color( Gist* gist , unsigned int index );
 
   /* return the current count for the specified gappy pattern */
+  // TODO : not sure this belongs here, if anything this is a generic functionality that should be provided by the DirichletProcess class (?)
   unsigned int get_gappy_pattern_count( string gappy_pattern_string );
 
   /* current iteration number */

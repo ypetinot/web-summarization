@@ -17,9 +17,15 @@
 using namespace google;
 using namespace std;
 
-template< class T >
-class DirichletProcess {
+// TODO : require G to be a specialization of a particular type/class, specifically a distribution over objects of type T
+template< class T , class G > class DirichletProcess {
 
+ protected:
+
+  /* base distribution */
+  /* TODO is there a way to treat G as a purely static class ? (i.e. to avoid having to instantiate it ? */
+  const G& _base_distribution;
+  
  public:
   
   /* constructor */	
@@ -103,17 +109,18 @@ class DirichletProcess {
     
   }
   
-  /* new probability */
-  double new_probability( T& instance ) const {
-
+  /* probability currently assigned to an event by the underlying multinomial */
+  double multinomial_probability( const T& instance ) const {
+    
     unsigned int number_instances_single = get_instance_count( instance );
     
     /* 2 - get the total number of patterns instances */
     unsigned int number_instances_total = get_total_instances();
     
     /* 3 - compute probability of a new instance */
-    double probability_base = instance.probability();
-    double probability_new = ( number_instances_single + _alpha * probability_base ) / ( number_instances_total + _alpha );
+    double probability_base = _base_distribution.probability( instance );
+
+    double probability_new = _dp_probability( number_instances_single , probability_base , number_instances_total , 1 );
     
     CHECK_GE( probability_new , 0 );
     CHECK_LE( probability_new , 1 );
@@ -122,6 +129,7 @@ class DirichletProcess {
     
   }
 
+  /* TODO : this is not quite part of the concept of a DP, or is it ? */
   /* transition probability */
   double transition_probability( T& from , T& to ) const {
 
@@ -134,7 +142,10 @@ class DirichletProcess {
     unsigned int number_instances_new_pattern = get_instance_count( to );
     
     /* compute probability of adding target word to this gappy pattern */
-    double probability = _dp_probability( number_instances_new_pattern , to.probability() , number_instances_current_pattern , from.probability() );
+    double probability = _dp_probability( number_instances_new_pattern ,
+					  _base_distribution.probability( to ) ,
+					  number_instances_current_pattern ,
+					  _base_distribution.probability( from ) );
     
     CHECK( probability );
     
@@ -142,13 +153,6 @@ class DirichletProcess {
     
   }
   
-  /* multinomial probability */
-  double multinomial_probability( T& instance ) const {
-
-    return _dp_probability( get_instance_count( instance ) , instance.probability() , get_total_instances() , 1 );
-    
-  }
-
   /* get total instances count */
   long get_total_instances() const {
   

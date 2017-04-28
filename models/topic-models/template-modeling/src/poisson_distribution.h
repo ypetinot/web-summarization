@@ -3,7 +3,7 @@
 
 #include "distribution.h"
 
-class PoissonDistribution: public Distribution {
+template< class T> class PoissonDistribution: public Distribution<T> {
  
  public:
 
@@ -13,6 +13,7 @@ class PoissonDistribution: public Distribution {
   /* get log probability */
   double get_poisson_log_probability( unsigned int n );
 
+  /* TODO : not sure this belongs here */
   /* compute probability of (joint) unigram appearances in gappy pattern */
   double compute_unigram_probability( const vector< long >& unigrams );
 

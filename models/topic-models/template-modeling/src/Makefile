@@ -11,13 +11,19 @@ LINK = $(CC) $(CFLAGS)
 
 all: $(EXECUTABLES)
 
-dSFMT.o: $(CURDIR)/../../../third-party/dsFMT/dsFMT/dSFMT.c
-	$(COMPILE) -c $< -o dSFMT.o
+#dSFMT.o: $(CURDIR)/../../../third-party/dsFMT/dsFMT/dSFMT.c
+#	$(COMPILE) -c $< -o dSFMT.o
 
 %.o: %.cc
 	$(COMPILE) -c $< -o $@
 
-template-training: dSFMT.o object.o parameters.o corpus.o template.o gist.o tree.o template_modeling.o template_sampler.o gappy_pattern.o probabilistic_object.o template_element.o template_slot.o statistics.o dirichlet_process.o distribution.o poisson_distribution.o
+OBJECTS=parameters.o corpus.o template.o gist.o tree.o template_modeling.o template_sampler.o gappy_pattern.o probabilistic_object.o template_element.o template_slot.o statistics.o dirichlet_process.o distribution.o poisson_distribution.o
+#gappy_pattern_process.o
+#dSFMT.o
+#object.o => where did this use to come from ?
+
+template-training: $(OBJECTS)
+
 	$(LINK) $^ -o $@ $(LDFLAGS) $(LIBRARIES)
 
 clean:

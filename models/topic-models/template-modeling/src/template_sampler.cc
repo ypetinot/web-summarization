@@ -56,7 +56,7 @@ unsigned int TemplateSampler::get_iteration_number() const {
 
 }
 
-/* dump sampler state */
+/* dump state (sampler + gists) */
 void TemplateSampler::dump_state() {
 
   dump_state_sampler();
