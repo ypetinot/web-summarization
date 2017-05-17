@@ -37,7 +37,7 @@ class Corpus {
   long get_unigram_count( long word_id ) const;
 
   /* get slot type dp */
-  DirichletProcess<GappyPatternProcess>& get_slot_type_dp();
+  DirichletProcess< GappyPatternProcess  >& get_slot_type_dp();
 
   /* get next slot type id */
   unsigned int get_next_slot_type_id();
