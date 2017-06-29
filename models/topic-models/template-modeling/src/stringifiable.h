@@ -1,6 +1,8 @@
 #ifndef __STRINGIFIABLE_H__
 #define __STRINGIFIABLE_H__
 
+#include "object.h"
+
 #include <string>
 
 using namespace std;

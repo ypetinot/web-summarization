@@ -115,20 +115,6 @@ long Corpus::get_unigram_count( long word_id ) const {
 
 }
 
-/* get template dp */
-DirichletProcess<Template>& Corpus::get_template_dp() {
-
-  return _template_dp;
-
-}
-
-/* get slot type dp */
-DirichletProcess<GappyPatternProcess>& Corpus::get_slot_type_dp() {
-
-  return _slot_type_dp;
-
-}
-
 /* get next slot type id */
 unsigned int Corpus::get_next_slot_type_id() {
 

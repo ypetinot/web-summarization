@@ -15,6 +15,11 @@ DirichletProcess< Template , Distribution<Template> >& TemplateModel::_get_under
   return _template_dp;
 }
 
+/* get template dp */
+DirichletProcess<Template>& TemplateModel::get_template_dp() {
+  return _template_dp;
+}
+
 /* fit model against corpus */
 void TemplateModel::train() {
 

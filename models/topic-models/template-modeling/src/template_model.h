@@ -17,6 +17,45 @@ class TemplateModel {
   /* get template dp */
   //DirichletProcess< Template , TemplateUniformDistribution >& get_template_dp();
   DirichletProcess< Template , Distribution<Template> >& get_template_dp();
+
+  /* get slot type dp */
+  DirichletProcess< GappyPatternProcess  >& get_slot_type_dp();
+
+  // TODO : this used to be in corpus.h , make sure it makes sense here
+  /* get next slot type id */
+  unsigned int get_next_slot_type_id();
+
+  // TODO : this used to be in corpus.h , make sure it makes sense here
+  /* get slot types */
+  vector< GappyPatternProcess* > get_slot_types();
+
+  // TODO : this used to be in corpus.h , make sure it makes sense here
+  /* template distribution */
+  DirichletProcess<Template> _template_dp;
+  
+  // TODO : this used to be in corpus.h , make sure it makes sense here
+  /* slot type distribution */
+  DirichletProcess<GappyPatternProcess> _slot_type_dp;
+
+  // TODO : this used to be in corpus.h , make sure it makes sense here
+  /* list of slot types */
+  vector< tr1::shared_ptr<GappyPatternProcess> > _slot_types;
+
+  // TODO : this used to be in corpus.h , make sure it makes sense here
+  /* next slot type id */
+  unsigned int _next_slot_type_id;
+
+  // TODO : this used to be in corpus.h , make sure it makes sense here
+  /* alpha - dirichel process concentration parameter */
+  double _alpha;
+
+  // TODO : this used to be in corpus.h , make sure it makes sense here
+  /* gappy patterns lambda parameter */
+  double _gappy_patterns_lambda;
+
+  // TODO : this used to be in corpus.h , make sure it makes sense here
+  /* gappy patterns alpha parameter */
+  double _gappy_patterns_alpha;
   
  public:
 

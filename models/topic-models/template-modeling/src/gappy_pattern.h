@@ -2,7 +2,8 @@
 #define __GAPPY_PATTERN_H__
 
 #include "corpus.h"
-#include "multinomial_distribution.h"
+#include "probabilistic_object.h"
+#include "stringifiable.h"
 #include "template_element.h"
 
 #include <google/dense_hash_map>
@@ -17,16 +18,15 @@
 using namespace std;
 using namespace google;
 
-class TemplateSlot;
+/* The GappyPattern class abstracts the notion of a single gappy pattern --- i.e. a gap-including sequence potentially corresponding to a sub-sequence of a full-fledged sentence --- and provides elementary operations to iteratively transform the state of the gappy pattern */
 
-/* The GappyPattern class abstracts the notion of a single gappy pattern, providing elementary operations to iteratively transform the gappy pattern */
-
-class GappyPattern: public StringifiableObject, public TemplateElement {
+class GappyPattern: public PoissonProbabilisticObject, public StringifiableObject {
 
  public:
 
   /* constructor */
-  GappyPattern( const TemplateSlot& ts );
+  // TODO : a gappy pattern should probably be initialized with a target length
+  GappyPattern();
 
   /* destructor */
   ~GappyPattern();
@@ -56,9 +56,6 @@ class GappyPattern: public StringifiableObject, public TemplateElement {
   string as_string_log() const;
   
  protected:
-
-  /* parent/target location */
-  const TemplateSlot& _gp_location;
 
   /* remove word from pattern */
   const GappyPattern& remove_word( unsigned int index );

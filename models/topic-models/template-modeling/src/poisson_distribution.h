@@ -2,8 +2,9 @@
 #define __POISSON_DISTRIBUTION_H__
 
 #include "distribution.h"
+#include "probabilistic_object.h"
 
-template< class T> class PoissonDistribution: public Distribution<T> {
+template< class T> class PoissonDistribution: public Distribution {
  
  public:
 
@@ -25,6 +26,20 @@ template< class T> class PoissonDistribution: public Distribution<T> {
   /* precomputed Poisson distribution for the gappy pattern lengths */
   static vector<double> _poisson_distribution;
 
+};
+
+template< class T> class PoissonProbabilisticObject: public ProbabilisticObject, public PoissonDistribution<T> {
+
+ public:
+
+  /* constructor */
+  PoissonProbabilisticObject( Corpus& corpus , double lambda )
+    :PoissonDistribution<T>(corpus,lambda) {
+
+    /* nothing */
+    
+  }
+  
 };
 
 #endif

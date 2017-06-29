@@ -52,6 +52,14 @@ class TemplateElement {
   /* to index */
   int to;
 
+  /* parent location - defines a hierarchy between content blocks */
+  // TODO : what would make the most sense here ? Maintaining the parent element or children elements ?
+  //        => this probably has to do with how we will be performing sampling
+  const TemplateElement& _parent;
+  
+  // TODO : add some internal object describing the distribution associated with this element (in case this is a probabilitic object)  
+  //const TemplateSlot& _gp_location;
+  
 };
 
 #endif

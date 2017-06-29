@@ -25,11 +25,3 @@ double ProbabilisticObject::probability() {
   return exp( this->log_probability() );
 
 }
-
-/* constructor */
-PoissonProbabilisticObject::PoissonProbabilisticObject( Corpus& corpus , double lambda )
-  :PoissonDistribution(corpus,lambda) {
-
-  /* nothing */
-
-}

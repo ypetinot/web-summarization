@@ -5,7 +5,6 @@
 /* The content of template slots is modeled using a gappy pattern model */
 
 #include "definitions.h"
-#include "gappy_pattern_process.h"
 #include "probabilistic_object.h"
 #include "registrable_object.h"
 #include "template_element.h"

@@ -1,9 +1,6 @@
 #ifndef __CORPUS_H__
 #define __CORPUS_H__
 
-#include "dirichlet_process.h"
-#include "gappy_pattern_process.h"
-
 #include <glog/logging.h>
 #include <google/dense_hash_map>
 #include <fstream>
@@ -15,7 +12,6 @@ using namespace std;
 
 /* TODO : this probably should not be necessary => try to remove circular dependencies between classes ? */
 class Gist;
-class Template;
 
 class Corpus {
 
@@ -36,15 +32,6 @@ class Corpus {
   /* get unigram count */
   long get_unigram_count( long word_id ) const;
 
-  /* get slot type dp */
-  DirichletProcess< GappyPatternProcess  >& get_slot_type_dp();
-
-  /* get next slot type id */
-  unsigned int get_next_slot_type_id();
-
-  /* get slot types */
-  vector< GappyPatternProcess* > get_slot_types();
-  
  private:
 
   /* unigram counts */
@@ -52,27 +39,6 @@ class Corpus {
   
   /* total unigram count */
   long _total_unigram_count;
-
-  /* template distribution */
-  DirichletProcess<Template> _template_dp;
-  
-  /* slot type distribution */
-  DirichletProcess<GappyPatternProcess> _slot_type_dp;
-
-  /* list of slot types */
-  vector< tr1::shared_ptr<GappyPatternProcess> > _slot_types;
-
-  /* next slot type id */
-  unsigned int _next_slot_type_id;
-
-  /* alpha - dirichel process concentration parameter */
-  double _alpha;
-
-  /* gappy patterns lambda parameter */
-  double _gappy_patterns_lambda;
-  
-  /* gappy patterns alpha parameter */
-  double _gappy_patterns_alpha;
 
 };
 

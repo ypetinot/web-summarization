@@ -2,7 +2,6 @@
 #define __PROBABILISTIC_OBJECT_H__
 
 #include "definitions.h"
-#include "poisson_distribution.h"
 #include "statistics.h"
 #include <vector>
 
@@ -67,16 +66,6 @@ class ProbabilisticObject: public MultinomialSampler, public StringifiableObject
 };
 
 class CountableProbabilisticObject: public ProbabilisticObject, public CountableObject {
-
-};
-
-/* TODO : does the use of a template here make sense ? */
-template< class T> class PoissonProbabilisticObject: public ProbabilisticObject, public PoissonDistribution<T> {
-
- public:
-
-  /* constructor */
-  PoissonProbabilisticObject( Corpus& corpus , double lambda );
 
 };
 

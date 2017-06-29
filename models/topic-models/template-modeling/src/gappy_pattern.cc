@@ -1,14 +1,12 @@
 #include "gappy_pattern.h"
-#include "gist.h"
 #include "parameters.h"
 #include "statistics.h"
-#include "template_slot.h"
 
 #include <glog/logging.h>
 #include <fstream>
 
 /* constructor */
-GappyPattern::GappyPattern( const TemplateSlot& ts )
+GappyPattern::GappyPattern()
   :PoissonProbabilisticObject(ts.get_gist()->get_corpus(),FLAGS_gappy_patterns_lambda),TemplateElement(ts.get_gist(),ts.get_from(),ts.get_to()),_gp_location(ts),number_of_words(0),_pattern_markers( ts.length() , 0 ) {
 
   /* nothing for now */

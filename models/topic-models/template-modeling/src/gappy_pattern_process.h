@@ -1,13 +1,14 @@
 #ifndef __GAPPY_PATTERN_PROCESS__
 #define __GAPPY_PATTERN_PROCESS__
 
+#include "dirichlet_process.h"
 #include "gappy_pattern.h"
 #include "gappy_pattern_uniform_distribution.h"
 
 /* The GappyPatternProcess class abstracts the notion of a (Dirichlet) process controlling the creation (is this the right word ?) of gappy patterns */
 
 // TODO : is this class fundamentally different from a Dirichlet process ?
-typedef DirichletProcess< GappyPattern , GappyPatternUniformDistribution > GappyPatternProcess;
+typedef DirichletProcess<GappyPattern,GappyPatternUniformDistribution> GappyPatternProcess;
 
 #if 0
 class GappyPatternProcess: public CountableProbabilisticObject {
