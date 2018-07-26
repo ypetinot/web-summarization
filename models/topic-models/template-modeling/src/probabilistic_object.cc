@@ -1,4 +1,5 @@
 #include "probabilistic_object.h"
+#include <math.h>
 
 dsfmt_t dsfmt;
 

@@ -1,34 +1,36 @@
 #ifndef __GIST_H__
 #define __GIST_H__
 
-#include "corpus.h"
-#include "gappy_pattern.h"
-#include "probabilistic_object.h"
-#include "template.h"
+// TODO : no reason to have any reference to templates in the Gist class
+// TODO : rename to Sequence ?
+
+#include "definitions.h"
+#include "sequence.h"
 #include "tree.h"
 
 #include <google/dense_hash_map>
 #include <set>
 #include <string>
 #include <tr1/memory>
+#include <vector>
 
 #define UNIGRAMS_EMPTY_KEY -10000
 #define UNIGRAMS_DELETED_KEY -20000
 
 using namespace std;
 
-class GappyPattern;
-
 /* Each gist maintains its own sampling state and contains: */
 /* --> Raw gist data */
 /* --> Template object ( managing the top level template as well as the associated template slots ) */
 
-class Gist: public MultinomialSampler {
+// TODO : do we really need a custom class to model the notion of a sequence of tokens ?
+class Gist: public Sequence<long> {
 
  public:
   
   /* constructor */
-  Gist( Corpus& corpus , const string& url , const vector<long>& w , tr1::shared_ptr<Category> category );
+  /* TODO : it is probably not relevant to have a reference to Category here */
+  Gist( const string& url , const vector<long>& w , tr1::shared_ptr<Category> category );
 
   /* get url associated with this gist */
   string get_url() const;
@@ -51,20 +53,8 @@ class Gist: public MultinomialSampler {
   /* get category */
   tr1::shared_ptr<Category> get_category() const;
 
-  /* get template */
-  tr1::shared_ptr<Template> get_template();
-
   /* unset template */
   void unset_template();
-  
-  /* set template */
-  void set_template( tr1::shared_ptr<Template> t );
-
-  /* (re)-sample top level template for this gist */
-  void sample_template();
-
-  /* get corpus */
-  Corpus& get_corpus();
 
   /* sample template at specific location */
   void sample_template_at_location( unsigned int i );
@@ -83,20 +73,8 @@ class Gist: public MultinomialSampler {
   /* Each word is either templatic or non templatic */
   vector<bool> w_templatic;
 
-  /* Corpus to which this entry belongs */
-  Corpus& _corpus;
-
   /* Category to which this entry belongs */
   tr1::shared_ptr<Category> _category;
-
-  /* Current template for this gist */
-  tr1::shared_ptr<Template> _template;
-
-  /* has the associated template been initialized */
-  bool _template_initialized;
-
-  /* sample top-level template */
-  tr1::shared_ptr<Template> sample_top_level_template( unsigned int index ) const;
 
 };
 

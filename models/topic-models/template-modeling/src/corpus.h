@@ -1,6 +1,8 @@
 #ifndef __CORPUS_H__
 #define __CORPUS_H__
 
+#include "gist.h"
+
 #include <glog/logging.h>
 #include <google/dense_hash_map>
 #include <fstream>
@@ -10,15 +12,12 @@
 using namespace google;
 using namespace std;
 
-/* TODO : this probably should not be necessary => try to remove circular dependencies between classes ? */
-class Gist;
-
 class Corpus {
 
  public:
   
   /* constructor */
-  Corpus( double template_poisson_lambda , double template_dp_alpha , double slot_type_dp_alpha, double gappy_pattern_poisson_lambda , double alpha );
+  Corpus();
 
   /* register word instance */
   void register_word_instance( const Gist* gist , long word_id );

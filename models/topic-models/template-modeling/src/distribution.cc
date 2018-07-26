@@ -5,9 +5,11 @@
 #include <glog/logging.h>
 
 /* constructor */
-Distribution::Distribution( const Corpus& corpus )
-  :_corpus(corpus) {
-
+Distribution::Distribution() {
   /* nothing */
-  
+}
+
+/* probability of a given event in the corpus */
+double probability( const T& event ) {
+  return exp( log_probability( event ) );
 }

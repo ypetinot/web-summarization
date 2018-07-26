@@ -3,6 +3,7 @@
 
 #include "definitions.h"
 #include "statistics.h"
+#include "stringifiable.h"
 #include <vector>
 
 #include <dSFMT.h>

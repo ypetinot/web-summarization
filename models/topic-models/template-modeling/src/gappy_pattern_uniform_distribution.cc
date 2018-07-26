@@ -1,7 +1,7 @@
 #include "gappy_pattern_uniform_distribution.h"
 
 /* compute the the probability of the specified instance */
-double GappyPatternUniformDistribution::probability( const GappyPattern& instance ) {
+double GappyPatternUniformDistribution::log_probability( const GappyPattern& instance ) {
 
   vector<long> unigrams = instance.get_words();
   unsigned int number_of_arrangements = get_number_of_arrangements( instance );
@@ -36,4 +36,23 @@ long GappyPatternUniformDistribution::get_number_of_arrangements( const GappyPat
   /* TODO */
   return 1;
 
+}
+
+/* compute probability of (joint) unigram appearances in gappy pattern */
+double GappyPatternUniformDistribution::compute_unigram_probability( const vector< long >& unigrams ) {
+
+  double total_unigram_count = _corpus.get_total_unigram_count();
+  CHECK( total_unigram_count > 0 );
+
+  double probability = 1.0;
+  
+  for ( vector<long>::const_iterator iter = unigrams.begin(); iter != unigrams.end(); iter++ ) {
+    
+    // TODO : proper smoothing for unigram distribution ? at least implement Laplace smoothing ...
+    probability *= ( _corpus.get_unigram_count( *iter ) / total_unigram_count ) + 0.001;
+    
+  }
+  
+  return probability;
+  
 }

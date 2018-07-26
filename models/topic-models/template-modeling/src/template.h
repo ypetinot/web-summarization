@@ -16,8 +16,7 @@ using namespace std;
 
    Design notes:
 
-   * The template class maintains the templatic status at all locations for the target gist, this is independent from the registerer template for that
-   gist (in fact the template may very well not be registered at all).
+   * The template class maintains the templatic status at all locations for the target sentence, this is independent from the registered template for that sentence (in fact the template may very well not be registered at all).
 
  */
 
@@ -49,7 +48,7 @@ class Template: public StringifiableObject {
   /* return gist/template data as string */
   string as_string() const;
 
-  /* return gist/template data as string (log content) */
+  /* return sentence/template data as string (log content) */
   string as_string_log() const;
   
   /* as_string with more options */
@@ -58,7 +57,7 @@ class Template: public StringifiableObject {
   /* get templatic status for a specific word */
   int get_templatic_status( unsigned int index ) const;
 
-  /* get underlying gist */
+  /* get underlying st */
   const Gist* get_gist() const;
 
   /* tentatively (?) update template state */

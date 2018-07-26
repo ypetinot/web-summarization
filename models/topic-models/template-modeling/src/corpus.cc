@@ -1,4 +1,5 @@
 #include "corpus.h"
+#include "definitions.h"
 #include "gist.h"
 
 #include <set>
@@ -10,15 +11,11 @@
 using namespace google::protobuf;
 
 /* constructor */
-Corpus::Corpus( double template_poisson_lambda , double template_dp_alpha , double slot_type_dp_alpha, double gappy_pattern_poisson_lambda , double alpha )
-  :
+Corpus::Corpus()
 #if 0
 _template_base_distribution(*this,template_poisson_lambda),_slot_type_base_distribution(*this),
 #endif
-_template_dp("templates",template_dp_alpha),_slot_type_dp("slot-types",slot_type_dp_alpha),
-_gappy_patterns_lambda(gappy_pattern_poisson_lambda),_gappy_patterns_alpha(alpha),
-   _total_unigram_count(0),
-   _next_slot_type_id(0) {
+{
   
   /* init unigram --> counts */
   _unigram_counts.set_empty_key(UNIGRAMS_EMPTY_KEY);
@@ -82,7 +79,7 @@ vector< tr1::shared_ptr<Gist> > Corpus::load_gist_data(const string& filename) {
     //Category* category = TreeManager ...
     tr1::shared_ptr<Category> category( new Category( path ) );
 
-    tr1::shared_ptr<Gist> gist( new Gist( *this , url , word_ids , category ) );
+    tr1::shared_ptr<Gist> gist( new Gist( url , word_ids , category ) );
     gists.push_back( gist );
 
     /* collect word frequency data */
@@ -112,40 +109,5 @@ long Corpus::get_unigram_count( long word_id ) const {
   }
 
   return 0;
-
-}
-
-/* get next slot type id */
-unsigned int Corpus::get_next_slot_type_id() {
-
-  return _next_slot_type_id++;
-
-}
-
-/* get slot types */
-vector< GappyPatternProcess* > Corpus::get_slot_types() {
-
-#if 0
-  vector< string > instance_ids = _slot_type_dp.get_instance_ids();
-  
-  /* the slot ids are simply indices in  ... */
-#endif
-
-  if ( (!_slot_types.size()) || (_slot_types[ _slot_types.size() - 1 ]->count() > 0) ) {
-
-    /* create "new" slot type for sampling purposes */
-    /* Note: is this the right place for this ? */
-    
-    tr1::shared_ptr<GappyPatternProcess> new_process( new GappyPatternProcess( _slot_types.size() , *this ) );
-    _slot_types.push_back( new_process );
-
-  }
-
-  vector< GappyPatternProcess* > slot_types;
-  for ( vector< tr1::shared_ptr<GappyPatternProcess> >::const_iterator iter = _slot_types.begin(); iter != _slot_types.end(); ++iter ) {
-    slot_types.push_back( (*iter).get() );
-  }
-
-  return slot_types;
 
 }

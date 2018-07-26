@@ -4,15 +4,15 @@
 #include "distribution.h"
 #include "probabilistic_object.h"
 
-template< class T> class PoissonDistribution: public Distribution {
+class PoissonDistribution: public Distribution< unsigned int > {
  
  public:
 
   /* constructor */
   PoissonDistribution( const Corpus& corpus, double lambda );
 
-  /* get log probability */
-  double get_poisson_log_probability( unsigned int n );
+  /* get log probability of event */
+  double log_probability( const unsigned int & n );
 
   /* TODO : not sure this belongs here */
   /* compute probability of (joint) unigram appearances in gappy pattern */
@@ -28,16 +28,26 @@ template< class T> class PoissonDistribution: public Distribution {
 
 };
 
-template< class T> class PoissonProbabilisticObject: public ProbabilisticObject, public PoissonDistribution<T> {
+/* TODO : there is a confusion between whether an instance of this class represents a distribution or a specific outcome of this distribution */
+/* A PoissonProbabilisticObject is an object whose state is obtained through sampling and for which the distribution controlling this sampling is a PoissonDistribution */
+template< class T> class PoissonProbabilisticObject: public ProbabilisticObject {
 
+ protected:
+  const PoissonDistribution _poisson_distribution;
+  
  public:
-
+  
   /* constructor */
   PoissonProbabilisticObject( Corpus& corpus , double lambda )
-    :PoissonDistribution<T>(corpus,lambda) {
+    :_poisson_distribution(lambda) {
 
     /* nothing */
     
+  }
+
+  double log_probability( const T& event ) {
+    /* TODO : is the poisson distribution on the number of words ? */
+    return _poisson_distribution.log_probability( event.number_of_words() );
   }
   
 };

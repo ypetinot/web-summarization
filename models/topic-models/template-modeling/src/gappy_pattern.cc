@@ -7,65 +7,45 @@
 
 /* constructor */
 GappyPattern::GappyPattern()
-  :PoissonProbabilisticObject(ts.get_gist()->get_corpus(),FLAGS_gappy_patterns_lambda),TemplateElement(ts.get_gist(),ts.get_from(),ts.get_to()),_gp_location(ts),number_of_words(0),_pattern_markers( ts.length() , 0 ) {
-
+  :_gp_location(ts),number_of_words(0),_pattern_markers( ts.length() , 0 ) {
   /* nothing for now */
-
 }
 
 /* destructor */
 GappyPattern::~GappyPattern() {
-
   /* nothing for now */
-
 }
 
 /* add word to pattern */
 const GappyPattern& GappyPattern::add_word( unsigned int index ) {
-
   set_pattern_marker( index , true );
-
   number_of_words++;
-
   return *this;
-
 }
 
 /* remove word from pattern */
 const GappyPattern& GappyPattern::remove_word( unsigned int index ) {
-
   set_pattern_marker( index , false );
-
   number_of_words--;
-
   return *this;
-
 }
 
 /* set pattern marker */
 void GappyPattern::set_pattern_marker( unsigned int index , bool status ) {
-
   unsigned int offset = _gp_location.get_from();
-
   CHECK_GE( index , 0 );
   CHECK_LE( index - offset , _pattern_markers.size() );
-
   _pattern_markers[ index - offset ] = status;
-
 }
 
 /* add gap to pattern */
 const GappyPattern& GappyPattern::add_gap( unsigned int index ) {
-
   return remove_word( index );
-
 }
 
 /* number of words getter */
 unsigned int GappyPattern::get_number_of_words() const {
-
   return number_of_words;
-
 }
 
 /* get words */

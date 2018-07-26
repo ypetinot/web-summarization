@@ -3,9 +3,12 @@
 // TODO : reintroduce PoissonProbabilisticObject(gist->get_corpus(),FLAGS_template_dp_lambda)
 
 /* constructor */
-TemplateModel::TemplateModel( const Corpus& corpus )
-  :_corpus(corpus),_template_dp() {
-
+TemplateModel::TemplateModel( const Corpus& corpus , double template_poisson_lambda , double template_dp_alpha , double slot_type_dp_alpha, double gappy_pattern_poisson_lambda , double alpha )
+  :_corpus(corpus),_template_dp("templates",template_dp_alpha),
+   _slot_type_dp("slot-types",slot_type_dp_alpha),
+   _gappy_patterns_lambda(gappy_pattern_poisson_lambda),_gappy_patterns_alpha(alpha),_total_unigram_count(0),_next_slot_type_id(0)
+{
+  
   /* nothing */
   
 }
@@ -108,5 +111,81 @@ void TemplateModel::unregister_template_with_dp( const Template& template_instan
     }
     
   }
+
+}
+
+/* get next slot type id */
+unsigned int TemplateModel::get_next_slot_type_id() {
+  return _next_slot_type_id++;
+}
+
+/* get slot types */
+vector< GappyPatternProcess* > TemplateModel::get_slot_types() {
+
+#if 0
+  vector< string > instance_ids = _slot_type_dp.get_instance_ids();
+  
+  /* the slot ids are simply indices in  ... */
+#endif
+
+  if ( (!_slot_types.size()) || (_slot_types[ _slot_types.size() - 1 ]->count() > 0) ) {
+
+    /* create "new" slot type for sampling purposes */
+    /* Note: is this the right place for this ? */
+    
+    tr1::shared_ptr<GappyPatternProcess> new_process( new GappyPatternProcess( _slot_types.size() , *this ) );
+    _slot_types.push_back( new_process );
+
+  }
+
+  vector< GappyPatternProcess* > slot_types;
+  for ( vector< tr1::shared_ptr<GappyPatternProcess> >::const_iterator iter = _slot_types.begin(); iter != _slot_types.end(); ++iter ) {
+    slot_types.push_back( (*iter).get() );
+  }
+
+  return slot_types;
+
+}
+
+/* sample top-level template */
+/* gibbs-sampling : other variables (--> inclusion in template at other locations) remain unchanged */
+/* MISSING: structure change must factor out the slot types and their color assignments ? */
+tr1::shared_ptr<Template> Gist::sample_top_level_template( unsigned int index ) const {
+
+  /* the current template (even though it has been unset at this point) */
+  tr1::shared_ptr<Template> current_template = _template;
+
+  /* 1 - get templatic state for the current word */
+  int current_word_state = current_template->get_templatic_status( index );
+  CHECK( current_word_state == TEMPLATIC_STATUS_SLOT || current_word_state == TEMPLATIC_STATUS_TEMPLATIC );
+  
+  /* 2 - we make a copy of the current template structure (will be used to create the second sampling candidate) */
+  tr1::shared_ptr<Template> flipped_template( new Template( *( current_template.get() ) ) );
+  flipped_template->flip_templatic_status( index );
+  
+  /* vector of template sampling options */
+  vector< tr1::shared_ptr<Template> > template_sampling_options;
+  vector<double> template_sampling_probabilities;
+  
+  /* 3 - compute the probability of the templatic transition */
+  double template_transition_probability = _corpus.get_template_dp().transition_probability( *( current_template.get() ) , *( flipped_template.get() ) );
+  
+  /* 4 - compute the (unnormalized) probability of actually including the current word in the top level template */
+  double current_template_probability = template_transition_probability * current_template->probability();
+  template_sampling_options.push_back( current_template );
+  template_sampling_probabilities.push_back( current_template_probability );
+  
+  /* 5 - compute the (unnormalized) probability of not including the current word in the top level template */
+  double flipped_template_probability = ( 1 - template_transition_probability ) * flipped_template->probability();
+  template_sampling_options.push_back( flipped_template );
+  template_sampling_probabilities.push_back( flipped_template_probability );
+  
+  /* 6 - sample new template based on state options for the current word */
+  unsigned int sampled_index = multinomial_sampler< tr1::shared_ptr<Template> >( template_sampling_options ,
+										 template_sampling_probabilities );
+  tr1::shared_ptr<Template> sampled_template = template_sampling_options[ sampled_index ];
+
+  /* return sampled template */
+  return sampled_template;
 
 }

@@ -2,17 +2,14 @@
 #define __TEMPLATE_MODEL_H__
 
 typedef DirichletProcess< GappyPatternProcess , TemplateSlotUniformDistribution > TemplateSlotProcess;
+typedef DirichletProcess< Template , TemplateUniformDistribution > MultiSlotTypeTemplateDP;
 
-class TemplateModel {
+class MultiSlotTypeTemplateModel: public Model {
 
  protected:
 
-  // TODO : should this really be a field in this class ? => turn this into a parameter for the train method ?
-  /* corpus on which the model is to be trained */
-  const Corpus& _corpus;
-
   // Note : uniform base (prior) distribution => all structurally acceptable templates are (initially) equiprobable
-  DirichletProcess< Template , TemplateUniformDistribution > _template_dp;
+  MultiSlotTypeTemplateDP _template_dp;
   
   /* get template dp */
   //DirichletProcess< Template , TemplateUniformDistribution >& get_template_dp();
@@ -59,8 +56,12 @@ class TemplateModel {
   
  public:
 
+  MultiSlotTypeTemplateModel(double template_poisson_lambda , double template_dp_alpha , double slot_type_dp_alpha, double gappy_pattern_poisson_lambda , double alpha);
+  
   /* fit model against corpus */
-  void train();
+  // Note: the corpus is not a field of this class so we can easily serialize/deserialize the model
+  // TODO : problem is that this will not allow us to easily associate a state with the corpus object
+  void train(Corpus& corpus);
 
   /* register template with underlying dp */
   void register_template_with_dp( const Template& template_instance );
@@ -71,7 +72,7 @@ class TemplateModel {
   /* TODO : does this really belong here ? */
   /* template probability (full configuration, including slots and their fillers) */
   double log_probability( const Template& template_instance );
-  
-}
 
+};
+  
 #endif

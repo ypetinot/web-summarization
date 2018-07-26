@@ -2,7 +2,7 @@
 #define __GAPPY_PATTERN_H__
 
 #include "corpus.h"
-#include "probabilistic_object.h"
+#include "poisson_distribution.h"
 #include "stringifiable.h"
 #include "template_element.h"
 
@@ -20,7 +20,12 @@ using namespace google;
 
 /* The GappyPattern class abstracts the notion of a single gappy pattern --- i.e. a gap-including sequence potentially corresponding to a sub-sequence of a full-fledged sentence --- and provides elementary operations to iteratively transform the state of the gappy pattern */
 
-class GappyPattern: public PoissonProbabilisticObject, public StringifiableObject {
+// TODO : is this supposed to model a complete sequence or strictly a single pattern ? => GappyPatternSequence
+// TODO : is there even a need for a class allowing the transformation of Gappy Patterns ?
+
+/* base distribution : "patterns must begin and end with words and may not cntain consecutive gaps" */
+
+class GappyPattern: public StringifiableObject {
 
  public:
 

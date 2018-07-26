@@ -17,7 +17,9 @@ all: $(EXECUTABLES)
 %.o: %.cc
 	$(COMPILE) -c $< -o $@
 
-OBJECTS=parameters.o probabilistic_object.o gappy_pattern.o corpus.o template.o gist.o tree.o template_modeling.o template_sampler.o template_element.o template_slot.o statistics.o dirichlet_process.o distribution.o poisson_distribution.o
+OBJECTS=parameters.o probabilistic_object.o corpus.o gist.o tree.o template_sampler.o template_modeling.o template_element.o template_slot.o statistics.o dirichlet_process.o distribution.o poisson_distribution.o gappy_pattern.o
+# TODO : re-enable once I have the basic gappy pattern model working
+# template.o
 #gappy_pattern_process.o
 #dSFMT.o
 #object.o => where did this use to come from ?
