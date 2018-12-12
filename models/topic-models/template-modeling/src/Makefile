@@ -17,9 +17,13 @@ all: $(EXECUTABLES)
 %.o: %.cc
 	$(COMPILE) -c $< -o $@
 
-OBJECTS=parameters.o probabilistic_object.o corpus.o gist.o tree.o template_sampler.o template_modeling.o template_element.o template_slot.o statistics.o dirichlet_process.o distribution.o poisson_distribution.o gappy_pattern.o
+OBJECTS_COMMON=parameters.o probabilistic_object.o corpus.o gist.o tree.o statistics.o dirichlet_process.o poisson_distribution.o template_modeling.o
+#TODO: apply template base dir to all
+OBJECTS_TEMPLATE=template_element.o template_slot.o
+OBJECTS_GAPPY_PATTERN=gappy_pattern.o
+OBJECTS=$(OBJECTS_COMMON) $(OBJECTS_GAPPY_PATTERN)
 # TODO : re-enable once I have the basic gappy pattern model working
-# template.o
+# template.o template_sampler.o
 #gappy_pattern_process.o
 #dSFMT.o
 #object.o => where did this use to come from ?

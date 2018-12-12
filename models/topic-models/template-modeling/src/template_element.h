@@ -1,19 +1,19 @@
 #ifndef __TEMPLATE_ELEMENT_H__
 #define __TEMPLATE_ELEMENT_H__
 
+#include "gist.h"
+
 #include <tr1/memory>
 #include <vector>
 
 using namespace std;
-
-class Gist;
 
 class TemplateElement {
 
  public:
 
   /* constructor */
-  TemplateElement( Gist* gist , unsigned int f, unsigned int t );
+  TemplateElement( const Gist& gist , unsigned int f, unsigned int t );
 
 #if 0
   /* is this element templatic */
@@ -39,12 +39,12 @@ class TemplateElement {
   string get_word_as_string( unsigned int index ) const;
 
   /* get gist */
-  Gist* get_gist() const;
+  const Gist& get_gist() const;
 
  protected:
 
   /* reference gist */
-  Gist* _gist;
+  const Gist& _gist;
 
   /* from index */
   int from;
@@ -55,7 +55,7 @@ class TemplateElement {
   /* parent location - defines a hierarchy between content blocks */
   // TODO : what would make the most sense here ? Maintaining the parent element or children elements ?
   //        => this probably has to do with how we will be performing sampling
-  const TemplateElement& _parent;
+  //const TemplateElement& _parent;
   
   // TODO : add some internal object describing the distribution associated with this element (in case this is a probabilitic object)  
   //const TemplateSlot& _gp_location;

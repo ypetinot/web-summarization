@@ -8,6 +8,8 @@
 #include "probabilistic_object.h"
 #include "registrable_object.h"
 #include "template_element.h"
+#include "gappy_pattern.h"
+#include "gappy_pattern_process.h"
 
 #include <deque>
 #include <google/dense_hash_map>
@@ -21,12 +23,12 @@
 using namespace google;
 
 /* TODO : add a LocallyUpdateableObject */
-class TemplateSlot: public StringifiableObject, public TemplateElement {
+class TemplateSlot: public StringifiableObject, public TemplateElement, public RegistrableObject {
 
  public:
 
   /* constructor ( with random initialization ) */
-  TemplateSlot( Gist* gist, unsigned int f , unsigned int t );
+  TemplateSlot( const Gist& gist, unsigned int f , unsigned int t );
 
   /* copy constructor */
   TemplateSlot( const TemplateSlot& ts );

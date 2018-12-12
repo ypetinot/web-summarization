@@ -43,6 +43,11 @@ template< class T > class Distribution {
 
   /* log probability of a given event */
   virtual double log_probability( const T& event ) = 0;
+
+  /* probability of a given event in the corpus */
+  double probability( const T& event ) {
+    return exp( log_probability( event ) );
+  }
   
  protected:
 

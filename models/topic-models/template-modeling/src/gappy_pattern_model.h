@@ -32,7 +32,7 @@ class GappyPatternModel: public Model {
   /* TODO : should GappyPatternUniformDistribution be a type parameter ? Could it simply be instantiated and passed as an object parameter ? */
   DirichletProcess< GappyPattern , GappyPatternUniformDistribution > _gp_dp;
 
-  /* each corpus sentence is assigned a template state */
+  /* each sequence in the corpus (as represented by its id) is assigned a template state that describes the overlay of gappy patterns over the sequence */
   // TODO : is this something we would want to be able to serialize ?
   dense_hash_map< long , GappyPatternSequence > _gp_sequences;
 

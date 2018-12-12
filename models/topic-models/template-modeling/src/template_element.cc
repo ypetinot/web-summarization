@@ -4,8 +4,12 @@
 #include "gist.h"
 
 /* constructor */
-TemplateElement::TemplateElement( Gist* gist, unsigned int f, unsigned int t )
-  :_gist(gist),from(f),to(t) {
+TemplateElement::TemplateElement( const Gist& gist,
+				  //const TemplateElement parent,
+				  unsigned int f, unsigned int t )
+  :_gist(gist),
+   //_parent(parent),
+   from(f),to(t) {
 
   /* nothing for now */
 
@@ -28,7 +32,7 @@ long TemplateElement::get_word( unsigned int index ) const {
   
   unsigned int true_index = from + index;
   
-  return _gist->get_word( true_index );
+  return _gist.get_word( true_index );
 
 }
 
@@ -60,13 +64,11 @@ string TemplateElement::get_word_as_string( unsigned int index ) const {
   
   unsigned int real_index = from + index ;
   
-  return _gist->get_word_as_string( real_index );
+  return _gist.get_word_as_string( real_index );
 
 }
 
 /* get gist */
-Gist* TemplateElement::get_gist() const {
-
+const Gist& TemplateElement::get_gist() const {
   return _gist;
-
 }

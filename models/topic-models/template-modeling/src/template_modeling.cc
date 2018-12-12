@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
   /* do i still need this ? */
   init_random(FLAGS_random_seed);
 
-  /* 0 - create new corpus */
+  /* 0 - create new sequence data corpus */
   LOG(INFO) << "Creating new corpus ...";
   // TODO : provide the corpus root path as an argument ?
   const Corpus corpus = Corpus();
@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
   
   /* training/sampling */
   /* we use line_no as the document id, but the corresponding data is assumed to be uniformly distributed */
+  // TODO : should the train method be provided by the sampler class ?
   model_sampler.train(model);
 
   /* compute perplexity of held-out data ( this cause the log-likelihood of each document to be written to STDOUT */

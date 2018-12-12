@@ -7,8 +7,10 @@
 
 /* constructor ( with random initialization ) */
 /* TODO: potential inconsistency with the initial size for w_colors set to 0 */
-TemplateSlot::TemplateSlot( Gist* gist, unsigned int f , unsigned int t )
-  :RegistrableObject(),_slot_type(NULL),TemplateElement(gist,f,t),number_of_colors(0),w_colors(0) {
+TemplateSlot::TemplateSlot( const Gist& gist, unsigned int f , unsigned int t )
+  :StringifiableObject(),_slot_type(NULL),TemplateElement(gist,f,t),number_of_colors(0),w_colors(0)
+
+{
 
   /* init colors --> words mapping */
   /* TODO: switch to int keys */
