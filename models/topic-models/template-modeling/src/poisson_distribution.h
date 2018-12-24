@@ -9,14 +9,10 @@ class PoissonDistribution: public Distribution< unsigned int > {
  public:
 
   /* constructor */
-  PoissonDistribution( const Corpus& corpus, double lambda );
+  PoissonDistribution(double lambda);
 
   /* get log probability of event */
   double log_probability( const unsigned int & n );
-
-  /* TODO : not sure this belongs here */
-  /* compute probability of (joint) unigram appearances in gappy pattern */
-  double compute_unigram_probability( const vector< long >& unigrams );
 
  protected:
   
@@ -38,7 +34,7 @@ template< class T> class PoissonProbabilisticObject: public ProbabilisticObject 
  public:
   
   /* constructor */
-  PoissonProbabilisticObject( Corpus& corpus , double lambda )
+  PoissonProbabilisticObject(double lambda)
     :_poisson_distribution(lambda) {
 
     /* nothing */

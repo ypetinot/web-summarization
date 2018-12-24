@@ -16,7 +16,9 @@ class GappyPatternModel: public Model {
   /* constructor */
  GappyPatternModel(double lambda, double alpha)
    :Model(),_gp_dp("gappy-pattern",alpha) {
-    /* nothing for now */
+    /* init id -> gappy pattern sequence state mapping */
+    _gp_sequences.set_empty_key(-1);
+    _gp_sequences.set_deleted_key(-2);
   }
   
   /* destructor */

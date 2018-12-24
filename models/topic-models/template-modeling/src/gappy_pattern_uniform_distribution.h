@@ -21,6 +21,9 @@ class GappyPatternUniformDistribution: public Distribution< GappyPattern > {
   
   /* compute the probability of the specified instance */
   double log_probability( const GappyPattern& instance );
+
+  /* compute probability of (joint) unigram appearances in gappy pattern */
+  double compute_unigram_probability( const vector< long >& unigrams );
   
 };
 
