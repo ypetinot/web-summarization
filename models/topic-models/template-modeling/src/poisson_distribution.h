@@ -24,6 +24,9 @@ class PoissonDistribution: public Distribution< unsigned int > {
 
 };
 
+#endif
+
+#if 0
 /* TODO : there is a confusion between whether an instance of this class represents a distribution or a specific outcome of this distribution */
 /* A PoissonProbabilisticObject is an object whose state is obtained through sampling and for which the distribution controlling this sampling is a PoissonDistribution */
 template< class T> class PoissonProbabilisticObject: public ProbabilisticObject {

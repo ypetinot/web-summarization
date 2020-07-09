@@ -1,6 +1,8 @@
 #ifndef __DEFINITIONS_H__
 #define __DEFINITIONS_H__
 
+#include <glog/logging.h>
+
 #define COLOR_NO_COLOR 0
 
 #define TEMPLATIC_STATUS_NONE -1

@@ -1,10 +1,8 @@
 #ifndef __GAPPY_PATTERN_H__
 #define __GAPPY_PATTERN_H__
 
-#include "corpus.h"
 #include "poisson_distribution.h"
 #include "stringifiable.h"
-#include "template_element.h"
 
 #include <google/dense_hash_map>
 #include <string>
@@ -18,21 +16,20 @@
 using namespace std;
 using namespace google;
 
-/* The GappyPattern class abstracts the notion of a single gappy pattern --- i.e. a gap-including sequence potentially corresponding to a sub-sequence of a full-fledged sentence --- and provides elementary operations to iteratively transform the state of the gappy pattern */
+/* The GappyPattern class abstracts the notion of a **single** gappy pattern --- i.e. a gap-including sequence potentially corresponding to a sub-sequence of a full-fledged sentence --- and provides elementary operations to iteratively transform the state of the gappy pattern */
 
-// TODO : is this supposed to model a complete sequence or strictly a single pattern ? => GappyPatternSequence
-// TODO : is there even a need for a class allowing the transformation of Gappy Patterns ?
-
-/* base distribution : "patterns must begin and end with words and may not cntain consecutive gaps" */
+// TODO : is there even a need for this class to allow the transformation of the gappy pattern state ?
 
 class GappyPattern: public StringifiableObject {
 
  public:
 
-  /* constructor */
-  // TODO : a gappy pattern should probably be initialized with a target length
+  /* default constructor */
   GappyPattern();
-
+  
+  /* constructor */
+  GappyPattern(unsigned int length);
+  
   /* destructor */
   ~GappyPattern();
   

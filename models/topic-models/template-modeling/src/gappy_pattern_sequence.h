@@ -3,19 +3,26 @@
 
 #include "sequence.h"
 
+/* abstracts the notion of a standalone sequence fully annotated with one or more gappy patterns */
 /* extends the Sequence class with gappy pattern annotations */
-class GappyPatternSequence: public TokenSequence {
+template< class T> class GappyPatternSequence: public TokenSequence<T> {
 
  public:
   
-  /* default constructor */
- GappyPatternSequence( const string& sequence_string ):TokenSequence(sequence_string) {
+  /* constructor given a raw input sequence */
+ GappyPatternSequence( const string& sequence_string ):TokenSequence<T>(sequence_string) {
     // TODO : do we want to randomly initialize the gappy pattern annotations ?
   }
   
   /* constructor with pre-determined gappy pattern annotations */
- GappyPatternSequence( const string& sequence_string , const string& gappy_pattern_state ):TokenSequence(sequence_string) {
+ GappyPatternSequence( const string& sequence_string , const string& gappy_pattern_state ):TokenSequence<T>(sequence_string) {
     set_gappy_pattern_state( gappy_pattern_state );
+  }
+
+  /* default constructor - only needed so GappyPatternSequences can be used with containers */
+  /* TODO : make this method protected */
+  GappyPatternSequence() {
+    /* nothing */
   }
   
   /* destructor */
@@ -29,11 +36,6 @@ class GappyPatternSequence: public TokenSequence {
   }
 
  protected:
-
-  /* default constructor - only needed so GappyPatternSequences can be used with containers */
-  GappyPatternSequence() {
-    /* nothing */
-  }
   
 };
 

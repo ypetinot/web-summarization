@@ -11,14 +11,23 @@ template< class T > class Sequence: public std::list<T> {
 
 };
 
-class TokenSequence: public std::list<Token> {
+template< class T > class TokenSequence: public std::list<T> {
 
 public:
 
-TokenSequence(std::string raw_sequence_string):list<Token>() {
-/* tokenize raw sequence string */
-/* TODO */
-}
+ TokenSequence(std::string raw_sequence_string):std::list<T>() {
+    /* tokenize raw sequence string */
+    /* TODO */
+  }
+
+  /* default constructor - only needed so that TokenSequence (and its descendant classes) can be used with containers */
+  // TODO : make this method protected
+  TokenSequence() {
+    /* nothing */
+  }
+  
+ protected:
+
   
 };
 

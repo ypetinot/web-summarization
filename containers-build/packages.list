@@ -46,7 +46,7 @@ maven
 openjdk-7-jdk
 # TODO : re-introduce once the dev library is also available
 #thrift-compiler
-#libthrift-dev
+libthrift-dev
 # The following are package dependencies required to build (and install ?) libthrift-dev
 # TODO : is there a way to reduce the set of dependencies while still building libthrift-dev ?
 mono-gmcs

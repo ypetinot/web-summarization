@@ -4,6 +4,7 @@
 #include "LMService.h"
 #include <google/dense_hash_map>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <sstream>
 #include <thrift/protocol/TBinaryProtocol.h>
@@ -121,11 +122,11 @@ int main(int argc, char **argv) {
 
   string filename_model( argv[ 1 ] );
 
-  shared_ptr<LMServiceHandler> handler(new LMServiceHandler( filename_model ));
-  shared_ptr<TProcessor> processor(new LMServiceProcessor(handler));
-  shared_ptr<TServerTransport> serverTransport(new TServerSocket(port));
-  shared_ptr<TTransportFactory> transportFactory(new TBufferedTransportFactory());
-  shared_ptr<TProtocolFactory> protocolFactory(new TBinaryProtocolFactory());
+  boost::shared_ptr<LMServiceHandler> handler(new LMServiceHandler( filename_model ));
+  boost::shared_ptr<TProcessor> processor(new LMServiceProcessor(handler));
+  boost::shared_ptr<TServerTransport> serverTransport(new TServerSocket(port));
+  boost::shared_ptr<TTransportFactory> transportFactory(new TBufferedTransportFactory());
+  boost::shared_ptr<TProtocolFactory> protocolFactory(new TBinaryProtocolFactory());
 
   //TSimpleServer server(processor, serverTransport, transportFactory, protocolFactory);
   TThreadedServer server(processor,

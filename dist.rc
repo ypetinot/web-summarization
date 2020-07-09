@@ -1,4 +1,4 @@
-# Current approach : allways call makefile from within a script that has exported all the necessary variables
+# Current approach : always call makefile from within a script that has exported all the necessary variables
 
 # Note : currently necessary to handle execution via suid ?
 # TODO : how can we fix this / do better ?

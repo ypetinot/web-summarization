@@ -12,6 +12,8 @@
 //#include <glog/vlog_is_on.h>
 #include <vector>
 
+// TODO : define TOKEN long
+
 int main(int argc, char** argv) {
 
   /* init logging machinery */
@@ -29,10 +31,12 @@ int main(int argc, char** argv) {
   /* 0 - create new sequence data corpus */
   LOG(INFO) << "Creating new corpus ...";
   // TODO : provide the corpus root path as an argument ?
-  const Corpus corpus = Corpus();
-
+  const Corpus< TokenSequence<long> , Gist<long> >& corpus = Corpus< TokenSequence<long> , Gist<long> >();
+  //const list< tr1::shared_ptr<TokenSequence<long>> > web_summaries_mapped = corpus.get_summaries();
+  const WordSequenceCorpus<long>& web_summaries_corpus = corpus.get_summaries();
+  
   /* 1 - instantiate our (empty) model */
-  GappyPatternModel model( FLAGS_gappy_patterns_lambda , FLAGS_gappy_patterns_dp_alpha );
+  GappyPatternModel<long> model( web_summaries_corpus, FLAGS_gappy_patterns_lambda , FLAGS_gappy_patterns_dp_alpha );
   // TODO : MultiSlotTypeTemplateModel model( FLAGS_template_dp_lambda , FLAGS_template_dp_alpha , FLAGS_slot_type_dp_alpha, FLAGS_gappy_patterns_lambda , FLAGS_gappy_patterns_dp_alpha );
   
   //boost::archive::binary_iarchive ia(ifs);
@@ -40,7 +44,7 @@ int main(int argc, char** argv) {
 
   /* 2 - instantiate our model sampler */
   // TODO : is the model really trained via sampling ? should this be called a "trainer" ?
-  GappyPatternModelSampler model_sampler = GappyPatternModelSampler(corpus,FLAGS_max_iterations);
+  GappyPatternModelSampler<long> model_sampler(FLAGS_max_iterations);
   
   /* training/sampling */
   /* we use line_no as the document id, but the corresponding data is assumed to be uniformly distributed */
@@ -49,7 +53,7 @@ int main(int argc, char** argv) {
 
   /* compute perplexity of held-out data ( this cause the log-likelihood of each document to be written to STDOUT */
   /* TODO: if we don't need this value maybe there is a better way of organizing all this */
-  double aggregate_log_likelihood = model.log_likelihood(corpus);
+  double aggregate_log_likelihood = model.log_likelihood(web_summaries_corpus);
 
   /* release logging machinery */
   google::ShutdownGoogleLogging();

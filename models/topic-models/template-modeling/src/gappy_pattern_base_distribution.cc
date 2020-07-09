@@ -36,5 +36,3 @@ double GappyPatternBaseDistribution::_base_log_probability( const GappyPattern* 
 
 }
 
-
-

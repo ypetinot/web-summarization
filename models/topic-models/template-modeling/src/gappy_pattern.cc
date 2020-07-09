@@ -6,8 +6,8 @@
 #include <fstream>
 
 /* constructor */
-GappyPattern::GappyPattern()
-  :_gp_location(ts),number_of_words(0),_pattern_markers( ts.length() , 0 ) {
+GappyPattern::GappyPattern(unsigned int length)
+  :number_of_words(0),_pattern_markers( length , 0 ) {
   /* nothing for now */
 }
 
@@ -32,10 +32,9 @@ const GappyPattern& GappyPattern::remove_word( unsigned int index ) {
 
 /* set pattern marker */
 void GappyPattern::set_pattern_marker( unsigned int index , bool status ) {
-  unsigned int offset = _gp_location.get_from();
   CHECK_GE( index , 0 );
-  CHECK_LE( index - offset , _pattern_markers.size() );
-  _pattern_markers[ index - offset ] = status;
+  CHECK_LE( index , _pattern_markers.size() );
+  _pattern_markers[ index ] = status;
 }
 
 /* add gap to pattern */
@@ -48,22 +47,6 @@ unsigned int GappyPattern::get_number_of_words() const {
   return number_of_words;
 }
 
-/* get words */
-vector<long> GappyPattern::get_words() const {
-
-  vector<long> result;
-  for ( vector<unsigned short int>::const_iterator iter = _pattern_markers.begin(); iter != _pattern_markers.end(); iter++ ) {
-    
-    if ( *iter ) {
-      result.push_back( _gp_location.get_word( iter - _pattern_markers.begin() ) );
-    }
-    
-  }
-  
-  return result;
-
-}
-
 /* get pattern as a string */
 string GappyPattern::as_string() const {
   return _as_string();
@@ -72,65 +55,6 @@ string GappyPattern::as_string() const {
 /* get pattern as a string (log content) */
 string GappyPattern::as_string_log() const {
   return _as_string();
-}
-
-/* get pattern as a string with many options */
-string GappyPattern::_as_string() const {
-
-  bool do_append = false;
-  bool prev_was_gap = false;
-
-  string pattern;
-  string component;
-
-  for ( vector<unsigned short int>::const_iterator iter = _pattern_markers.begin(); iter != _pattern_markers.end(); ++iter ) {
-    
-    if ( *iter != 0 ) {
-     
-      unsigned int i = iter - _pattern_markers.begin();
-
-      do_append = true;
-      long word_id = get_word( i );
-
-      if ( word_id == WORD_ID_BOG ) {
-	component = WORD_STRING_BOG;
-      }
-      else if ( word_id == WORD_ID_EOG ) {
-	component = WORD_STRING_EOG;
-      }
-      else {
-	component = _gp_location.get_word_as_string( i );
-      }
-
-      prev_was_gap = false;
- 
-    }
-    else {
-
-      if ( !prev_was_gap ) {
-	do_append = true;
-	component = "_";
-	prev_was_gap = true;
-      }
-
-    }
-
-    if ( do_append ) {
-
-      if ( iter != _pattern_markers.begin() ) {
-	pattern.append( " " );
-      }
-      
-      pattern.append( component );
-
-    }
-
-    do_append = false;
-
-  }
-
-  return pattern;
-  
 }
 
 #if 0
@@ -148,10 +72,9 @@ const GappyPattern& GappyPattern::insert_word( unsigned int i ) {
 /* return the status of the word at the specified index */
 const bool GappyPattern::get_pattern_marker( unsigned int i ) const {
 
-  unsigned int target_location = i - _gp_location.get_from();
-  CHECK( _valid_index( target_location ) );
+  CHECK( _valid_index( i ) );
 
-  return ( _pattern_markers.at( target_location ) != 0 );
+  return ( _pattern_markers.at( i ) != 0 );
   
 }
 

@@ -17,21 +17,18 @@
 using namespace google;
 using namespace std;
 
-// TODO : require G to be a specialization of a particular type/class, specifically a distribution over objects of type T
-/* Note : G is expected to be instantiated by the DirichletProcess class in order to determine whether new objects of class T should be registered as the process is updated */
-template< class T , class G > class DirichletProcess {
+template< class T > class DirichletProcess {
 
  protected:
 
   /* base distribution */
-  /* TODO is there a way to treat G as a purely static class ? (i.e. to avoid having to instantiate it ? */
-  const G _base_distribution;
+  const Distribution< T >& _base_distribution;
   
  public:
   
   /* constructor */
- DirichletProcess( string id , double alpha )
-   :_base_distribution(),_id(id),_alpha(alpha),_total_instances(0) {
+ DirichletProcess( string id , double alpha , const Distribution<T>& base_distribution)
+   :_base_distribution(base_distribution),_id(id),_alpha(alpha),_total_instances(0) {
     
     /* init pattern --> count mapping */
     _object_map.set_empty_key("__PATTERN_EMPTY_KEY__");
