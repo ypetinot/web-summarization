@@ -8,7 +8,6 @@
 #include "sequence.h"
 #include "tree.h"
 
-#include <boost/lexical_cast.hpp>
 #include <google/dense_hash_map>
 #include <set>
 #include <string>
@@ -21,67 +20,26 @@ using namespace std;
 /* --> Raw gist data */
 /* --> Template object ( managing the top level template as well as the associated template slots ) */
 
-// TODO : do we really need a custom class to model the notion of a sequence of tokens ?
-template<class T> class Gist: public TokenSequence<T> {
+// Class pairs a sequence object with meta-attributes (for now a URL and a category)
+class SequenceRecord {
 
  public:
   
   /* constructor */
-  /* TODO : it is probably not relevant to have a reference to Category here */
-  Gist( const string& url , const vector<T>& w , tr1::shared_ptr<Category> category )
-    :_category(category) {
-    this->url = url;
-    this->w = w;
-    /* init gist */
+  SequenceRecord( const string& u , const Sequence& s , tr1::shared_ptr<Category> category )
+    :url(u),sequence(s),_category(category) {
+    /* init record */
     _init();
   }
   
-  /* get url associated with this gist */
-  string get_url() const {
-    return url;
-  }
-
-  /* get word at specified index */
-  T get_word( unsigned int index ) const {
-    CHECK_GE( index , 0 );
-    CHECK_LE( index , w.size() - 1 );
-    return w[ index ];
-  }
-
-  /* get word at specified index (returned as a string object) */
-  string get_word_as_string( unsigned int index ) const {
-    T word_id = get_word( index );
-    return boost::lexical_cast<std::string>(word_id);
-  }
-  
-  /* set templatic marker at the specified index */
-  void set_templatic( unsigned int index , bool status ) {
-    bool old_status = w_templatic[ index ];
-    if ( old_status != status ) {
-      /* Update model if the template status changes ? */
-      /* TODO */
-      w_templatic[ index ] = status;
-    }
-  }
-  
-  /* return length of this gist (number of words) */
-  unsigned int length() const {
-    return w.size();
-  }
-  
-  /* generate string representation containing the template information */
-  string as_string(bool detailed = false) const;
-
   /* get category */
   tr1::shared_ptr<Category> get_category() const {
     return _category;
   }
-  
-  /* unset template */
-  void unset_template();
 
-  /* sample template at specific location */
-  void sample_template_at_location( unsigned int i );
+  /* sequence */
+  // TODO : should this really be a const reference ? (i.e. how do we enable record-keeping at the model level ?)
+  const Sequence& sequence;
   
  protected:
 
@@ -92,14 +50,8 @@ template<class T> class Gist: public TokenSequence<T> {
   }
   
   /* URL to which this gist belongs */
-  string url;
-
-  /* A gist is a sequence (vector) of word ids */
-  vector<T> w;
+  const string url;
   
-  /* Each word is either templatic or non templatic */
-  vector<bool> w_templatic;
-
   /* Category to which this entry belongs */
   tr1::shared_ptr<Category> _category;
 

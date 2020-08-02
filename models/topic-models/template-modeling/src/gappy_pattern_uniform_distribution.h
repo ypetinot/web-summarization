@@ -1,20 +1,19 @@
 #ifndef __GAPPY_PATTERN_UNIFORM_DISTRIBUTION_H__
 #define __GAPPY_PATTERN_UNIFORM_DISTRIBUTION_H__
 
-#include "word_sequence_corpus.h"
+#include "corpus.h"
 #include "gappy_pattern.h"
 #include "poisson_distribution.h"
 #include "language_model.h"
 
 /* TODO : is there any commonality with TemplateUniformDistribution ? If so introduce an intermediate class ? */
-
-template<class T> class GappyPatternUniformDistribution: public Distribution< GappyPattern > {
+class GappyPatternUniformDistribution: public Distribution< GappyPattern > {
 
  public:
 
   /* constructor */
- GappyPatternUniformDistribution(const WordSequenceCorpus<T>& corpus, double lambda_number_of_words_in_pattern)
-    :_unigram_model(corpus),
+ GappyPatternUniformDistribution(const UnigramLanguageModel& ulm, double lambda_number_of_words_in_pattern)
+   :_unigram_model(ulm),
     distribution_number_of_words_in_pattern(lambda_number_of_words_in_pattern)  {
     /* nothing */
   }
@@ -30,7 +29,7 @@ template<class T> class GappyPatternUniformDistribution: public Distribution< Ga
  protected:
 
   /* unigram model */
-  const UnigramLanguageModel<Token> _unigram_model;
+  const UnigramLanguageModel _unigram_model;
   
   /* distribution - number of words in pattern */
   // TODO : this should really be a const reference (but not necessarily a const object ?)

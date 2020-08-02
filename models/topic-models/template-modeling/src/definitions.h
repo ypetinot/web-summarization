@@ -3,6 +3,10 @@
 
 #include <glog/logging.h>
 
+// sequence of tokens
+#define TOKEN long
+//#define TOKENS TokenSequence<TOKEN>
+
 #define COLOR_NO_COLOR 0
 
 #define TEMPLATIC_STATUS_NONE -1

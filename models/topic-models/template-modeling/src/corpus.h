@@ -4,7 +4,6 @@
 #include "definitions.h"
 #include "gist.h"
 #include "strutil.h"
-#include "word_sequence_corpus.h"
 
 #include <glog/logging.h>
 #include <google/dense_hash_map>
@@ -12,27 +11,31 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "language_model.h"
+
 using namespace google;
 using namespace google::protobuf;
 using namespace std;
 
-// TODO : is this class exclusively meant to hold corpus-level statistics ?
-
-template< class T , class G > class Corpus {
-
+// Class provides a proxy to hold corpus-level statistics
+// TODO: add capability to split instance into sub-corpora (e.g. train/test/test) and/or sample
+class SequenceCorpus {
+  
  public:
   
-  /* constructor */
-  Corpus()
-#if 0
-_template_base_distribution(*this,template_poisson_lambda),_slot_type_base_distribution(*this),
-#endif
-    {
+  /* default constructor */
+  SequenceCorpus():
+    unigram_language_model() {
       /* nothing */
-    }
+  }
 
-  /* load web summary data */
-  list< tr1::shared_ptr<T> > load_web_summary_data(const string& filename) {
+  /* unigram model getter */
+  const UnigramLanguageModel& get_unigram_model() const {
+    return unigram_language_model;
+  }
+  
+  /* load sequence data */
+  list< tr1::shared_ptr< SequenceRecord > > load_web_summary_data(const string& filename) {
 
     ifstream input_file(filename.c_str());
     CHECK(input_file.is_open());
@@ -60,31 +63,22 @@ _template_base_distribution(*this,template_poisson_lambda),_slot_type_base_distr
 
       /* line format: <url> \t <word-id-sequence> \t <category> */
       string url = tokens[0];
-      vector<string> words;
-      SplitStringUsing(tokens[1], " ", &words);
-
-      vector<long> word_ids;
-      word_ids.push_back( WORD_ID_BOG ); /* add bog node */
-      for (vector<string>::iterator it = words.begin() ; it != words.end(); ++it) {
-	word_ids.push_back( atol( (*it).c_str() ) );
-      }
-      word_ids.push_back( WORD_ID_EOG ); /* add eog node */
-
+      string raw_sequence_data = tokens[1];
       string path = tokens[2];
 
       /* Map path to actual Category instance */
       /* TODO ! */
       //Category* category = TreeManager ...
       tr1::shared_ptr<Category> category( new Category( path ) );
-
-      tr1::shared_ptr<T> gist( new T( url , word_ids , category ) );
+      tr1::shared_ptr<SequenceRecord> gist( new SequenceRecord( url , raw_sequence_data , category ) );
       gists.push_back( gist );
 
       /* collect word frequency data */
-      unsigned number_of_words = gist.get()->length();
+      const Sequence& sequence = gist.get()->sequence;
+      unsigned number_of_words = sequence.size();
       for ( unsigned int i = 0; i < number_of_words; i++ ) {
-	unsigned int word = gist.get()->get_word( i );
-	register_word_instance( gist.get() , word );
+	unsigned int word = sequence.get_word( i );
+	unigram_language_model.register_word_instance( sequence , word );
       }
 
     }
@@ -94,18 +88,21 @@ _template_base_distribution(*this,template_poisson_lambda),_slot_type_base_distr
   }
   
   /* get underlying set of sequences */
-  //list< tr1::shared_ptr<T> >
-  const WordSequenceCorpus<T> get_summaries() const {
-    list< tr1::shared_ptr<T> > result;
-    for (typename list< tr1::shared_ptr<G> >::const_iterator iter = gists.begin() ; iter != gists.end() ; ++iter ) {
-      result.push_back( *iter );
+  const list<Sequence> get_sequences() const {
+    list<Sequence> result;
+    for (typename list< tr1::shared_ptr<SequenceRecord> >::const_iterator iter = gists.begin() ; iter != gists.end() ; ++iter ) {
+      result.push_back((*iter)->sequence);
     }
     return result;
   }
   
  protected:
 
- list< tr1::shared_ptr<G> > gists;
+  /* complete set of sequence records */
+  list< tr1::shared_ptr<SequenceRecord> > gists;
+
+  /* unigram language model */
+  UnigramLanguageModel unigram_language_model;
  
 };
 

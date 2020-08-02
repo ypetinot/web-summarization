@@ -1,6 +1,10 @@
 #ifndef __TEMPLATE_MODEL_H__
 #define __TEMPLATE_MODEL_H__
 
+#if 0
+_template_base_distribution(*this,template_poisson_lambda),_slot_type_base_distribution(*this),
+#endif
+
 typedef DirichletProcess< GappyPatternProcess , TemplateSlotUniformDistribution > TemplateSlotProcess;
 typedef DirichletProcess< Template , TemplateUniformDistribution > MultiSlotTypeTemplateDP;
 

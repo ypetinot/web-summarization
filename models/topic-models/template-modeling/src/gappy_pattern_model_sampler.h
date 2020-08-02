@@ -4,7 +4,7 @@
 #include "corpus.h"
 #include "gist.h"
 
-template< class T > class GappyPatternModelSampler {
+class GappyPatternModelSampler {
 
   /* maximum number of iterations */
   const long _max_iterations;
@@ -17,7 +17,7 @@ template< class T > class GappyPatternModelSampler {
     /* Nothing for now */
   }
   
-  void train(GappyPatternModel<T> model) {
+  void train(GappyPatternModel model) {
     /* TODO */
     assert(0);
   }
