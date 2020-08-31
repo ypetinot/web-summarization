@@ -1,119 +1,42 @@
 #ifndef __DIRICHLET_PROCESS__
 #define __DIRICHLET_PROCESS__
 
-#include "distribution.h"
+#include "multinomial_distribution.h"
 #include "probabilistic_object.h"
 
 #include <glog/logging.h>
-#include <google/dense_hash_map>
 #include <string>
 #include <vector>
 #include <set>
 #include <stack>
 #include <tr1/memory>
 
-#include "hashing.h"
-
 using namespace google;
 using namespace std;
 
-template< class T > class DirichletProcess {
+/* TODO : is it fair to say a Dirichlet Process is a Multinomial Distribution with a countably-infinite number of dimensions/categories ? */
+template< class T > class DirichletProcess: public MultinomialDistribution<T> {
 
  protected:
 
   /* base distribution */
-  const Distribution< T >& _base_distribution;
+  const MultinomialDistribution<T>& _base_distribution;
   
  public:
   
   /* constructor */
- DirichletProcess( string id , double alpha , const Distribution<T>& base_distribution)
-   :_base_distribution(base_distribution),_id(id),_alpha(alpha),_total_instances(0) {
-    
-    /* init pattern --> count mapping */
-    _object_map.set_empty_key("__PATTERN_EMPTY_KEY__");
-    _object_map.set_deleted_key("__PATTERN_DELETED_KEY__");
-    
+  DirichletProcess( string id , double alpha , const MultinomialDistribution<T>& base_distribution)
+    :MultinomialDistribution<T>(id),_base_distribution(base_distribution),_alpha(alpha) {
+    /* nothing */
   }
 
-  /* add instance */
-  unsigned int add_instance( const T& instance ) {
-
-    string instance_representation = instance.as_string();
-    string instance_representation_log = instance.as_string_log();
-    
-    unsigned int incremented_count = get_instance_count( instance ) + 1;
-    if ( incremented_count == 1 ) {
-      LOG(INFO) << "[" << _id << "] Instantiated new object --> " << instance_representation_log;
-    }
-    else {
-      LOG(INFO) << "[" << _id << "] Added instance for object (" << incremented_count << ") --> " << instance_representation_log;
-    }
-
-    _object_map[ instance_representation ] = incremented_count;
-    _total_instances++;
-    
-    return incremented_count;
-    
-  }
-
-  /* remove instance */
-  unsigned int remove_instance( const T& instance ) {
-
-    CHECK( _total_instances > 0 );
-    
-    string instance_representation = instance.as_string();
-    string instance_representation_log = instance.as_string_log();
-
-    //    LOG(INFO) << "[" << _id << "] Removing instance of object --> " << instance_representation_log;
-
-    /* locate entry for this instance */
-    dense_hash_map<string, unsigned int, MurmurHash2, eqstring>::const_iterator iter = _object_map.find( instance_representation );
-    
-    CHECK( iter != _object_map.end() );
-    unsigned int current_count = (*iter).second;
-    CHECK( current_count > 0 );
-    
-    LOG(INFO) << "[" << _id << "] Removing instance of object (" << current_count << ") --> " << instance_representation_log;
-
-    unsigned int new_count = _object_map[ instance_representation ] = current_count - 1;
-    
-    if ( ! new_count ) {
-      _object_map.erase( instance_representation );
-      LOG(INFO) << "[" << _id << "] Removed object --> " << instance_representation_log;
-    }
-    
-    _total_instances--;
-    
-    return new_count;
-    
-  }
-
-  /* get count a specific instance */
-  unsigned int get_instance_count( const T& instance ) const {
-
-    string instance_representation = instance.as_string();
-    
-    dense_hash_map<string, unsigned int, MurmurHash2, eqstring>::const_iterator iter = _object_map.find( instance_representation );
-    
-    if ( iter == _object_map.end() ) {
-      return 0;
-    }
-    
-    unsigned int result = (*iter).second;
-    CHECK( result <= _total_instances ); 
-    
-    return result;
-    
-  }
-  
   /* probability currently assigned to an event by the underlying multinomial */
   double multinomial_probability( const T& instance ) const {
     
-    unsigned int number_instances_single = get_instance_count( instance );
+    unsigned long number_instances_single = get_instance_count( instance );
     
     /* 2 - get the total number of patterns instances */
-    unsigned int number_instances_total = get_total_instances();
+    unsigned long number_instances_total = MultinomialDistribution<T>::get_total_event_count();
     
     /* 3 - compute probability of a new instance */
     double probability_base = _base_distribution.probability( instance );
@@ -151,13 +74,6 @@ template< class T > class DirichletProcess {
     
   }
   
-  /* get total instances count */
-  long get_total_instances() const {
-  
-    return _total_instances;
-    
-  }
-
   /* get instance ids */
   vector<string> get_instance_ids() const {
 
@@ -172,18 +88,12 @@ template< class T > class DirichletProcess {
 
  protected:
 
-  /* id of this process */
-  string _id;
-
   /* gappy pattern counts */
   dense_hash_map<string, unsigned int, MurmurHash2, eqstring> _object_map;
 
   /* concentration parameter */
   double _alpha;
   
-  /* total number of pattern instances */
-  long _total_instances;
-
   /* dp probability ( unormalized ) */
   double _dp_probability( double event_count , double event_probability_mass , double reference_count , double reference_probability_mass ) const {
 

@@ -34,6 +34,11 @@ class Sequence: public std::vector<TOKEN> {
   
  public:
 
+  /* default constructor - only needed so that TokenSequence (and its descendant classes) can be used with containers */
+  Sequence() {
+    /* nothing */
+  }
+  
   /* constructor */
   Sequence(const string& raw_string):
     vector<TOKEN>(_tokenize(raw_string)) {
@@ -43,6 +48,11 @@ class Sequence: public std::vector<TOKEN> {
   /* destructor */
   virtual ~Sequence() {
     /* nothing */
+  }
+
+  /* get sequence length */
+  unsigned int length() const {
+    return size();
   }
   
   /* get word at specified index */
@@ -88,12 +98,10 @@ public:
     /* TODO */
   }
 
-  // TODO : reintroduce if needed
-  ///* default constructor - only needed so that TokenSequence (and its descendant classes) can be used with containers */
-  //// TODO : make this method protected
-  //TemplaticSequence() {
-  //  /* nothing */
-  //}
+  /* default constructor - only needed so that TokenSequence (and its descendant classes) can be used with containers */
+  TemplaticSequence() {
+    /* nothing */
+  }
   
  protected:
 

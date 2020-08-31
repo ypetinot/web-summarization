@@ -5,6 +5,7 @@
 #include "stringifiable.h"
 
 #include <cmath>
+#include <google/dense_hash_map>
 #include <string>
 #include <vector>
 
@@ -36,7 +37,9 @@ template< class T > class Distribution {
  public:
   
   /* constructor */
-  Distribution();
+  Distribution() {
+    /* nothing */
+  };
 
   /* probability of a given event */
   double probability( const T& event ) {

@@ -3,8 +3,12 @@
 
 #include "definitions.h"
 
+#include <google/dense_hash_map>
+
 #define UNIGRAMS_EMPTY_KEY -10000
 #define UNIGRAMS_DELETED_KEY -20000
+
+using namespace google;
 
 class LanguageModel {
 

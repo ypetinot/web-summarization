@@ -1,13 +1,15 @@
 #ifndef __GAPPY_PATTERN_UNIFORM_DISTRIBUTION_H__
 #define __GAPPY_PATTERN_UNIFORM_DISTRIBUTION_H__
 
+#include "multinomial_distribution.h"
 #include "corpus.h"
 #include "gappy_pattern.h"
 #include "poisson_distribution.h"
 #include "language_model.h"
 
 /* TODO : is there any commonality with TemplateUniformDistribution ? If so introduce an intermediate class ? */
-class GappyPatternUniformDistribution: public Distribution< GappyPattern > {
+/* Note : ultimitely this distribution is a distribution over strings (i.e. stringified DappyPattern instances) */
+class GappyPatternUniformDistribution: public MultinomialDistribution<GappyPattern> {
 
  public:
 

@@ -20,6 +20,9 @@ double sample_uniform() {
 
 }
 
+/* TODO : decide whether to rely on dSFMT or GSL for random number generation */
+unsigned int sample_integer_uniform(unsigned int from, unsigned int
+
 /* compute the probability of this object */
 double ProbabilisticObject::probability() {
 
