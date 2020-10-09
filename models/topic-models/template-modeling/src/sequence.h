@@ -5,11 +5,10 @@
 #include <list>
 #include <string>
 
+#include "definitions.h"
 #include "strutil.h"
 
 using namespace google::protobuf;
-
-typedef std::string Token;
 
 /* Note : this is only useful in case we want to ultimately optimize the implementation of Sequence functionality ? */
 class Sequence: public std::vector<TOKEN> {
@@ -56,20 +55,22 @@ class Sequence: public std::vector<TOKEN> {
   }
   
   /* get word at specified index */
-  TOKEN get_word( unsigned int index ) const {
+  TOKEN get_token( unsigned int index ) const {
     CHECK_GE( index , 0 );
     CHECK_LE( index , size() - 1 );
     return at(index);
   }
 
   /* get word at specified index (returned as a string object) */
-  string get_word_as_string( unsigned int index ) const {
-    TOKEN word_id = get_word( index );
+  string get_token_as_string( unsigned int index ) const {
+    TOKEN word_id = get_token( index );
     return boost::lexical_cast<std::string>(word_id);
   }
 
   /* generate string representation containing the template information */
   string as_string(bool detailed = false) const;
+
+  /* TODO : add support for iterators */
   
 };
 

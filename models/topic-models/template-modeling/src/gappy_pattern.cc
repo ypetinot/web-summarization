@@ -90,6 +90,7 @@ bool GappyPattern::_valid_index( unsigned int index ) const {
 
 }
 
+#if 0
 /* get pattern as a string with many options */
 string GappyPattern::_as_string() const {
 
@@ -106,7 +107,7 @@ string GappyPattern::_as_string() const {
       unsigned int i = iter - _pattern_markers.begin();
 
       do_append = true;
-      long word_id = get_word( i );
+      long word_id = get_token( i );
 
       if ( word_id == WORD_ID_BOG ) {
 	component = WORD_STRING_BOG;
@@ -148,3 +149,4 @@ string GappyPattern::_as_string() const {
   return pattern;
   
 }
+#endif

@@ -15,7 +15,7 @@ all: $(EXECUTABLES)
 %.o: %.cc
 	$(COMPILE) -c $< -o $@
 
-OBJECTS_COMMON=template_modeling.o parameters.o probabilistic_object.o tree.o statistics.o dirichlet_process.o poisson_distribution.o
+OBJECTS_COMMON=template_modeling.o parameters.o probabilistic_object.o tree.o statistics.o dirichlet_process.o poisson_distribution.o sampler.o
 #TODO: apply template base dir to all
 OBJECTS_TEMPLATE=template_element.o template_slot.o
 OBJECTS_GAPPY_PATTERN=gappy_pattern.o gappy_pattern_uniform_distribution.o gappy_pattern_sequence.o

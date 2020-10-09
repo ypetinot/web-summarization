@@ -3,30 +3,19 @@
 
 #include "definitions.h"
 #include "statistics.h"
+#include "sampler.h"
 #include "stringifiable.h"
 #include <vector>
-
-#include <dSFMT.h>
-#include <gsl/gsl_randist.h>
-#include <gsl/gsl_rng.h>
 
 void init_random(unsigned params_random_seed);
 double sample_uniform();
 
 using namespace std;
 
-class MultinomialSampler {
+class MultinomialSampler: public Sampler {
   
  public:
   
-  /* constructor */
-  MultinomialSampler() {
-    
-    /* init gsl random number generator */
-    _gsl_rng = gsl_rng_alloc( gsl_rng_taus );
-    
-  }
-
   /* multinomial sampling */
   template<class T> unsigned int multinomial_sampler( vector<T> objects , vector<double> probabilities ) const {
     
@@ -46,14 +35,10 @@ class MultinomialSampler {
     
   };
 
- protected:
-  
-  /* gsl random number generator */
-  gsl_rng* _gsl_rng;
-
-  
 };
 
+/* TODO : is this the right inheritance tree ? */
+/* TODO : rename as ProbabilisticSequence ? => would mean inheriting from Sequence */
 class ProbabilisticObject: public MultinomialSampler, public StringifiableObject {
 
  public:
@@ -62,7 +47,7 @@ class ProbabilisticObject: public MultinomialSampler, public StringifiableObject
   double probability();
 
   /* compute the log probability of this object */
-  virtual double log_probability() = 0;  
+  virtual double log_probability() = 0;
 
 };
 

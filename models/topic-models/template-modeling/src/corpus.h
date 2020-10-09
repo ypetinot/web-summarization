@@ -77,7 +77,7 @@ class SequenceCorpus {
       const Sequence& sequence = gist.get()->sequence;
       unsigned number_of_words = sequence.size();
       for ( unsigned int i = 0; i < number_of_words; i++ ) {
-	unsigned int word = sequence.get_word( i );
+	unsigned int word = sequence.get_token( i );
 	unigram_language_model.register_word_instance( sequence , word );
       }
 

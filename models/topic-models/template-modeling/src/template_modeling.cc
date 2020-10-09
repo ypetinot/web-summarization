@@ -23,9 +23,6 @@ int main(int argc, char** argv) {
   LOG(INFO) << "Parsing command line arguments ...";
   google::ParseCommandLineFlags(&argc, &argv, true);
   
-  /* do i still need this ? */
-  init_random(FLAGS_random_seed);
-
   /* 0 - create new sequence data corpus */
   LOG(INFO) << "Creating new corpus ...";
   // TODO : provide the corpus root path as an argument ?
